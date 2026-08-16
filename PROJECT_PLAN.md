@@ -78,16 +78,19 @@ Garmin 官方個人資料匯出              garmin-connect-mcp（主）
 
 **1A. 歷史資料回補（MVP，先做）**
 - [ ] 向 Garmin Connect 申請官方個人資料匯出（帳號設定 → Export Your Data，GDPR/CCPA 機制，零風險但為一次性快照）
-- [ ] 評估 [GarminDB](https://github.com/tcgoetz/GarminDB)（持續維護中，v3.6.x）能否直接解析匯出包＋FIT 檔到 SQLite，優先重用而非重寫
-- [ ] 若 GarminDB 涵蓋不到的欄位（如特定 DI-Connect-Wellness JSON 內容），評估是否需要客製 parser 補強
+- [x] **評估 [GarminDB](https://github.com/tcgoetz/GarminDB) 能否直接解析匯出包＋FIT 檔到 SQLite**（2026-08-17 研究結論，詳見下方）
+- [ ] 依評估結論實作：客製 parser（直接解析官方匯出包＋Excel/FIT）為主，或改用 GarminDB 的 `--import`（需先驗證其能否吃官方匯出包的檔案結構）
 - [ ] 統一寫入本地標準化 schema（見 1C）
 - [ ] **驗證最大心率（O-2）**：從多年歷史活動的心率分布判斷 200 bpm 是反覆出現的真值，還是單次離群雜訊
 - [ ] 順帶盤點歷史半馬成績（協助補齊 O-1，若使用者手邊沒有紀錄）
 
+> **GarminDB 評估結論（2026-08-17）**：GarminDB 的 `--download` 走 Garmin Connect SSO 登入，會撞上與 garth 完全相同的封鎖——Garmin 自 2026 年 3 月起在 Cloudflare 層永久封鎖自動化 SSO 登入（`/sso/signin`、`/mobile/api/login`），瀏覽器登入不受影響。換句話說，**這不是「要不要接受風險」的問題，是現在整條自動化下載路徑本來就是壞的**，跟我們已經決定不做 1B 是同一個坑。GarminDB 的 `--import`（不含 `--download`）可以純離線把已下載好的 JSON/FIT 檔重新處理進 SQLite，但官方方文件沒證實這個離線流程能不能直接吃「官方個人資料匯出包」的檔案結構（GarminDB 平常預期的是它自己下載時建立的資料夾格式）。**結論：先讓 Fu 申請官方匯出、實際拿到檔案後再判斷**——如果檔案結構兜得上就重用 GarminDB 的 parser／schema，兜不上就針對匯出包格式寫一個輕量客製 parser，不整套重寫 GarminDB。
+
 **1C. 統一資料模型與品質標記（MVP，先做）**
-- [ ] 設計 SQLite schema：`activities`、`daily_wellness`、`plan`、`source_metadata`
-- [ ] 加入 `source`（fit_manual / garmin_export，之後才加 garmin_mcp / strava）與 `has_wellness_data` 等完整度欄位
-- [ ] 記錄每筆資料擷取時間與來源版本，方便除錯與追蹤資料品質
+- [x] **設計 SQLite schema**（2026-08-17，見 [`src/main/python/models/schema.sql`](src/main/python/models/schema.sql)，已用 sqlite3 實際執行驗證通過）
+- [x] 加入 `source`、`source_version`、`fetched_at`、`has_wellness_data` 完整度欄位——直接併入 `activities`/`daily_wellness` 各自的欄位，取代原規劃的獨立 `source_metadata` 表（單一資料表兩個查詢場景不需要額外 join，避免過度設計）
+- [x] 新增 `athlete_profile` 表（§6 學員檔案的資料庫對應）與 `training_plan` 表（呼應 N-2，`plan_source` 區分 AI 課表／跑團課表）
+- [ ] 待實際資料匯入時，依真實資料再檢視欄位是否足夠（目前 `raw_data_json` 保留未逐欄位建模的原始欄位，如步幅、垂直振幅、觸地時間、NP、功率等）
 
 ---
 
