@@ -1,0 +1,90 @@
+# Type: 主旨
+# |<---- 使用最多 50 個字元 ---->|
+
+
+# 說明為何需要這次變更
+# |<---- 盡量每行不超過 72 個字元 ---->|
+
+
+# 提供相關 issue 或其他連結:
+# Issue #
+
+
+# --- COMMIT END ---
+# ============================================================
+# Commit Message 規範
+# ============================================================
+#
+# Type 可以是下列其中之一:
+#    Feat     - 新功能 (feature)
+#    Fix      - 錯誤修正 (bug fix)
+#    Docs     - 文件更新 (documentation)
+#    Style    - 格式調整，不影響程式碼邏輯 (formatting, missing semicolons, etc.)
+#    Refactor - 重構程式碼 (refactoring production code)
+#    Perf     - 效能優化 (performance improvement)
+#    Test     - 新增或修改測試 (adding or refactoring tests)
+#    Build    - 建置系統或外部依賴變更 (build system, dependencies)
+#    CI       - CI 配置檔案和腳本變更 (CI configuration files and scripts)
+#    Chore    - 其他不修改程式碼或測試的變更 (updating grunt tasks, etc.)
+#    Revert   - 還原先前的 commit (reverting a previous commit)
+#
+# --------------------
+# Scope 範圍 (請依專案調整，例如: api/ui/db/auth/config...):
+#    [請依專案模組自行定義]
+#
+# --------------------
+# 主旨 (Subject) 撰寫規則:
+#    ✓ 使用台灣繁體中文
+#    ✓ 使用祈使句，現在式: "新增" 不是 "已新增" 或 "新增了"
+#    ✓ 第一個字不要大寫 (除非是專有名詞)
+#    ✓ 結尾不要加句號 (.)
+#    ✓ 清楚且有邏輯性的描述做了什麼改變
+#    ✓ 【重要】Type 後面直接接冒號與空格，不加 (scope) 括號
+#    ✓ 【重要】冒號後先寫 Task X.Y.Z（若有對應任務），再寫版本變更摘要
+#      格式: Type: Task X.Y.Z 功能簡述，新增XXX / 修改XXX / 修正XXX
+#      若無對應任務直接寫摘要: Type: 更新XXX，修正XXX
+#    ✓ 多筆不同 Type 的變更用分號分隔寫在同一行（50字以內）
+#      或拆成多個 commit（推薦）
+#
+# --------------------
+# Body 內文撰寫建議:
+#    ✓ 說明「為什麼」做這個改變，而不只是「做了什麼」
+#    ✓ 【強制】Body 必須條列本次各檔案的實際變更內容（精簡摘要）
+#      格式建議：
+#        - 檔案路徑: 說明改了什麼
+#    ✓ 【強制】不可只寫「詳見 XXX.md」或「參照文件」，至少要有一行摘要
+#    ✓ 更詳細的背景說明、動機、技術細節請寫入 docs/CHANGELOG.md
+#    ✓ 如果有破壞性變更，在 Body 開頭加上 "BREAKING CHANGE:"
+#    ✓ 可以使用項目符號 (-)
+#    ✓ 每行盡量不超過 72 字元
+#
+# --------------------
+# Footer 頁腳:
+#    ✓ 關閉 Issue: "Closes #123" 或 "Fixes #456"
+#    ✓ 破壞性變更: "BREAKING CHANGE: 說明"
+#    ✓ 相關 PR: "Related: #789"
+#
+# --------------------
+# 範例 Examples:
+#
+# Task 功能實作:
+#    Feat: Task 1.2.3 新增使用者登入頁面
+#
+# 修正同一任務的 bug:
+#    Fix: Task 1.2.3 修正登入表單驗證邏輯錯誤
+#
+# 文件更新:
+#    Docs: 更新 README 安裝說明
+#
+#    - 新增環境需求說明
+#    - 更新依賴套件版本
+#
+# 破壞性變更:
+#    Feat: 重新設計 API 介面
+#
+#    BREAKING CHANGE: API 端點從 /api/v1 改為 /api/v2
+#    舊版 API 將在 [日期] 後停止支援
+#
+#    Closes #100
+#
+# ============================================================
