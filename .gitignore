@@ -45,6 +45,9 @@ logs/
 *.xlsx
 output/
 
+# Personal data dumps (Garmin exports, race data, etc.) — never commit real user data
+input/
+
 # Temporary files
 tmp/
 temp/
