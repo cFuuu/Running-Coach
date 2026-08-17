@@ -1,0 +1,16 @@
+# Running Coach — Python 套件依賴
+#
+# 建議搭配 conda 環境使用（見 environment.yml），或用 venv：
+#     python -m venv .venv && .venv/Scripts/activate && pip install -r requirements.txt
+#
+# 只列直接依賴，版本用 >= 讓次要更新可自動取得；如需完全重現請用 pip freeze 產生 lock 檔。
+# 開發時的實測環境為 Python 3.12.13。
+
+# Web API 與本機 dashboard 伺服器
+fastapi>=0.141.0
+uvicorn>=0.52.0
+
+# Garmin FIT 檔解析（逐秒心率/配速/GPS、每公里分圈）
+fitparse>=1.2.0
+
+# 註：資料庫用 Python 內建的 sqlite3，測試用內建的 unittest，皆無需額外安裝。

@@ -31,6 +31,31 @@ gh repo view
 gh repo clone username/repo-name
 ```
 
+## 🐍 Python Environment (IMPORTANT)
+
+This project uses a dedicated conda environment named **`rc`** (Python 3.12).
+
+**Do NOT use the bare `python` command** — on this machine it resolves to an unrelated venv (`hermes-agent`) that has no pip and none of this project's packages. `pip` on PATH also points at a *different* Python 3.10 install, so `pip install X` followed by `python -c "import X"` will fail confusingly.
+
+Always invoke the environment's interpreter by absolute path:
+
+```bash
+# Bash tool
+RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+"$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
+"$RC" -m src.main.python.services.garmin_import_runner --help
+```
+
+```powershell
+# PowerShell tool (conda is not on PATH; call it by absolute path too)
+& "C:\Users\cFu\anaconda3\envs\rc\python.exe" --version
+& "C:\Users\cFu\anaconda3\Scripts\conda.exe" env list
+```
+
+`conda activate rc` works in the user's own interactive terminal, but **not** across tool calls — each Bash/PowerShell invocation is a fresh shell, so activation does not persist. Use the absolute path instead.
+
+Dependencies: `requirements.txt` (single source of truth for versions) and `environment.yml` (conda wrapper that pip-installs from requirements.txt). Recreate with `conda env create -f environment.yml`.
+
 ## ✅ Verification Method for This Project
 Run unit/integration tests under `src/test/`; if there's a CLI/API, call it once to confirm the response is correct. If a web front-end is added later, start the dev server and confirm functionality in a browser rather than inferring it from reading code alone.
 

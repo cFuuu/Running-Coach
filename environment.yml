@@ -1,0 +1,22 @@
+# Running Coach — conda 環境定義
+#
+# 建立環境：
+#     conda env create -f environment.yml
+# 啟用：
+#     conda activate rc
+# 之後若 requirements.txt 有更新：
+#     conda env update -f environment.yml --prune
+#
+# 套件版本的單一事實來源是 requirements.txt，此處透過 pip 區塊引用，
+# 避免 conda 與 pip 兩份清單各自漂移。
+
+name: rc
+
+channels:
+  - defaults
+
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -r requirements.txt
