@@ -4,7 +4,7 @@
 > 願景、架構、決策記錄、課表模板等穩定內容見 [PLAN.md](PLAN.md)。
 > 個人學員資料一律放 `output/`（不進版控），不寫入本檔。
 
-## 進度總覽（2026-08-17 更新）
+## 進度總覽（2026-08-18 更新）
 
 | Phase | 狀態 | 說明 |
 |---|---|---|
@@ -12,12 +12,12 @@
 | Phase 1A 歷史資料匯入 | ✅ 完成 | 520 活動、1651 每日 wellness、13 項 metric_coverage |
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
-| **Phase 1.5 Dashboard** | 🔵 **下一步** | Task C 已完成；Task A（後端 API）與 Task B（前端）未開始 |
+| **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
 | Phase 1B 即時同步 | ⏸️ 延後 | Garmin 已封鎖自動化登入，待評估 MCP／Strava |
 | Phase 2 規則引擎 | ⏸️ 未開始 | VDOT、週期化課表、訓練負荷 |
 | Phase 3 AI Coach | ⏸️ 未開始 | ★ 專案主目標 |
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 44 項全通過。
+**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 106 項全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
 
 **目前資料庫內容**（`output/running_coach.db`，15.3 MB，不進版控）
@@ -168,10 +168,50 @@
 **整合驗證（主 session，2026-08-17）**
 - [x] 全測試通過（87 項）+ 對真實 `output/running_coach.db` 打 API 交叉比對已知數字（見上方 Task A 附註）
 - [x] 後端併發壓力測試（40 併發請求跨 7 種端點，零錯誤）
-- [ ] **桌機瀏覽器實際打開頁面查看**（使用者尚未看過畫面，此為 blocking——Task A/B 是否「符合期望」要靠這步才能判斷，不能只靠自動化測試通過就視為完成）
-- [ ] 手機實機測試（連得到 ✓ 且不跑版 ✓，兩項分開驗）
+- [x] **桌機瀏覽器實際打開頁面查看**（2026-08-18，見下方「使用者實測回饋改版」，Fu 全程在瀏覽器上逐階段確認）
+- [ ] 手機實機測試（連得到 ✓ 且不跑版 ✓，兩項分開驗）——尚未執行
 
-> **接續方式**：目前 API server 已可用 `"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m src.main.python.api.app --db-path output/running_coach.db --host 127.0.0.1 --port 8000` 啟動，開瀏覽器連 `http://127.0.0.1:8000/?mock=0`（`?mock=0` 讓前端強制打真實 API）。看過畫面後若有不符合期望之處，直接說出來即可，不需要額外的交接動作——後端邏輯與資料正確性已驗證過，剩下是畫面呈現層面的調整。
+---
+
+### 使用者實測回饋改版（2026-08-18，Phase 1~5 已完成，Phase 6 未開始）
+
+> Fu 打開瀏覽器實測後提出 6 項問題／需求，逐階段修正並各自 commit。詳細技術決策見 Claude 計畫檔（本機 `.claude/plans/z6-hazy-thimble.md`，不進版控）。
+
+**Phase 1 — CSS 變數收斂 + 深色模式**（commit `23bcab7`／`f3666dd`）
+- [x] 約 50 處寫死顏色收斂成 CSS 變數（畫面零視覺變化，純重構）
+- [x] 新增 `theme.js`：淺色／深色／跟隨系統三態切換，localStorage 記憶，`<html data-theme>` 單一深色定義（不重複寫 media query）
+- [x] 深色模式下 3 處語意會失效的既有規則已個別處理（`.dot` 白色圓心、`.bar-partial` 半透明白、圖表色提亮降飽和）
+
+**Phase 2 — 心率區間 Z6 修正**（commit `1f653c7`）
+- [x] 查明根因：Garmin `hrTimeInZone_0~_6` 共 7 欄，`_0` 是暖身時間（275/286 場非零，真實資料）、`_6` 恆為裝置固定 padding（266 場全為 0）
+- [x] 實測發現 `sum(Z0~Z5) == duration_sec`，故百分比分母須含暖身時間，否則各區間佔比虛增
+- [x] 改為**固定顯示 Z1~Z5**（值為 0 也照列出，不因某場沒進某區間就少一列），暖身時間獨立列於圖表下方——此為 Fu 驗收時要求調整（原計畫是丟棄尾端連續 0，但跨場比較需要軸線一致）
+
+**Phase 3 — 跨圖同步參考線**（commit `298b3fc`）
+- [x] Fu 參考 Garmin Connect 畫面，要求把「單圖各自浮動 tooltip」改成「多圖同步垂直參考線＋各圖內部顯示數值標籤」
+- [x] 分 3 個獨立同步群組（單場分析＝經過時間、跨場趨勢＝場次日期、每日身體狀況＝逐日日期），心率區間圖（無時間軸）維持單圖 tooltip
+- [x] 途中修正：離散模式圖表（分圈圖／週跑量）原本無法被同步、觸控裝置 tap 後被 pointerleave 立即關閉
+
+**Phase 4 — 自訂時間區間**（commit `16d2ee7`）
+- [x] 後端用 `custom:YYYY-MM-DD:YYYY-MM-DD` 前綴，`resolve_range()` 單一入口零改動讓 6 端點取得能力，自訂區間不套用「錨定資料庫最新日」規則
+- [x] 前端 range 按鈕改後端 `/api/meta` 動態產生（不再 3 處各自硬編碼），新增日期選擇面板 + URL/localStorage 持久化
+- [x] 途中修正：面板 `[hidden]` 屬性被 CSS class 規則蓋過導致無法真正隱藏
+
+**Phase 5 — 指標自訂**（commit `03f363e`）
+- [x] 後端 `WELLNESS_METRIC_DEFS` 成唯一真實來源，開放 4 個新指標預設顯示（睡眠時長／HRV 週均／恢復時間／ACWR）、呼吸率預設隱藏（涵蓋率僅 17.6%）
+- [x] 前端新增「⚙ 自訂」面板：上下箭頭排序＋勾選顯隱（不用拖曳，HTML5 drag&drop 在行動瀏覽器無效）；localStorage 存 order/hidden 而非完整可見清單，未來後端加新指標不會被舊設定永久隱藏
+- [x] 途中修正：排序操作後面板自動關閉的可用性問題（改為保持開啟）
+- [x] 併入視覺微調：同步游標標籤日期改 `MM/DD` 補零格式（不含年份，避免擁擠）＋數值粗體；X 軸刻度字體 11px→13px（已驗證 5 種寬度零重疊）；訓練日標記從短豎線改為整欄背景色帶
+
+**Phase 6 — 行事曆檢視（未開始）**
+- [ ] 新端點 `GET /api/calendar?month=YYYY-MM`，月曆邊界用真實今天／當月，**刻意不走 `resolve_range()`**（該函式錨定資料庫最新日，會讓月曆被截斷）
+- [ ] 顯示全部運動類型（非僅跑步），用 `activity_type` 上色（`workout_type` 有 277/520 筆 NULL 不適合當主要顏色維度）
+- [ ] 前端新增第四個 panel（動到 `index.html` 版面結構，故排最後）；週一為週首、日期一律用 UTC，與現有 `weeklyVolume()` 慣例一致
+- [ ] 點擊日期格帶入既有 `selectSession()` 單場分析路徑
+
+> **驗證慣例**：每階段用 Playwright 寫自動化腳本（存於本機 scratchpad，不進版控）驗證互動行為 + 跑 `unittest`，全數通過後才請 Fu 用瀏覽器實際確認，通過才 commit。目前累計 106 項單元測試、逾百項 Playwright 檢查。
+
+> **接續方式**：API server 啟動指令不變（見上方），開瀏覽器連 `http://127.0.0.1:8000/?mock=0`。下一步是 Phase 6 行事曆，或先處理 Fu 提到「UI 格式還有很多想微調」的後續細節（尚未列出具體項目，需再次詢問）。
 
 ## Phase 2 — 訓練科學規則引擎（純程式邏輯，不依賴 AI）
 
