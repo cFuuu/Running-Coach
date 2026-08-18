@@ -35,7 +35,21 @@
     meta: null
   };
 
-  var VALID_RANGES = ['7d', '30d', '90d', '1y', 'all'];
+  // range 的合法值改由 /api/meta 的 ranges 動態提供（後端 RANGE_LABELS
+  // 是唯一真實來源），這裡只留一個防禦性 fallback：若 meta 還沒回來前
+  // 使用者就想操作（理論上不會發生，因為按鈕本身也是 meta 回來後才產生），
+  // 或 meta 請求失敗時，仍能辨識這 5 個預設值與 custom: 前綴格式。
+  var FALLBACK_RANGES = ['7d', '30d', '90d', '1y', 'all'];
+  var CUSTOM_RANGE_PREFIX = 'custom:';
+  var CUSTOM_RANGE_PATTERN = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/;
+
+  function isValidRangeKey(range) {
+    var known = (state.meta && state.meta.ranges)
+      ? state.meta.ranges.map(function (r) { return r.key; })
+      : FALLBACK_RANGES;
+    if (known.indexOf(range) !== -1) return true;
+    return CUSTOM_RANGE_PATTERN.test(range);
+  }
 
   // 八個身體狀況指標。契約規定不得呈現的那組電池指標（實測 100% NULL）已刻意排除。
   var WELLNESS_METRICS = [
@@ -971,14 +985,33 @@
 
   /**
    * 設定時間區間並重新載入。
-   * @param {string} range '7d'|'30d'|'90d'|'1y'|'all'
+   * @param {string} range '7d'|'30d'|'90d'|'1y'|'all'，或自訂區間
+   *   'custom:YYYY-MM-DD:YYYY-MM-DD'（見後端 dashboard_queries.CUSTOM_RANGE_PREFIX）
    */
   function setRange(range) {
-    if (VALID_RANGES.indexOf(range) === -1) return;
+    if (!isValidRangeKey(range)) return;
     if (state.range === range) return;
     state.range = range;
+    saveRangeToSettings(range);
+    syncRangeToUrl(range);
     updateRangeButtons();
     loadRangeData();
+  }
+
+  function saveRangeToSettings(range) {
+    if (window.Theme && window.Theme.saveSettings) window.Theme.saveSettings({ range: range });
+  }
+
+  /**
+   * 把目前的 range 同步進網址 query（用 replaceState，不新增瀏覽紀錄，
+   * 避免每切一次 range 使用者按上一頁就要按很多次）。讓 URL 可以直接
+   * 分享／加書籤，開啟時由 restoreInitialRange() 讀回。
+   */
+  function syncRangeToUrl(range) {
+    if (!window.history || !window.history.replaceState) return;
+    var url = new URL(window.location.href);
+    url.searchParams.set('range', range);
+    window.history.replaceState(null, '', url.toString());
   }
 
   /**
@@ -995,22 +1028,84 @@
   }
 
   function updateRangeButtons() {
-    var buttons = document.querySelectorAll('.range-btn');
+    var buttons = document.querySelectorAll('#range-switch .range-btn');
+    var isCustom = state.range.indexOf(CUSTOM_RANGE_PREFIX) === 0;
     Array.prototype.forEach.call(buttons, function (btn) {
       var active = btn.getAttribute('data-range') === state.range;
       btn.classList.toggle('is-active', active);
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+    var toggle = $('custom-range-toggle');
+    if (toggle) toggle.classList.toggle('is-active', isCustom);
   }
 
-  function bindRangeButtons() {
-    var buttons = document.querySelectorAll('.range-btn');
-    Array.prototype.forEach.call(buttons, function (btn) {
-      btn.addEventListener('click', function () {
-        setRange(btn.getAttribute('data-range'));
-      });
+  /**
+   * 依 /api/meta 回傳的 ranges 動態產生按鈕（後端 RANGE_LABELS 是唯一真實
+   * 來源）。找不到 meta.ranges 時退回 FALLBACK_RANGES 的固定標籤，確保
+   * meta 請求失敗時使用者仍能操作預設區間。
+   */
+  function renderRangeButtons() {
+    var container = $('range-switch');
+    if (!container) return;
+    clear(container);
+    var ranges = (state.meta && state.meta.ranges) || FALLBACK_RANGES.map(function (key) {
+      return { key: key, label: key };
+    });
+    ranges.forEach(function (r) {
+      var btn = h('button', 'range-btn', r.label);
+      btn.type = 'button';
+      btn.setAttribute('data-range', r.key);
+      btn.setAttribute('aria-pressed', r.key === state.range ? 'true' : 'false');
+      btn.addEventListener('click', function () { setRange(r.key); });
+      container.appendChild(btn);
     });
     updateRangeButtons();
+  }
+
+  /**
+   * 自訂區間面板：輸入 min/max 依 meta.data_bounds 限制在實際有資料的
+   * 範圍內，避免選到必然空白的區間。套用時關閉面板並呼叫既有的 setRange()
+   * 單一入口——自訂區間與預設區間共用同一條「設定 range → 重抓 → 重繪」
+   * 路徑，不另開一條。
+   */
+  function bindCustomRangePanel() {
+    var toggle = $('custom-range-toggle');
+    var panel = $('custom-range-panel');
+    var startInput = $('custom-range-start');
+    var endInput = $('custom-range-end');
+    var applyBtn = $('custom-range-apply');
+    if (!toggle || !panel || !startInput || !endInput || !applyBtn) return;
+
+    function closePanel() {
+      panel.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+    function openPanel() {
+      var bounds = state.meta && state.meta.data_bounds;
+      if (bounds) {
+        startInput.min = bounds.earliest_date;
+        startInput.max = bounds.latest_date;
+        endInput.min = bounds.earliest_date;
+        endInput.max = bounds.latest_date;
+      }
+      panel.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+    }
+
+    toggle.addEventListener('click', function () {
+      if (panel.hidden) openPanel(); else closePanel();
+    });
+    applyBtn.addEventListener('click', function () {
+      if (!startInput.value || !endInput.value) return;
+      if (startInput.value > endInput.value) return; // 起訖顛倒，交給使用者自行修正，不代為調換
+      setRange(CUSTOM_RANGE_PREFIX + startInput.value + ':' + endInput.value);
+      closePanel();
+    });
+    // 點擊面板外部收合（但不吃掉面板內部的點擊，也不影響其他委派事件）
+    document.addEventListener('click', function (evt) {
+      var container = $('custom-range');
+      if (container && !container.contains(evt.target)) closePanel();
+    });
   }
 
   // 視窗尺寸改變時重繪（X 軸刻度數量依容器寬度決定，需重算）
@@ -1028,11 +1123,34 @@
 
   // ------------------------------------------------------------ 啟動
 
+  /**
+   * 啟動時還原上次選過的 range：優先取網址 ?range=，其次是 localStorage
+   * 記住的選擇，都沒有才用預設 '30d'。網址參數優先於已儲存設定，讓
+   * 「複製網址分享」的情境（例如 ?range=custom:2026-01-01:2026-03-01）
+   * 能覆蓋使用者自己之前選的區間。這裡只做格式檢查（custom: 的日期格式）
+   * 而非完整的 isValidRangeKey()——meta 此時還沒回來，FALLBACK_RANGES
+   * 已足夠涵蓋兩種情況（列舉值或 custom: 格式皆可通過格式檢查）。
+   */
+  function restoreInitialRange() {
+    var params = new URLSearchParams(window.location.search);
+    var fromUrl = params.get('range');
+    if (fromUrl && (FALLBACK_RANGES.indexOf(fromUrl) !== -1 || CUSTOM_RANGE_PATTERN.test(fromUrl))) {
+      state.range = fromUrl;
+      return;
+    }
+    var settings = window.Theme && window.Theme.getSettings ? window.Theme.getSettings() : null;
+    var fromSettings = settings && settings.range;
+    if (fromSettings && (FALLBACK_RANGES.indexOf(fromSettings) !== -1 || CUSTOM_RANGE_PATTERN.test(fromSettings))) {
+      state.range = fromSettings;
+    }
+  }
+
   function init() {
     if (window.Theme) window.Theme.init();
-    bindRangeButtons();
+    restoreInitialRange();
     bindResize();
     bindTooltipDelegation();
+    bindCustomRangePanel();
 
     api('/api/meta').then(function (meta) {
       state.meta = meta;
@@ -1040,10 +1158,12 @@
         state.athleteId = meta.athlete.id;
       }
       renderMeta();
+      renderRangeButtons(); // 依 meta.ranges 動態產生，需等 meta 回來
     }).catch(function (err) {
       var notice = $('notice-bar');
       clear(notice);
       notice.appendChild(h('span', 'state-error-inline', '無法取得基本資訊：' + err.message));
+      renderRangeButtons(); // meta 失敗仍要能操作，退回 FALLBACK_RANGES
     });
 
     loadRangeData();

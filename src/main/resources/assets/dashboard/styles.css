@@ -91,6 +91,8 @@
   --tag-planned-border: #c6d8ea;
   --tag-planned-text: #2b5479;
 
+  --panel-shadow: rgba(0, 0, 0, 0.12);
+
   --radius: 10px;
   --gap: 16px;
 }
@@ -230,6 +232,71 @@ h1, h2, h3 {
 .theme-btn:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 1px;
+}
+
+/* 自訂區間：切換鈕本身複用 .range-btn 樣式，面板絕對定位於切換鈕之下。
+   position:relative 只放在這個小容器上（而非整個 .site-header），
+   避免影響 header 其餘元素既有的 flex 排版脈絡。 */
+.custom-range {
+  position: relative;
+}
+
+.custom-range-toggle,
+#custom-range-toggle {
+  min-height: 44px;
+}
+
+.custom-range-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px var(--panel-shadow);
+}
+
+/* [hidden] 屬性的瀏覽器內建樣式是 UA stylesheet 的低特異性規則，
+   會被上面的 .custom-range-panel{display:flex} 蓋過，必須顯式加回來。 */
+.custom-range-panel[hidden] {
+  display: none;
+}
+
+.custom-range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.custom-range-field input[type="date"] {
+  min-height: 40px;
+  padding: 6px 8px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.custom-range-apply {
+  min-height: 40px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .notice-bar {
@@ -914,4 +981,6 @@ h1, h2, h3 {
   --tag-planned-bg: #1f2e3a;
   --tag-planned-border: #2e4558;
   --tag-planned-text: #8fbde0;
+
+  --panel-shadow: rgba(0, 0, 0, 0.5);
 }

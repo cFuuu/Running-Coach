@@ -50,6 +50,20 @@
   }
 
   var RANGE_DAYS = { '7d': 7, '30d': 30, '90d': 90, '1y': 365, 'all': 2500 };
+  var CUSTOM_RANGE_PATTERN = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/;
+
+  /**
+   * 把 range 參數換算成 {start, end} 日期字串。支援 custom:YYYY-MM-DD:YYYY-MM-DD
+   * ——與後端 dashboard_queries.resolve_range() 的兩種路徑對應，讓假資料模式
+   * 也能驗證自訂區間（否則 Phase 4 的功能在 mock 模式下永遠測不到）。
+   * 4 個原本各自重複 `var days = RANGE_DAYS[range] || 30` 的函式收斂成呼叫這裡。
+   */
+  function resolveWindow(range) {
+    var custom = CUSTOM_RANGE_PATTERN.exec(range);
+    if (custom) return { start: custom[1], end: custom[2] };
+    var days = RANGE_DAYS[range] || 30;
+    return { start: dateMinus(days - 1), end: BASE_DATE };
+  }
 
   // ---- 假的活動清單（涵蓋各種 workout_type 與缺值狀況）----
   var WORKOUT_TYPES = ['easy', 'tempo', 'interval', 'lsd', 'race', 'recovery', 'unknown', null];
@@ -268,16 +282,21 @@
   ];
 
   function buildWellness(range) {
-    var days = RANGE_DAYS[range] || 30;
+    var window = resolveWindow(range);
+    var startMs = Date.parse(window.start + 'T00:00:00Z');
+    var endMs = Date.parse(window.end + 'T00:00:00Z');
+    var totalDays = Math.round((endMs - startMs) / 86400000) + 1;
     var metrics = {};
     METRIC_DEFS.forEach(function (def, idx) {
       var rnd = makeRandom(1000 + idx * 37);
       var earliest = dateMinus(def.coverageDaysAgo);
       var points = [];
-      for (var d = days - 1; d >= 0; d -= 1) {
-        var date = dateMinus(d);
+      for (var i = 0; i < totalDays; i += 1) {
+        var ms = startMs + i * 86400000;
+        var date = new Date(ms).toISOString().slice(0, 10);
+        var d = Math.round((Date.parse(BASE_DATE + 'T00:00:00Z') - ms) / 86400000);
         if (date < earliest) continue;              // 早於 coverage 的日期完全沒有點
-        if (d % def.gapMod === 3) continue;         // 刻意缺值 → 前端應斷線，不補 0
+        if (((d % def.gapMod) + def.gapMod) % def.gapMod === 3) continue; // 刻意缺值 → 前端應斷線，不補 0
         var v = def.base + (rnd() - 0.5) * 2 * def.spread + Math.sin(d / 11) * def.spread * 0.35;
         var value = def.decimals === 1 ? Math.round(v * 10) / 10 : Math.round(v);
         points.push({ date: date, value: value });
@@ -285,7 +304,7 @@
       points.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
       metrics[def.key] = {
         available: points.length > 0,
-        clipped: days > def.coverageDaysAgo,
+        clipped: window.start < earliest,
         coverage: { earliest_date: earliest, latest_date: BASE_DATE },
         points: points
       };
@@ -295,19 +314,18 @@
     });
     return {
       range: range,
-      start_date: dateMinus(days - 1),
-      end_date: BASE_DATE,
+      start_date: window.start,
+      end_date: window.end,
       metrics: metrics
     };
   }
 
   // ---- 訓練日 ----
   function buildTrainingDays(range) {
-    var days = RANGE_DAYS[range] || 30;
-    var start = dateMinus(days - 1);
+    var window = resolveWindow(range);
     var out = [];
     ALL_SESSIONS.forEach(function (s) {
-      if (s.date >= start && s.date <= BASE_DATE && out.indexOf(s.date) === -1) out.push(s.date);
+      if (s.date >= window.start && s.date <= window.end && out.indexOf(s.date) === -1) out.push(s.date);
     });
     out.sort();
     return { range: range, training_days: out };
@@ -315,11 +333,10 @@
 
   // ---- 恢復影響 ----
   function buildRecoveryImpact(range) {
-    var days = RANGE_DAYS[range] || 30;
-    var start = dateMinus(days - 1);
+    var window = resolveWindow(range);
     var impacts = [];
     ALL_SESSIONS.forEach(function (s) {
-      if (s.date < start || s.date > BASE_DATE) return;
+      if (s.date < window.start || s.date > window.end) return;
       var rnd = makeRandom(s.id * 31);
       var nextDate = new Date(s.date + 'T00:00:00Z');
       nextDate.setUTCDate(nextDate.getUTCDate() + 1);
@@ -348,13 +365,12 @@
   }
 
   function filterSessions(range) {
-    var days = RANGE_DAYS[range] || 30;
-    var start = dateMinus(days - 1);
-    var list = ALL_SESSIONS.filter(function (s) { return s.date >= start && s.date <= BASE_DATE; });
+    var window = resolveWindow(range);
+    var list = ALL_SESSIONS.filter(function (s) { return s.date >= window.start && s.date <= window.end; });
     return {
       range: range,
-      start_date: start,
-      end_date: BASE_DATE,
+      start_date: window.start,
+      end_date: window.end,
       sessions: list
     };
   }
@@ -365,6 +381,16 @@
       hrv_ms: { earliest_date: dateMinus(300), latest_date: BASE_DATE },
       activities: { earliest_date: dateMinus(2200), latest_date: BASE_DATE }
     },
+    // 與後端 dashboard_queries.RANGE_LABELS 一致，供 app.js 動態產生按鈕；
+    // mock 模式下也要提供，否則假資料模式測不到「後端驅動按鈕」這段邏輯。
+    ranges: [
+      { key: '7d', label: '7 天' },
+      { key: '30d', label: '30 天' },
+      { key: '90d', label: '90 天' },
+      { key: '1y', label: '1 年' },
+      { key: 'all', label: '全部' }
+    ],
+    data_bounds: { earliest_date: dateMinus(2200), latest_date: BASE_DATE },
     notice: '此服務僅供區網存取且無身分驗證，切勿對外網開放。（目前顯示的是開發用虛構假資料）'
   };
 
