@@ -53,3 +53,7 @@ tmp/
 temp/
 *.tmp
 *.bak
+
+# Agent skill tooling (matt-pocock-skills) — personal workflow tooling, not project code
+.agents/
+.claude/skills/
