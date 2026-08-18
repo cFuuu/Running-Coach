@@ -13,11 +13,15 @@
 :root {
   --bg: #f5f6f8;
   --surface: #ffffff;
+  --surface-sunken: #fafbfc;
   --border: #dfe3e8;
   --text: #1f2933;
   --text-muted: #66727f;
   --accent: #2f6f4f;
   --accent-soft: #e3f0e8;
+  --accent-border: #bcd9c8;
+  --accent-text: #1f5238;
+  --on-accent: #fff;
 
   /* 圖表色（同時考慮色盲友善與列印可辨識度） */
   --c-pace: #2f6f4f;
@@ -28,8 +32,62 @@
   --c-grid: #eceff2;
   --c-axis: #b7bfc8;
 
+  /* 每日身體狀況 8 個指標各自的折線色 */
+  --c-metric-hrv_ms: #2f6f4f;
+  --c-metric-resting_hr_bpm: #c2452d;
+  --c-metric-spo2_pct: #2f6f9f;
+  --c-metric-sleep_score: #7a5aa8;
+  --c-metric-training_readiness_score: #b5762a;
+  --c-metric-stress_avg: #5a7a8f;
+  --c-metric-all_day_stress_avg: #8f5a7a;
+  --c-metric-steps: #4a8fb5;
+
+  /* 心率區間 0-5（0 為低於 Zone 1 的暖身時間） */
+  --c-zone-0: #9fb3c2;
+  --c-zone-1: #6fa8c9;
+  --c-zone-2: #4f9e6f;
+  --c-zone-3: #c9a13f;
+  --c-zone-4: #cf7a3a;
+  --c-zone-5: #c2452d;
+
+  --dot-fill: #fff;
+  --bar-track: #eef1f4;
+  --bar-partial-overlay: rgba(255, 255, 255, 0.45);
+
   --up: #b03a2e;
   --down: #2f6f4f;
+
+  --focus-ring: rgba(47, 111, 79, 0.4);
+
+  --notice-bg: #fdf6e0;
+  --notice-border: #f0e2b8;
+  --notice-text: #8a6d1f;
+
+  --error-text: #b03a2e;
+  --error-bg: #fdecea;
+  --error-border: #f3c6bf;
+  --error-strong-text: #8c2f21;
+
+  --badge-clipped-bg: #fdf1d8;
+  --badge-clipped-border: #edd9a8;
+  --badge-clipped-text: #7a5a14;
+  --badge-mock-bg: #ede2f7;
+  --badge-mock-border: #d4c1ea;
+  --badge-mock-text: #543878;
+
+  --tag-interval-bg: #fbe6de;
+  --tag-interval-border: #f0c3b3;
+  --tag-interval-text: #8f3a24;
+  --tag-tempo-bg: #fdf1d8;
+  --tag-tempo-border: #edd9a8;
+  --tag-tempo-text: #7a5a14;
+  --tag-race-bg: #ede2f7;
+  --tag-race-border: #d4c1ea;
+  --tag-race-text: #543878;
+  --tag-unknown-bg: #f0f2f4;
+  --tag-planned-bg: #eaf1f8;
+  --tag-planned-border: #c6d8ea;
+  --tag-planned-text: #2b5479;
 
   --radius: 10px;
   --gap: 16px;
@@ -129,12 +187,12 @@ h1, h2, h3 {
 .range-btn.is-active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
 .range-btn:focus-visible {
-  outline: 3px solid rgba(47, 111, 79, 0.4);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -143,9 +201,9 @@ h1, h2, h3 {
   margin: 0 auto;
   padding: 8px 16px;
   font-size: 0.8rem;
-  color: #8a6d1f;
-  background: #fdf6e0;
-  border-bottom: 1px solid #f0e2b8;
+  color: var(--notice-text);
+  background: var(--notice-bg);
+  border-bottom: 1px solid var(--notice-border);
 }
 
 .notice-bar:empty {
@@ -153,7 +211,7 @@ h1, h2, h3 {
 }
 
 .state-error-inline {
-  color: #b03a2e;
+  color: var(--error-text);
 }
 
 /* ------------------------------------------------------------ 版面 */
@@ -270,7 +328,7 @@ h1, h2, h3 {
   color: var(--text-muted);
   font-size: 0.85rem;
   text-align: center;
-  background: #fafbfc;
+  background: var(--surface-sunken);
   border: 1px dashed var(--border);
   border-radius: 6px;
 }
@@ -316,17 +374,17 @@ h1, h2, h3 {
 .line-distance { stroke: var(--c-distance); }
 .line-te { stroke: var(--c-te); }
 
-.line-metric-hrv_ms { stroke: #2f6f4f; }
-.line-metric-resting_hr_bpm { stroke: #c2452d; }
-.line-metric-spo2_pct { stroke: #2f6f9f; }
-.line-metric-sleep_score { stroke: #7a5aa8; }
-.line-metric-training_readiness_score { stroke: #b5762a; }
-.line-metric-stress_avg { stroke: #5a7a8f; }
-.line-metric-all_day_stress_avg { stroke: #8f5a7a; }
-.line-metric-steps { stroke: #4a8fb5; }
+.line-metric-hrv_ms { stroke: var(--c-metric-hrv_ms); }
+.line-metric-resting_hr_bpm { stroke: var(--c-metric-resting_hr_bpm); }
+.line-metric-spo2_pct { stroke: var(--c-metric-spo2_pct); }
+.line-metric-sleep_score { stroke: var(--c-metric-sleep_score); }
+.line-metric-training_readiness_score { stroke: var(--c-metric-training_readiness_score); }
+.line-metric-stress_avg { stroke: var(--c-metric-stress_avg); }
+.line-metric-all_day_stress_avg { stroke: var(--c-metric-all_day_stress_avg); }
+.line-metric-steps { stroke: var(--c-metric-steps); }
 
 .dot {
-  fill: #fff;
+  fill: var(--dot-fill);
   stroke-width: 1.4;
 }
 
@@ -346,19 +404,19 @@ h1, h2, h3 {
 
 /* 不足 1km 的最後一圈：用半透明條紋區隔，避免誤讀為完整一圈 */
 .bar-partial {
-  fill: rgba(255, 255, 255, 0.45);
+  fill: var(--bar-partial-overlay);
 }
 
 .bar-track {
-  fill: #eef1f4;
+  fill: var(--bar-track);
 }
 
-.bar-zone-0 { fill: #9fb3c2; }
-.bar-zone-1 { fill: #6fa8c9; }
-.bar-zone-2 { fill: #4f9e6f; }
-.bar-zone-3 { fill: #c9a13f; }
-.bar-zone-4 { fill: #cf7a3a; }
-.bar-zone-5 { fill: #c2452d; }
+.bar-zone-0 { fill: var(--c-zone-0); }
+.bar-zone-1 { fill: var(--c-zone-1); }
+.bar-zone-2 { fill: var(--c-zone-2); }
+.bar-zone-3 { fill: var(--c-zone-3); }
+.bar-zone-4 { fill: var(--c-zone-4); }
+.bar-zone-5 { fill: var(--c-zone-5); }
 
 .training-marker {
   stroke: var(--c-hr);
@@ -407,7 +465,7 @@ h1, h2, h3 {
 }
 
 .stat-card {
-  background: #fafbfc;
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
@@ -470,26 +528,26 @@ h1, h2, h3 {
   border-radius: 12px;
   font-size: 0.76rem;
   border: 1px solid var(--border);
-  background: #fafbfc;
+  background: var(--surface-sunken);
   color: var(--text-muted);
 }
 
 .tag-type {
   background: var(--accent-soft);
-  border-color: #bcd9c8;
-  color: #1f5238;
+  border-color: var(--accent-border);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
-.tag-type-interval { background: #fbe6de; border-color: #f0c3b3; color: #8f3a24; }
-.tag-type-tempo { background: #fdf1d8; border-color: #edd9a8; color: #7a5a14; }
-.tag-type-race { background: #ede2f7; border-color: #d4c1ea; color: #543878; }
-.tag-type-unknown { background: #f0f2f4; border-color: var(--border); color: var(--text-muted); }
+.tag-type-interval { background: var(--tag-interval-bg); border-color: var(--tag-interval-border); color: var(--tag-interval-text); }
+.tag-type-tempo { background: var(--tag-tempo-bg); border-color: var(--tag-tempo-border); color: var(--tag-tempo-text); }
+.tag-type-race { background: var(--tag-race-bg); border-color: var(--tag-race-border); color: var(--tag-race-text); }
+.tag-type-unknown { background: var(--tag-unknown-bg); border-color: var(--border); color: var(--text-muted); }
 
 .tag-planned {
-  background: #eaf1f8;
-  border-color: #c6d8ea;
-  color: #2b5479;
+  background: var(--tag-planned-bg);
+  border-color: var(--tag-planned-border);
+  color: var(--tag-planned-text);
 }
 
 .tag-muted {
@@ -528,7 +586,7 @@ h1, h2, h3 {
   text-align: left;
   font-family: inherit;
   font-size: 0.85rem;
-  background: #fafbfc;
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -546,7 +604,7 @@ h1, h2, h3 {
 }
 
 .session-card:focus-visible {
-  outline: 3px solid rgba(47, 111, 79, 0.4);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -595,21 +653,21 @@ h1, h2, h3 {
 
 .state-loading {
   color: var(--text-muted);
-  background: #fafbfc;
+  background: var(--surface-sunken);
   border: 1px dashed var(--border);
   text-align: center;
 }
 
 .state-unavailable {
   color: var(--text-muted);
-  background: #fafbfc;
+  background: var(--surface-sunken);
   border: 1px dashed var(--border);
 }
 
 .state-error {
-  color: #8c2f21;
-  background: #fdecea;
-  border: 1px solid #f3c6bf;
+  color: var(--error-strong-text);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -624,15 +682,15 @@ h1, h2, h3 {
 }
 
 .badge-clipped {
-  background: #fdf1d8;
-  border: 1px solid #edd9a8;
-  color: #7a5a14;
+  background: var(--badge-clipped-bg);
+  border: 1px solid var(--badge-clipped-border);
+  color: var(--badge-clipped-text);
 }
 
 .badge-mock {
-  background: #ede2f7;
-  border: 1px solid #d4c1ea;
-  color: #543878;
+  background: var(--badge-mock-bg);
+  border: 1px solid var(--badge-mock-border);
+  color: var(--badge-mock-text);
 }
 
 /* ------------------------------------------------------------ 頁尾 */
