@@ -175,6 +175,84 @@ window.Charts = (function () {
     return div;
   }
 
+  // ---------------------------------------------------------------- Tooltip／同步游標命中層
+  //
+  // 本檔仍是純函式：這裡只負責「附加命中資料」，不 addEventListener、不碰
+  // document——實際綁事件、畫游標、顯示數值由 app.js 統一處理（見該檔的
+  // hover 委派邏輯）。命中資料以兩種形狀提供：
+  //
+  //   離散模式（attachDiscreteHitLayer）：資料項本來就少（分圈、週、5 個
+  //   zone），逐項各畫一個透明矩形，直接帶 tip 文字，app.js 只需命中測試、
+  //   用單圖浮動 tooltip 顯示。心率區間圖是離散模式且沒有連續時間軸，維持
+  //   單圖 tooltip，不參與下面的跨圖同步游標。
+  //
+  //   連續模式（buildContinuousHitMeta）：逐秒／長區間的資料點可能有數百到
+  //   上千筆，不逐點產生 DOM 元素。回傳一份 {box, xs, logicalXs, yOf, tips}：
+  //     - xs         該圖上每個資料點的螢幕 x 座標（viewBox 單位）
+  //     - logicalXs  對應的「邏輯 X 值」（單場分析是 elapsed_sec 數字；跨場
+  //                  趨勢/身體狀況是 date 字串），是跨圖同步游標的比對基準
+  //     - yOf(index) 依索引回傳該點在此圖的 y 座標（畫游標與圓點要用）
+  //     - tips       與 xs 一一對應的顯示文字
+  //   app.js 在群組內任一圖 hover 時，先用該圖的 xs 反查出 logicalXs，
+  //   再用這個 logicalXs 去同群組「每一張圖」各自的 logicalXs 陣列二分搜尋，
+  //   找出各圖對應點的 x/y，畫出同一條垂直線與各自的數值——這就是 Garmin
+  //   風格「跨圖同步參考線」的資料基礎。單圖內的二分搜尋與群組同步共用同一份
+  //   meta，不必為兩種互動各存一份資料。
+
+  /**
+   * 離散模式：每個資料項一個透明命中矩形，掛在 svg 最後方。
+   * @param {SVGElement} svg
+   * @param {Array} items [{x, y, width, height, tip}]（tip 為要顯示的文字）
+   */
+  function attachDiscreteHitLayer(svg, items) {
+    items.forEach(function (item) {
+      svg.appendChild(el('rect', {
+        x: item.x, y: item.y, width: Math.max(item.width, 0), height: Math.max(item.height, 0),
+        class: 'hit', fill: 'transparent', 'data-tip': item.tip
+      }));
+    });
+  }
+
+  /**
+   * 連續模式：組出供 app.js 二分搜尋與跨圖同步游標使用的 meta。
+   * @param {Object} box {left, top, width, height}
+   * @param {Array} xs 遞增排序的螢幕 x 座標（viewBox 單位）
+   * @param {Array} logicalXs 與 xs 一一對應的邏輯 X 值（數字或可比較字串）
+   * @param {Function} yOf (index) => y 座標；缺值回傳 null（不畫該點）
+   * @param {Array} tips 與 xs 一一對應的顯示文字
+   */
+  function buildContinuousHitMeta(box, xs, logicalXs, yOf, tips) {
+    return { box: box, xs: xs, logicalXs: logicalXs, yOf: yOf, tips: tips };
+  }
+
+  /**
+   * 在 box 範圍內疊一個透明命中矩形並掛上 meta（供 app.js 用
+   * event.target.__chartHitMeta 讀取單圖二分搜尋），連續模式專用。
+   * 同時把 meta 掛在 svg.__syncMeta——這是群組同步游標的讀取點，與
+   * event.target.__chartHitMeta 分開存放：前者「該圖是否參與同步」不該
+   * 綁死在某個特定 DOM 元素上（離散模式圖表如分圈圖，主動觸發同步用不到
+   * 覆蓋矩形，但仍需要被其他圖的同步游標找到），見下方 attachSyncMeta。
+   */
+  function attachContinuousHitLayer(svg, box, meta) {
+    var rect = el('rect', {
+      x: box.left, y: box.top, width: box.width, height: box.height,
+      class: 'hit', fill: 'transparent'
+    });
+    rect.__chartHitMeta = meta;
+    svg.appendChild(rect);
+    svg.__syncMeta = meta;
+  }
+
+  /**
+   * 讓一張「離散模式」圖表（沒有主動觸發同步用的覆蓋矩形，例如分圈圖、
+   * 週跑量長條圖）也能被同群組其他圖的同步游標找到並顯示對應數值。
+   * 與 attachContinuousHitLayer 的差異：這裡不畫覆蓋矩形（保留原本逐項
+   * 命中的互動），只掛 meta 供「被動接收」用。
+   */
+  function attachSyncMeta(svg, meta) {
+    svg.__syncMeta = meta;
+  }
+
   // ---------------------------------------------------------------- 1. 分圈配速長條圖
 
   /**
@@ -210,24 +288,33 @@ window.Charts = (function () {
     var slot = box.width / valid.length;
     var barWidth = Math.max(Math.min(slot * 0.68, 42), 3);
     var tickIdx = pickTickIndexes(valid.length, maxTickCount(options.containerWidth, 34));
+    var hitItems = [];
+    // 分圈本身沒有 elapsed_sec 欄位，只有各自的 duration_sec；累加算出每圈
+    // 「中點」的經過時間，作為與 records-chart（逐秒圖）同步游標比對的
+    // 邏輯 X——兩圖同屬單場分析同步群組，見 app.js 的 SYNC_GROUPS。
+    var cumulativeSec = 0;
+    var lapLogicalXs = [];
+    var lapYs = [];
 
     valid.forEach(function (lap, i) {
       var cx = box.left + slot * (i + 0.5);
       var ratio = (baseline - lap.pace_sec_per_km) / (baseline - top);
       var h = Math.max(ratio * box.height, 1);
-      svg.appendChild(el('rect', {
+      var barY = box.top + box.height - h;
+      var bar = el('rect', {
         x: cx - barWidth / 2,
-        y: box.top + box.height - h,
+        y: barY,
         width: barWidth,
         height: h,
         rx: 2,
         class: 'bar bar-pace'
-      }));
+      });
+      svg.appendChild(bar);
       // 每圈的距離不足 1km 時（最後一圈）用不同樣式標示
       if (typeof lap.distance_km === 'number' && lap.distance_km < 0.95) {
         svg.appendChild(el('rect', {
           x: cx - barWidth / 2,
-          y: box.top + box.height - h,
+          y: barY,
           width: barWidth,
           height: h,
           rx: 2,
@@ -239,16 +326,37 @@ window.Charts = (function () {
           x: cx, y: box.top + box.height + 18, class: 'tick-label', 'text-anchor': 'middle'
         }));
       }
-      var title = el('title');
-      title.textContent = '第 ' + lap.lap + ' 圈 ・ ' + formatNumber(lap.distance_km, 2) + ' km ・ '
+      var tip = '第 ' + lap.lap + ' 圈 ・ ' + formatNumber(lap.distance_km, 2) + ' km ・ '
         + formatPace(lap.pace_sec_per_km) + '/km'
         + (lap.avg_hr_bpm ? ' ・ ' + lap.avg_hr_bpm + ' bpm' : '');
-      svg.lastChild.appendChild(title);
+      var title = el('title');
+      title.textContent = tip;
+      bar.appendChild(title); // 掛在 bar 本身（而非 svg.lastChild），避免被 bar-partial／tick label 覆蓋掉
+      hitItems.push({ x: cx - slot / 2, y: box.top, width: slot, height: box.height, tip: tip });
+
+      var dur = typeof lap.duration_sec === 'number' && isFinite(lap.duration_sec) ? lap.duration_sec : 0;
+      lapLogicalXs.push(cumulativeSec + dur / 2);
+      lapYs.push(barY);
+      cumulativeSec += dur;
     });
 
     svg.appendChild(text('圈數（km）', {
       x: box.left + box.width / 2, y: height - 6, class: 'axis-title', 'text-anchor': 'middle'
     }));
+    attachDiscreteHitLayer(svg, hitItems); // 必須最後 append，見上方架構註解
+
+    // 被動同步 meta：不畫額外覆蓋矩形（保留上面逐圈 hover 的互動），
+    // 只供 records-chart 觸發同步時，這張圖能反查對應圈並畫游標。
+    var lapTips = valid.map(function (lap) {
+      return '第 ' + lap.lap + ' 圈 ' + formatPace(lap.pace_sec_per_km) + '/km';
+    });
+    attachSyncMeta(svg, buildContinuousHitMeta(
+      box,
+      valid.map(function (_, i) { return box.left + slot * (i + 0.5); }),
+      lapLogicalXs,
+      function (i) { return lapYs[i]; },
+      lapTips
+    ));
     return svg;
   }
 
@@ -328,6 +436,39 @@ window.Charts = (function () {
     svg.appendChild(text('經過時間', {
       x: box.left + box.width / 2, y: height - 6, class: 'axis-title', 'text-anchor': 'middle'
     }));
+
+    // 逐秒資料點多達數百筆，不逐點畫 DOM（見檔頭 Tooltip 命中層說明），
+    // 改用連續模式：app.js 依 pointer 的 x 座標二分搜尋 xs 陣列找最近點，
+    // logicalXs 用 elapsed_sec（單場分析群組的同步基準，見 index.html
+    // #session-body 內各圖共用「經過時間」這條軸）。
+    var xs = points.map(xOf);
+    var logicalXs = points.map(function (p) { return p.elapsed_sec; });
+    var tips = points.map(function (p) {
+      var parts = [formatDuration(p.elapsed_sec)];
+      if (typeof p.pace_sec_per_km === 'number' && isFinite(p.pace_sec_per_km)) {
+        parts.push(formatPace(p.pace_sec_per_km) + '/km');
+      }
+      if (typeof p.hr_bpm === 'number' && isFinite(p.hr_bpm)) {
+        parts.push(p.hr_bpm + ' bpm');
+      }
+      return parts.join(' ・ ');
+    });
+    // yOf 優先回傳配速軸的 y（同步游標的圓點畫在配速線上），無配速資料時
+    // 退回心率軸，兩者皆無則回傳 null（該點不畫圓點，但垂直線仍會畫出）。
+    function yOfIndex(i) {
+      var p = points[i];
+      if (paceExtent && typeof p.pace_sec_per_km === 'number' && isFinite(p.pace_sec_per_km)) {
+        var clamped = Math.min(Math.max(p.pace_sec_per_km, paceExtent.min), paceExtent.max);
+        var ratio = (paceExtent.max - clamped) / (paceExtent.max - paceExtent.min);
+        return box.top + box.height - ratio * box.height;
+      }
+      if (hrExtent && typeof p.hr_bpm === 'number' && isFinite(p.hr_bpm)) {
+        var r = (p.hr_bpm - hrExtent.min) / (hrExtent.max - hrExtent.min);
+        return box.top + box.height - r * box.height;
+      }
+      return null;
+    }
+    attachContinuousHitLayer(svg, box, buildContinuousHitMeta(box, xs, logicalXs, yOfIndex, tips));
     return svg;
   }
 
@@ -373,6 +514,7 @@ window.Charts = (function () {
     // 保留參數是為了與其他圖表統一簽名，供未來（如 Phase 3 tooltip）沿用同一介面。
     void options.containerWidth;
 
+    var hitItems = [];
     zones.forEach(function (z, i) {
       var y = box.top + i * rowH;
       var barH = Math.min(rowH * 0.62, 20);
@@ -391,7 +533,12 @@ window.Charts = (function () {
       svg.appendChild(text(formatDuration(z.seconds) + '（' + pct.toFixed(0) + '%）', {
         x: box.left + box.width + 8, y: y + rowH / 2 + 4, class: 'tick-label', 'text-anchor': 'start'
       }));
+      hitItems.push({
+        x: box.left, y: y, width: box.width + 96, height: rowH,
+        tip: 'Z' + z.zone + ' ・ ' + formatDuration(z.seconds) + '（' + pct.toFixed(0) + '%）'
+      });
     });
+    attachDiscreteHitLayer(svg, hitItems);
     return svg;
   }
 
@@ -464,6 +611,20 @@ window.Charts = (function () {
         x: xOf(series[i], i), y: box.top + box.height + 17, class: 'tick-label', 'text-anchor': 'middle'
       }));
     });
+
+    // 連續模式：range=1y/all 時 series 可能遠超過 90 筆（見上方 circle 的
+    // 條件式判斷），此時完全沒有 per-point 元素可 hover，故一律額外提供
+    // 命中 meta。logicalXs 用 date 字串（跨場趨勢群組的同步基準）——場次
+    // 日期字串是 ISO 格式（YYYY-MM-DD），字典序比較與時間序一致，可直接
+    // 拿來在同群組其他圖（週跑量長條圖）的 logicalXs 陣列做二分搜尋。
+    var xsAll = series.map(xOf);
+    var logicalXsAll = series.map(function (item) { return item.date; });
+    var tipsAll = series.map(function (item) {
+      return item.date + '：' + (typeof item.value === 'number' && isFinite(item.value)
+        ? formatter(item.value) : '無資料');
+    });
+    function yOfIndexTrend(i) { return yOf(series[i]); }
+    attachContinuousHitLayer(svg, box, buildContinuousHitMeta(box, xsAll, logicalXsAll, yOfIndexTrend, tipsAll));
     return svg;
   }
 
@@ -471,7 +632,8 @@ window.Charts = (function () {
 
   /**
    * 通用垂直長條圖，用於週跑量。
-   * @param {Array} bars [{label, value}]
+   * @param {Array} bars [{label, value, weekStart}]（weekStart 為選填的
+   *   ISO 週一日期，用於跨圖同步游標時定位「滑鼠所在日期屬於哪一週」）
    */
   function barChart(bars, opts) {
     var options = opts || {};
@@ -492,13 +654,19 @@ window.Charts = (function () {
     var slot = box.width / bars.length;
     var barWidth = Math.max(Math.min(slot * 0.66, 46), 3);
     var tickIdx = pickTickIndexes(bars.length, maxTickCount(options.containerWidth, 60));
+    var hitItems = [];
+    var centers = [];
 
     bars.forEach(function (b, i) {
       var cx = box.left + slot * (i + 0.5);
-      if (typeof b.value === 'number' && isFinite(b.value)) {
+      centers.push(cx);
+      var hasValue = typeof b.value === 'number' && isFinite(b.value);
+      var barTop = box.top + box.height;
+      if (hasValue) {
         var h = (b.value / extent.max) * box.height;
+        barTop = box.top + box.height - h;
         var rect = el('rect', {
-          x: cx - barWidth / 2, y: box.top + box.height - h,
+          x: cx - barWidth / 2, y: barTop,
           width: barWidth, height: Math.max(h, 0), rx: 2,
           class: 'bar ' + (options.barClass || 'bar-volume')
         });
@@ -512,7 +680,33 @@ window.Charts = (function () {
           x: cx, y: box.top + box.height + 17, class: 'tick-label', 'text-anchor': 'middle'
         }));
       }
+      if (hasValue) {
+        hitItems.push({
+          x: cx - slot / 2, y: box.top, width: slot, height: box.height,
+          tip: b.label + '：' + formatter(b.value)
+        });
+      }
     });
+    attachDiscreteHitLayer(svg, hitItems);
+
+    // 若呼叫端提供 weekStart，額外附加被動同步 meta（不畫覆蓋矩形，保留
+    // 上面逐週的離散 hover）——同一群組（跨場趨勢）的其他圖以「日期」為
+    // 邏輯 X，這裡用每個 bar 所屬週的 weekStart 當邏輯 X，讓游標移到任一
+    // 天時能定位到對應週。
+    var hasWeekStart = bars.every(function (b) { return !!b.weekStart; });
+    if (hasWeekStart) {
+      var logicalXs = bars.map(function (b) { return b.weekStart; });
+      function yOfBar(i) {
+        var b = bars[i];
+        if (typeof b.value !== 'number' || !isFinite(b.value)) return null;
+        var h = (b.value / extent.max) * box.height;
+        return box.top + box.height - h;
+      }
+      var tips = bars.map(function (b) {
+        return b.label + '：' + (typeof b.value === 'number' && isFinite(b.value) ? formatter(b.value) : '無資料');
+      });
+      attachSyncMeta(svg, buildContinuousHitMeta(box, centers, logicalXs, yOfBar, tips));
+    }
     return svg;
   }
 
@@ -611,6 +805,20 @@ window.Charts = (function () {
         class: 'tick-label', 'text-anchor': 'middle'
       }));
     });
+
+    // 連續模式：range=1y/all 時 points 可能遠超過 120 筆（見上方 circle 的
+    // 條件式判斷），此時完全沒有 per-point 元素可 hover。只用有值的日期
+    // 建 xs/tips（points 本身已只含有值日期），缺值日期不會被反查命中。
+    var valuePoints = points.filter(function (p) {
+      return typeof p.value === 'number' && isFinite(p.value);
+    });
+    if (valuePoints.length > 0) {
+      var xsPts = valuePoints.map(function (p) { return xOfDate(p.date); });
+      var logicalXsPts = valuePoints.map(function (p) { return p.date; });
+      var tipsPts = valuePoints.map(function (p) { return p.date + '：' + formatter(p.value); });
+      function yOfIndexWellness(i) { return yOf(valuePoints[i].value); }
+      attachContinuousHitLayer(svg, box, buildContinuousHitMeta(box, xsPts, logicalXsPts, yOfIndexWellness, tipsPts));
+    }
     return svg;
   }
 
