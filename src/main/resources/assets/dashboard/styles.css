@@ -460,6 +460,43 @@ h1, h2, h3 {
   opacity: 0.65;
 }
 
+/* Tooltip 命中層：透明矩形，只用來接收 pointer 事件，本身不可見。
+   fill:transparent（而非 none）是必要的——none 會讓該區域完全不接收指標事件，
+   等於命中層失效。 */
+.hit {
+  cursor: crosshair;
+}
+
+/* 跨圖同步參考線（仿 Garmin Connect）：同一同步群組內的圖 hover 時，
+   每張圖各自畫一條貫穿高度的垂直線＋一個圓點，標示「同一時刻」的位置。
+   pointer-events:none 避免這層本身擋住底下的 .hit 命中層。 */
+.sync-cursor-layer {
+  pointer-events: none;
+}
+
+.sync-cursor-line {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.sync-cursor-dot {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.sync-cursor-label rect {
+  fill: var(--text);
+  opacity: 0.92;
+}
+
+.sync-cursor-label text {
+  fill: var(--surface);
+  font-size: 11px;
+  font-family: inherit;
+}
+
 /* ------------------------------------------------------------ 圖例 */
 
 .legend {
@@ -727,6 +764,36 @@ h1, h2, h3 {
   background: var(--badge-mock-bg);
   border: 1px solid var(--badge-mock-border);
   color: var(--badge-mock-text);
+}
+
+/* ------------------------------------------------------------ Tooltip
+ *
+ * 全頁單一 tooltip 元素（由 app.js 建立、position:fixed 依 pointer 座標
+ * 定位），不是每張圖各自一個。pointer-events:none 讓它絕不擋住底下的
+ * hit 矩形，否則滑鼠移到 tooltip 上方會誤觸發 pointerleave。
+ */
+.chart-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  /* 跨圖同步游標會把同群組多張圖的數值用換行組成一則訊息，
+     pre-line 讓 textContent 內的 \n 實際換行顯示 */
+  white-space: pre-line;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.08s ease-out;
+}
+
+.chart-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ------------------------------------------------------------ 頁尾 */
