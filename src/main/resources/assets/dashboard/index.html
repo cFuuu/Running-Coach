@@ -33,12 +33,25 @@
     <div class="header-inner">
       <h1 class="site-title">訓練儀表板</h1>
       <div class="meta-info" id="meta-info"></div>
-      <div class="range-switch" role="group" aria-label="時間區間切換">
-        <button type="button" class="range-btn" data-range="7d" aria-pressed="false">7 天</button>
-        <button type="button" class="range-btn" data-range="30d" aria-pressed="true">30 天</button>
-        <button type="button" class="range-btn" data-range="90d" aria-pressed="false">90 天</button>
-        <button type="button" class="range-btn" data-range="1y" aria-pressed="false">1 年</button>
-        <button type="button" class="range-btn" data-range="all" aria-pressed="false">全部</button>
+      <!--
+        range 按鈕由 app.js 依 /api/meta 回傳的 ranges 動態產生（後端
+        RANGE_LABELS 是唯一真實來源），不在 HTML 寫死——避免這裡、
+        app.js、後端三處各自維護一份清單而漂移。
+      -->
+      <div class="range-switch" role="group" aria-label="時間區間切換" id="range-switch"></div>
+      <div class="custom-range" id="custom-range">
+        <button type="button" class="range-btn" id="custom-range-toggle" aria-expanded="false">自訂區間</button>
+        <div class="custom-range-panel" id="custom-range-panel" hidden>
+          <label class="custom-range-field">
+            起
+            <input type="date" id="custom-range-start">
+          </label>
+          <label class="custom-range-field">
+            訖
+            <input type="date" id="custom-range-end">
+          </label>
+          <button type="button" class="custom-range-apply" id="custom-range-apply">套用</button>
+        </div>
       </div>
       <div class="theme-switch" role="group" aria-label="主題切換">
         <button type="button" class="theme-btn" data-theme-choice="light" aria-pressed="false" title="淺色">☀</button>

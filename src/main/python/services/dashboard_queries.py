@@ -36,6 +36,13 @@ RANGE_DAYS: dict[str, int | None] = {
 }
 DEFAULT_RANGE = "30d"
 
+# 自訂區間用這個前綴表示：custom:YYYY-MM-DD:YYYY-MM-DD。
+# 選這個表示法（而非替每個端點加 start_date/end_date 參數）是因為
+# resolve_range() 是所有 range-based 端點的單一入口，回傳值本來就是
+# {range, start_date, end_date} 起訖日形狀——用前綴字串讓 6 個端點
+# 零改動就能支援自訂區間，不必動路由層簽章與前端每個呼叫點。
+CUSTOM_RANGE_PREFIX = "custom:"
+
 # 視為「跑步類」的 activity_type。跟 fit_import_runner 的比較集合一樣，
 # 這是可調整的參數而非寫死的假設——之後要把其他運動也納入單場分析時擴充這裡即可。
 RUNNING_ACTIVITY_TYPES: tuple[str, ...] = ("running", "treadmill_running", "track_running", "trail_running")
@@ -72,6 +79,18 @@ MANUAL_LAP_SPLIT_TYPE = 17
 # 服務性質提醒，隨 /api/meta 一起回給前端顯示（見 api/app.py 的安全性說明）
 SERVICE_NOTICE = "此服務僅供區網存取且無身分驗證，切勿對外網開放。"
 
+# 預設 range 選項的顯示標籤，隨 /api/meta 一起回給前端。後端是這份清單的
+# 唯一真實來源——前端依此動態產生按鈕，不再各自硬編碼一份 range 清單
+# （原本 index.html 的 5 個按鈕、app.js 的 VALID_RANGES、這裡的 RANGE_DAYS
+# 三處各自維護，容易漂移）。
+RANGE_LABELS: dict[str, str] = {
+    "7d": "7 天",
+    "30d": "30 天",
+    "90d": "90 天",
+    "1y": "1 年",
+    "all": "全部",
+}
+
 
 # --------------------------------------------------------------------------
 # 共用工具
@@ -91,6 +110,44 @@ def resolve_athlete_id(conn: sqlite3.Connection, athlete_id: int | None = None) 
     return row["id"] if row else None
 
 
+def is_valid_range(range_key: str) -> bool:
+    """range 參數的合法性判斷單一入口。路由層（HTTP 400）與查詢層
+    （ValueError）都呼叫這個函式，避免兩邊各自維護一份判斷邏輯而漂移。
+    """
+    if range_key in RANGE_DAYS:
+        return True
+    if range_key.startswith(CUSTOM_RANGE_PREFIX):
+        try:
+            parse_range(range_key)
+            return True
+        except ValueError:
+            return False
+    return False
+
+
+def parse_range(range_key: str) -> tuple[datetime.date, datetime.date] | None:
+    """解析 custom:YYYY-MM-DD:YYYY-MM-DD，回傳 (start, end)。
+
+    非 custom 前綴回傳 None（呼叫端走既有的 RANGE_DAYS 邏輯）。
+    格式錯誤、日期不合法、或 start > end 一律 raise ValueError，
+    訊息面向使用者（會被路由層轉成 HTTP 400 的 detail）。
+    """
+    if not range_key.startswith(CUSTOM_RANGE_PREFIX):
+        return None
+    body = range_key[len(CUSTOM_RANGE_PREFIX):]
+    parts = body.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"自訂區間格式錯誤，應為 custom:YYYY-MM-DD:YYYY-MM-DD：{range_key}")
+    try:
+        start = datetime.date.fromisoformat(parts[0])
+        end = datetime.date.fromisoformat(parts[1])
+    except ValueError as exc:
+        raise ValueError(f"自訂區間日期格式錯誤（需 YYYY-MM-DD）：{range_key}") from exc
+    if start > end:
+        raise ValueError(f"自訂區間的起日不可晚於訖日：{range_key}")
+    return start, end
+
+
 def resolve_range(
     conn: sqlite3.Connection,
     athlete_id: int | None,
@@ -99,12 +156,23 @@ def resolve_range(
 ) -> dict:
     """把 range 參數換算成起訖日字串，回傳 {"range", "start_date", "end_date"}。
 
-    end_date 用「資料庫裡該 athlete 最新的一天」而非系統今天——匯出包的資料
-    可能落後現實好幾天，用系統今天會讓 7d 視窗大半是空的。查不到任何資料時
-    才退回系統今天。start_date 為 None 代表 range="all"（不設下界）。
+    兩種路徑：
+    - 預設列舉（7d/30d/90d/1y/all）：end_date 用「資料庫裡該 athlete 最新的
+      一天」而非系統今天——匯出包的資料可能落後現實好幾天，用系統今天會讓
+      7d 視窗大半是空的。查不到任何資料時才退回系統今天。
+    - 自訂區間（custom:...）：直接使用使用者指定的起訖日，**不套用「錨定
+      最新資料日」規則**——使用者已經明確指定日期，錨定反而會違背其意圖
+      （例如使用者想看去年某段訓練，錨定會讓 end_date 跑到今天附近）。
+
+    start_date 為 None 代表 range="all"（不設下界）。
     """
+    custom = parse_range(range_key)
+    if custom is not None:
+        start, end = custom
+        return {"range": range_key, "start_date": start.isoformat(), "end_date": end.isoformat()}
+
     if range_key not in RANGE_DAYS:
-        raise ValueError(f"不支援的 range：{range_key}（合法值：{', '.join(RANGE_DAYS)}）")
+        raise ValueError(f"不支援的 range：{range_key}（合法值：{', '.join(RANGE_DAYS)} 或 {CUSTOM_RANGE_PREFIX}YYYY-MM-DD:YYYY-MM-DD）")
 
     end_date = _latest_data_date(conn, athlete_id) or (today or datetime.date.today())
     days = RANGE_DAYS[range_key]
@@ -148,7 +216,9 @@ def _round(value: Any, digits: int = 1) -> Any:
 
 
 def get_meta(conn: sqlite3.Connection, athlete_id: int | None = None) -> dict:
-    """回傳 athlete 基本資料與各指標的可用日期範圍。"""
+    """回傳 athlete 基本資料、各指標的可用日期範圍、預設 range 選項清單、
+    以及整體資料起訖日（供前端自訂日期選擇器的 min/max 使用）。
+    """
     resolved = resolve_athlete_id(conn, athlete_id)
     athlete = None
     if resolved is not None:
@@ -179,7 +249,21 @@ def get_meta(conn: sqlite3.Connection, athlete_id: int | None = None) -> dict:
                 "latest_date": row["latest_date"],
             }
 
-    return {"athlete": athlete, "metric_coverage": coverage, "notice": SERVICE_NOTICE}
+    data_bounds = None
+    if coverage:
+        earliest = min(c["earliest_date"] for c in coverage.values() if c["earliest_date"])
+        latest = max(c["latest_date"] for c in coverage.values() if c["latest_date"])
+        data_bounds = {"earliest_date": earliest, "latest_date": latest}
+
+    ranges = [{"key": key, "label": RANGE_LABELS[key]} for key in RANGE_DAYS]
+
+    return {
+        "athlete": athlete,
+        "metric_coverage": coverage,
+        "ranges": ranges,
+        "data_bounds": data_bounds,
+        "notice": SERVICE_NOTICE,
+    }
 
 
 # --------------------------------------------------------------------------

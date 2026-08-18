@@ -52,6 +52,49 @@ class TestRangeResolution(DashboardQueryTestCase):
         with self.assertRaises(ValueError):
             queries.resolve_range(self.conn, self.athlete_id, "42d")
 
+    # --- 自訂區間（custom:YYYY-MM-DD:YYYY-MM-DD） ---
+
+    def test_custom_range_parses_start_and_end(self):
+        window = queries.resolve_range(self.conn, self.athlete_id, "custom:2025-01-01:2025-01-31")
+        self.assertEqual(window["start_date"], "2025-01-01")
+        self.assertEqual(window["end_date"], "2025-01-31")
+        self.assertEqual(window["range"], "custom:2025-01-01:2025-01-31")
+
+    def test_custom_range_does_not_anchor_to_latest_data_date(self):
+        """自訂區間直接用使用者指定的日期，不套用「錨定資料庫最新日」規則——
+        fixture 的最新資料日是 2026-03-10，這裡指定的區間完全不相關，
+        end_date 應原樣是使用者指定的日期，不會被拉到 2026-03-10。"""
+        window = queries.resolve_range(self.conn, self.athlete_id, "custom:2020-06-01:2020-06-07")
+        self.assertEqual(window["end_date"], "2020-06-07")
+
+    def test_custom_range_start_after_end_raises(self):
+        with self.assertRaises(ValueError):
+            queries.resolve_range(self.conn, self.athlete_id, "custom:2025-02-01:2025-01-01")
+
+    def test_custom_range_malformed_date_raises(self):
+        with self.assertRaises(ValueError):
+            queries.resolve_range(self.conn, self.athlete_id, "custom:not-a-date:2025-01-01")
+
+    def test_custom_range_wrong_part_count_raises(self):
+        with self.assertRaises(ValueError):
+            queries.resolve_range(self.conn, self.athlete_id, "custom:2025-01-01")
+
+    def test_is_valid_range_accepts_enum_and_custom(self):
+        self.assertTrue(queries.is_valid_range("30d"))
+        self.assertTrue(queries.is_valid_range("all"))
+        self.assertTrue(queries.is_valid_range("custom:2025-01-01:2025-01-31"))
+
+    def test_is_valid_range_rejects_bad_values(self):
+        self.assertFalse(queries.is_valid_range("42d"))
+        self.assertFalse(queries.is_valid_range("custom:2025-02-01:2025-01-01"))
+        self.assertFalse(queries.is_valid_range("custom:garbage"))
+
+    def test_parse_range_returns_none_for_non_custom(self):
+        """parse_range() 對非 custom 前綴回傳 None，讓 resolve_range() 走既有
+        RANGE_DAYS 路徑——這個分界是既有 4 個 range 測試不需修改的關鍵。"""
+        self.assertIsNone(queries.parse_range("30d"))
+        self.assertIsNone(queries.parse_range("all"))
+
 
 class TestMeta(DashboardQueryTestCase):
     def test_meta_returns_athlete_and_coverage(self):
@@ -59,6 +102,21 @@ class TestMeta(DashboardQueryTestCase):
         self.assertEqual(meta["athlete"]["name"], FAKE_ATHLETE_NAME)
         self.assertEqual(meta["metric_coverage"]["hrv_ms"]["earliest_date"], "2026-02-20")
         self.assertIn("notice", meta)
+
+    def test_meta_ranges_is_single_source_of_truth_for_frontend(self):
+        """前端依此動態產生 range 按鈕，不再各自硬編碼一份清單。"""
+        meta = queries.get_meta(self.conn)
+        keys = [r["key"] for r in meta["ranges"]]
+        self.assertEqual(keys, list(queries.RANGE_DAYS.keys()))
+        for r in meta["ranges"]:
+            self.assertTrue(r["label"])  # 每個 key 都要有對應的顯示標籤
+
+    def test_meta_data_bounds_spans_all_metrics(self):
+        """data_bounds 供前端自訂日期選擇器的 min/max，取全部指標的聯集。"""
+        meta = queries.get_meta(self.conn)
+        self.assertIsNotNone(meta["data_bounds"])
+        self.assertIn("earliest_date", meta["data_bounds"])
+        self.assertIn("latest_date", meta["data_bounds"])
 
 
 class TestListSessions(DashboardQueryTestCase):
@@ -89,6 +147,21 @@ class TestListSessions(DashboardQueryTestCase):
     def test_session_row_has_date_derived_from_started_at(self):
         session = queries.list_sessions(self.conn, range_key="30d")["sessions"][0]
         self.assertEqual(session["date"], session["started_at"][:10])
+
+    def test_custom_range_filters_sessions_end_to_end(self):
+        """自訂區間精確框住 activity 500（2026-01-15，30d/all 已在上面測過），
+        驗證 custom: 前綴從 resolve_range() 到 list_sessions() 整條路徑接通。"""
+        titles = [
+            s["title"]
+            for s in queries.list_sessions(self.conn, range_key="custom:2026-01-10:2026-01-20")["sessions"]
+        ]
+        self.assertIn("測試舊資料跑", titles)
+        # 區間外的場次（例如落在 30d 視窗內的那場）不應出現
+        in_30d_only = [
+            s["title"] for s in queries.list_sessions(self.conn, range_key="30d")["sessions"]
+        ]
+        for title in in_30d_only:
+            self.assertNotIn(title, titles)
 
 
 class TestSessionDetail(DashboardQueryTestCase):

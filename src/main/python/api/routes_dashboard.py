@@ -56,15 +56,27 @@ def get_conn() -> Iterator[sqlite3.Connection]:  # pragma: no cover - 一定會�
     raise RuntimeError("資料庫連線未設定：請透過 app.create_app(db_path=...) 建立應用程式")
 
 
-RangeParam = Query(default=queries.DEFAULT_RANGE, description=f"時間範圍，合法值：{', '.join(_RANGE_VALUES)}")
+RangeParam = Query(
+    default=queries.DEFAULT_RANGE,
+    description=(
+        f"時間範圍，合法值：{', '.join(_RANGE_VALUES)}，"
+        f"或自訂區間 {queries.CUSTOM_RANGE_PREFIX}YYYY-MM-DD:YYYY-MM-DD"
+    ),
+)
 AthleteParam = Query(default=None, description="要查詢的 athlete_id，未指定時用資料庫第一位")
 
 
 def _validate_range(range_key: str) -> str:
-    if range_key not in queries.RANGE_DAYS:
+    """合法性判斷委派給查詢層的 is_valid_range()（唯一入口，見該函式說明），
+    這裡只負責把不合法的結果轉成 HTTP 400。
+    """
+    if not queries.is_valid_range(range_key):
         raise HTTPException(
             status_code=400,
-            detail=f"不支援的 range：{range_key}（合法值：{', '.join(_RANGE_VALUES)}）",
+            detail=(
+                f"不支援的 range：{range_key}（合法值：{', '.join(_RANGE_VALUES)}，"
+                f"或自訂區間 {queries.CUSTOM_RANGE_PREFIX}YYYY-MM-DD:YYYY-MM-DD）"
+            ),
         )
     return range_key
 
