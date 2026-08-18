@@ -4,6 +4,7 @@
 絕不碰使用者真實的 output/running_coach.db（專案規範：個人資料不進版控、不進測試）。
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -169,16 +170,58 @@ class TestSessionDetail(DashboardQueryTestCase):
         self.assertIn("reason", drift)
 
     # --- 心率區間 ---
+    # fixture 原始資料：zone0=300s zone1=600s zone2=1800s zone3=0s zone4=300s
+    # zone5=0s zone6=0s（total 以 zone0~5 計=3000s，zone6 恆為裝置 padding
+    # 不計入）。zone0 是暖身、zone3/zone5 皆為 0。
 
-    def test_hr_zones_parsed_and_sorted(self):
+    def test_hr_zones_always_returns_fixed_z1_to_z5(self):
+        """跨場次比較要求圖表軸線一致：zones 固定回傳 Z1~Z5 共 5 筆，
+        不管該場實際進過幾個區間，沒進過的區間 seconds=0 照樣列出，
+        不會因為某場沒進某區間就少一列（例如這裡的 zone3/zone5）。"""
         zones = self._detail("測試晨跑")["hr_zones"]
         self.assertTrue(zones["available"])
-        self.assertEqual([z["zone"] for z in zones["zones"]], [0, 1, 2])
-        self.assertEqual(zones["zones"][2]["seconds"], 1800)
+        self.assertEqual([z["zone"] for z in zones["zones"]], [1, 2, 3, 4, 5])
+        self.assertEqual(zones["zones"][2]["seconds"], 0)  # zone 3
+        self.assertEqual(zones["zones"][4]["seconds"], 0)  # zone 5
+
+    def test_hr_zones_excludes_zone_6_device_padding(self):
+        """zone 6 是 Garmin 裝置對「超過最高區間」固定產生的 padding 桶位
+        （實測 266 場全部恆為 0），不在 5 列固定軸線之列，也不計入分母。"""
+        zones = self._detail("測試晨跑")["hr_zones"]
+        self.assertNotIn(6, [z["zone"] for z in zones["zones"]])
+        self.assertEqual(zones["total_seconds"], 3000)  # 不含 zone6 的 0
+
+    def test_hr_zones_below_zone_1_reported_separately(self):
+        """zone 0（低於 Z1 的暖身）獨立回傳，不混進 zones 長條圖。"""
+        zones = self._detail("測試晨跑")["hr_zones"]
+        self.assertEqual(zones["below_zone_1"]["seconds"], 300)
+
+    def test_hr_zones_pct_denominator_includes_below_zone_1(self):
+        """百分比分母須含暖身時間，否則各區間佔比會虛增。"""
+        zones = self._detail("測試晨跑")["hr_zones"]
+        self.assertEqual(zones["total_seconds"], 3000)
+        self.assertAlmostEqual(zones["below_zone_1"]["pct"], 10.0)
+        # zone 2：1800/3000 = 60%
+        zone2 = next(z for z in zones["zones"] if z["zone"] == 2)
+        self.assertAlmostEqual(zone2["pct"], 60.0)
 
     def test_hr_zones_unavailable_without_raw_json(self):
         zones = self._detail("測試手動分圈跑")["hr_zones"]
         self.assertFalse(zones["available"])
+
+    def test_hr_zones_all_below_zone_1_still_shows_fixed_axis(self):
+        """實測真實資料中，健走/重訓等低強度活動可能整場都在 Zone 1 以下
+        （12 場抽樣中 6 場如此）。這種情況 available 仍為 True，zones 仍固定
+        回傳 Z1~Z5（全部 seconds=0），below_zone_1 佔 100%——前端不能因為
+        zones 全 0 就顯示「無資料」。"""
+        result = queries._build_hr_zones(
+            json.dumps({"hrTimeInZone_0": 1800000.0, "hrTimeInZone_1": 0.0})
+        )
+        self.assertTrue(result["available"])
+        self.assertEqual([z["zone"] for z in result["zones"]], [1, 2, 3, 4, 5])
+        self.assertTrue(all(z["seconds"] == 0 for z in result["zones"]))
+        self.assertEqual(result["below_zone_1"]["seconds"], 1800)
+        self.assertAlmostEqual(result["below_zone_1"]["pct"], 100.0)
 
 
 class TestWellnessTrend(DashboardQueryTestCase):

@@ -154,18 +154,44 @@
     return { available: true, sample_every_sec: every, points: points };
   }
 
+  /**
+   * 模擬與後端 dashboard_queries._build_hr_zones() 相同的規則：
+   * zone 0（低於 Z1 的暖身）獨立回傳；zones 固定回傳 Z1~Z5 共 5 筆
+   * （不因某場強度低就少幾列，方便跨場次比較時圖表軸線一致）；
+   * zone 6 是裝置固定 padding（真實資料恆為 0），不計入 5 列也不計入分母；
+   * pct 分母含 zone 0。假資料結構必須與真實 API 回傳形狀一致，
+   * 否則 mock 模式測不到這段邏輯。
+   */
   function buildHrZones(session, seed) {
     var rnd = makeRandom(seed);
-    var zones = [];
+    var secondsByZone = {};
     var remain = session.duration_sec;
     for (var z = 0; z <= 5; z += 1) {
-      var share = z === 0 ? 0.04 : (z === 5 ? 0.03 : 0.12 + rnd() * 0.2);
+      var share = z === 0 ? 0.04 : 0.12 + rnd() * 0.2;
       var sec = Math.round(session.duration_sec * share);
       if (sec > remain) sec = Math.max(remain, 0);
       remain -= sec;
-      zones.push({ zone: z, seconds: sec });
+      secondsByZone[z] = sec;
     }
-    return { available: true, zones: zones };
+    // zone 6：裝置固定 padding，真實資料恆為 0，不參與 total
+
+    var total = 0;
+    for (var i = 0; i <= 5; i += 1) total += secondsByZone[i];
+
+    function withPct(zone) {
+      var sec = secondsByZone[zone] || 0;
+      return { zone: zone, seconds: sec, pct: total > 0 ? (sec / total) * 100 : 0 };
+    }
+
+    var zones = [];
+    for (var zi = 1; zi <= 5; zi += 1) zones.push(withPct(zi));
+
+    return {
+      available: true,
+      zones: zones,
+      below_zone_1: withPct(0),
+      total_seconds: total
+    };
   }
 
   function buildSessionDetail(id) {

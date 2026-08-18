@@ -310,6 +310,12 @@
     node.appendChild(wrapChart(C.recordsChart(points, { containerWidth: widthOf(node) })));
   }
 
+  /**
+   * 心率區間分布。zones.zones 固定回傳 Z1~Z5 共 5 列（後端保證，即使某場
+   * 沒進過某區間也是 seconds=0 照樣列出）——跨場次比較時圖表軸線才會一致，
+   * 不因某場強度較低就少幾列。below_zone_1（低於 Z1 的暖身時間）同樣固定
+   * 顯示在圖表下方，沒有暖身時間就顯示 0，而不是整行隱藏。
+   */
   function renderHrZones(detail) {
     var node = $('hrzone-chart');
     clear(node);
@@ -318,12 +324,13 @@
       showUnavailable(node, zones && zones.reason ? zones.reason : '此活動無心率區間資料');
       return;
     }
-    var list = zones.zones || [];
-    if (list.length === 0) {
-      showUnavailable(node, '此活動無心率區間資料');
-      return;
+    node.appendChild(wrapChart(C.hrZoneChart(zones.zones, { containerWidth: widthOf(node) })));
+    var below = zones.below_zone_1;
+    if (below) {
+      node.appendChild(h('div', 'chart-note',
+        '低於 Zone 1（暖身）：' + C.formatDuration(below.seconds)
+        + '（' + below.pct.toFixed(0) + '%）'));
     }
-    node.appendChild(wrapChart(C.hrZoneChart(list, { containerWidth: widthOf(node) })));
   }
 
   /** 該場的隔天恢復影響：只顯示數字卡，不畫圖、不做解讀 */

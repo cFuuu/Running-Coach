@@ -357,15 +357,21 @@ window.Charts = (function () {
 
   /**
    * 心率區間分布（水平長條，顯示各區間秒數與佔比）。
-   * @param {Array} zones [{zone, seconds}]
+   * 只畫 Z1~Z5：後端已濾掉低於 Z1 的暖身時間與裝置固定的尾端 0 padding。
+   * @param {Array} zones [{zone, seconds, pct}] — pct 由後端算好（分母含暖身時間），
+   *   前端不重算，避免分母不一致導致佔比虛增。
+   * @param {Object} opts { containerWidth }
    */
   function hrZoneChart(zones, opts) {
+    var options = opts || {};
     var height = Math.max(zones.length * 30 + 26, 90);
     var svg = createSvg(height, '心率區間分布長條圖');
     var box = { left: 46, top: 10, width: VB_WIDTH - 46 - 96, height: height - 10 - 16 };
-    var total = zones.reduce(function (acc, z) { return acc + (z.seconds || 0); }, 0);
     var maxSec = Math.max.apply(null, zones.map(function (z) { return z.seconds || 0; }).concat([1]));
     var rowH = box.height / Math.max(zones.length, 1);
+    // 目前列數固定為 Z1~Z5（最多 5 列），尚無需依 containerWidth 抽稀；
+    // 保留參數是為了與其他圖表統一簽名，供未來（如 Phase 3 tooltip）沿用同一介面。
+    void options.containerWidth;
 
     zones.forEach(function (z, i) {
       var y = box.top + i * rowH;
@@ -381,7 +387,7 @@ window.Charts = (function () {
         x: box.left, y: y + (rowH - barH) / 2, width: Math.max(w, 0), height: barH, rx: 3,
         class: 'bar bar-zone bar-zone-' + z.zone
       }));
-      var pct = total > 0 ? (z.seconds / total) * 100 : 0;
+      var pct = z.pct || 0;
       svg.appendChild(text(formatDuration(z.seconds) + '（' + pct.toFixed(0) + '%）', {
         x: box.left + box.width + 8, y: y + rowH / 2 + 4, class: 'tick-label', 'text-anchor': 'start'
       }));

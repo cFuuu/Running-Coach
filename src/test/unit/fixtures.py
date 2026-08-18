@@ -215,9 +215,18 @@ def build_fixture_db(db_path: Path) -> sqlite3.Connection:
         workout_type="easy",
         workout_type_source="auto",
         # hrTimeInZone_N 是 Garmin 匯出的原始單位：毫秒（不是欄位名字面看起來的秒）。
-        # zone 0 全 0，其餘有值——驗證 0 值區間仍會保留，只有全 0 才算沒資料。
+        # 反映真實生產資料形狀：zone 0（低於 Z1 的暖身）非 0、中間 zone 3 為 0
+        # （驗證中間 0 值區間仍會保留）、zone 6 恆 0（驗證裝置固定 padding 被丟棄）。
         raw_data_json=json.dumps(
-            {"hrTimeInZone_0": 0.0, "hrTimeInZone_1": 600000.0, "hrTimeInZone_2": 1800000.0}
+            {
+                "hrTimeInZone_0": 300000.0,
+                "hrTimeInZone_1": 600000.0,
+                "hrTimeInZone_2": 1800000.0,
+                "hrTimeInZone_3": 0.0,
+                "hrTimeInZone_4": 300000.0,
+                "hrTimeInZone_5": 0.0,
+                "hrTimeInZone_6": 0.0,
+            }
         ),
     )
     for i in range(1, 4):
