@@ -24,29 +24,33 @@ from typing import Any, Iterable
 # raw distance 1010886.03 / 100000 = 10.109 km — both match. The per-lap
 # `measurements[].unitEnum` field in the same record independently confirms
 # CENTIMETER / MILLISECOND / CENTIMETERS_PER_MILLISECOND / KILOJOULE.
+#
+# 以下換算函式刻意是公開的（不加底線前綴）：dashboard_queries.py 讀
+# activities.raw_data_json 裡的手動分圈時，需要同一套經真實資料驗證過的換算，
+# 不可另外複製一份實作（AGENTS.md：不重複造輪子）。
 _CM_PER_KM = 100_000
 _CM_PER_M = 100
 _MS_PER_SEC = 1000
 _KJ_PER_KCAL = 4.184
 
 
-def _cm_to_km(value: float | None) -> float | None:
+def cm_to_km(value: float | None) -> float | None:
     return None if value is None else value / _CM_PER_KM
 
 
-def _cm_to_m(value: float | None) -> float | None:
+def cm_to_m(value: float | None) -> float | None:
     return None if value is None else value / _CM_PER_M
 
 
-def _ms_to_sec(value: float | None) -> int | None:
+def ms_to_sec(value: float | None) -> int | None:
     return None if value is None else round(value / _MS_PER_SEC)
 
 
-def _kj_to_kcal(value: float | None) -> int | None:
+def kj_to_kcal(value: float | None) -> int | None:
     return None if value is None else round(value / _KJ_PER_KCAL)
 
 
-def _speed_cm_per_ms_to_pace_sec_per_km(value: float | None) -> int | None:
+def speed_cm_per_ms_to_pace_sec_per_km(value: float | None) -> int | None:
     """Convert a Garmin CENTIMETERS_PER_MILLISECOND speed field to sec/km pace."""
     if not value or value <= 0:
         return None
@@ -101,8 +105,8 @@ def parse_activities(di_connect_dir: Path) -> list[dict]:
         pages = data if isinstance(data, list) else [data]
         for page in pages:
             for a in page.get("summarizedActivitiesExport", []):
-                distance_km = _cm_to_km(a.get("distance")) or 0.0
-                duration_sec = _ms_to_sec(a.get("duration"))
+                distance_km = cm_to_km(a.get("distance")) or 0.0
+                duration_sec = ms_to_sec(a.get("duration"))
                 rows.append(
                     {
                         "external_id": str(a.get("activityId")) if a.get("activityId") else None,
@@ -114,7 +118,7 @@ def parse_activities(di_connect_dir: Path) -> list[dict]:
                         "started_at_local_epoch_ms": a.get("startTimeLocal") or a.get("beginTimestamp"),
                         "distance_km": round(distance_km, 4),
                         "duration_sec": duration_sec,
-                        "moving_time_sec": _ms_to_sec(a.get("movingDuration")),
+                        "moving_time_sec": ms_to_sec(a.get("movingDuration")),
                         "avg_hr_bpm": a.get("avgHr"),
                         "max_hr_bpm": a.get("maxHr"),
                         "aerobic_te": a.get("aerobicTrainingEffect"),
@@ -129,10 +133,10 @@ def parse_activities(di_connect_dir: Path) -> list[dict]:
                             if duration_sec and distance_km > 0
                             else None
                         ),
-                        "best_pace_sec_per_km": _speed_cm_per_ms_to_pace_sec_per_km(a.get("maxSpeed")),
-                        "elevation_gain_m": _cm_to_m(a.get("elevationGain")),
-                        "elevation_loss_m": _cm_to_m(a.get("elevationLoss")),
-                        "calories": _kj_to_kcal(a.get("calories")),
+                        "best_pace_sec_per_km": speed_cm_per_ms_to_pace_sec_per_km(a.get("maxSpeed")),
+                        "elevation_gain_m": cm_to_m(a.get("elevationGain")),
+                        "elevation_loss_m": cm_to_m(a.get("elevationLoss")),
+                        "calories": kj_to_kcal(a.get("calories")),
                         "reps": None,
                         "sets": None,
                         "has_wellness_data": 1 if a.get("avgHr") is not None else 0,
