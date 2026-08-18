@@ -68,7 +68,8 @@
   - `all_day_stress_avg`：**獨立新欄位**，不覆蓋既有 `stress_avg`——後者來自 `sleepData.avgSleepStress`（僅睡眠期間），兩者範疇不同不可互相取代
   - `resting_hr_bpm` **優先序合併**：healthStatusData 有值優先（較精確），缺的日期才退回 UDSFile 全天 RHR，藉此把 RHR 可用範圍從約 10 個月延伸到近 6 年
   - 連帶修正既有 bug：`steps` 雖早在 INSERT 語句中，卻不在 `ON CONFLICT DO UPDATE SET` 子句內，代表重複匯入時既有列的 steps 永遠不會被更新
-- [ ] **驗證最大心率**：從 `healthStatusData.json`／FIT 心率分布判斷手錶顯示的最大心率是反覆出現的真值，還是單次離群雜訊（parser 已能提供資料，分析本身尚未做）
+- [x] **驗證最大心率（資料面分析，2026-08-17）**：查詢 `activity_records`（逐秒）／`activity_laps`／`activities` 的心率分布，結論——手錶顯示的 200 bpm**並非反覆出現的實測值**，資料庫實測最高為 **192 bpm**（2022-12-18 lsd 21.26K），190+ 出現在至少 6 個不同日期、185+ 累計 148 次，非單次感測器雜訊，具生理一致性；但觸發這些數值的都只是 easy/tempo/lsd 訓練強度、非力竭測試，故 192 只是**下界**，真實 HRmax 可能更高。**200 大機率為年齡公式估算值而非實測**。暫定保守值 194-196（192+ 緩衝）供 Phase 2 配速區間計算暫用。
+  - [ ] **待辦（需使用者本人執行）**：實際進行一次最大心率測試（熱身後 3-5 分鐘全力跑到力竭，或多組衝刺間歇）取得真正實測值，資料分析無法替代生理測試
 - [ ] 順帶盤點歷史比賽成績（協助補齊配速推算依據，若使用者手邊沒有紀錄）
 
 > **實測驗證（2026-08-17）**：對 Fu 的真實匯出包完整跑過一次（`python -m src.main.python.services.garmin_import_runner`），寫入 520 筆活動、1580 筆每日 wellness、11 個指標的 `metric_coverage`。與 `output/athlete_profile.md` 已記錄的已知成績逐項比對：2025-11-23 10K 算出配速 5:12/km、avgHR 148、maxHR 159、距離 10.1089km，與手動記錄完全一致；`metric_coverage` 算出的各指標日期範圍也與先前手動盤點的結果吻合（活動 7 年、HRV 約 10 個月、Training Readiness 約 3 年）。單元測試（15 項，合成假資料，不含真實個人資料）與這次真實資料驗證分開進行，兩者都通過。
@@ -142,22 +143,35 @@
 
 **Task C — FIT 解析**：✅ 已完成（見上方 1E）
 
-**Task A — 後端查詢層 + FastAPI**（未開始）
-- [ ] `dashboard_queries.py`：純查詢函式，不 import fastapi，可獨立單元測試
-- [ ] `api/app.py` + `api/routes_dashboard.py`：FastAPI app、靜態檔掛載、CLI 入口
-- [ ] **訓練後恢復關聯查詢**：即時計算「訓練日 vs 隔天 HRV/Readiness 變化」，**不新增 schema**（決策理由見 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log)）
-- [ ] 把 `garmin_export_parser.py` 的單位換算私有函式改為公開供重用（勿重寫一份）
-- [ ] 單元測試：range 篩選邊界、`clipped` 標記、laps 來源優先序、`hr_drift` 計算、缺值不補 0
+**Task A — 後端查詢層 + FastAPI**（2026-08-17 完成，經主 session 整合修正）
+- [x] `dashboard_queries.py`：純查詢函式，不 import fastapi，可獨立單元測試
+- [x] `api/app.py` + `api/routes_dashboard.py`：FastAPI app、靜態檔掛載、CLI 入口
+- [x] **訓練後恢復關聯查詢**：即時計算「訓練日 vs 隔天 HRV/Readiness 變化」，**不新增 schema**（決策理由見 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log)）
+- [x] 把 `garmin_export_parser.py` 的單位換算私有函式改為公開供重用（純機械式改名，邏輯零改動）
+- [x] 單元測試：87 項全通過（既有 44 + 新增 43），涵蓋 range 篩選邊界、`clipped` 標記、laps 來源優先序、`hr_drift` 計算、缺值不補 0
 
-**Task B — 前端 Dashboard**（未開始）
-- [ ] `index.html`／`styles.css`／`app.js`／`charts.js`，純 HTML/CSS/JS 零建置、不引用 CDN、不裝圖表庫
-- [ ] 三區塊：單場分析（含每公里分圈圖、逐秒配速/心率曲線、心率漂移、HR 區間分布）→ 跨場趨勢 → 每日身體狀況（訓練日疊圖）
-- [ ] **RWD 不跑版**（使用者明確要求）：viewport meta、SVG viewBox、X 軸刻度依寬度動態疏密、列表手機版改卡片、觸控目標 ≥44px、整頁 body 絕不橫向捲動
-- [ ] `app.js`（狀態）與 `charts.js`（畫圖）解耦，為未來滑動互動預留
+> **主 session 整合時修正的 3 個問題**（Task A 用假資料開發時無法發現，靠真實 DB 交叉比對才抓到）：
+> 1. **`hr_zones` 單位是毫秒不是秒**：`raw_data_json` 的 `hrTimeInZone_N` 欄位實測是毫秒（例：`hrTimeInZone_2=3629313` 對應 60.5 分鐘），已改用 `ms_to_sec()` 換算，並同步修正測試 fixture
+> 2. **手動分圈退回路徑的欄位路徑錯誤**：Task A 原本假設 `split.get("distance")`／`split.get("avgHr")` 是扁平欄位，實測發現真實結構是 `split["measurements"]` 陣列、用 `fieldEnum`（`SUM_DISTANCE`／`SUM_DURATION`／`WEIGHTED_MEAN_HEARTRATE`）標記，已改用 `_measurement()` helper 正確解析
+> 3. **SQLite 跨執行緒 bug**：FastAPI 把同步 dependency 丟進執行緒池執行，`yield conn` 與 `finally: conn.close()` 不保證落在同一 thread，導致 `sqlite3.ProgrammingError`（已用乾淨環境重現兩次確認非偶發殘留問題）。修法：`sqlite3.connect(db_path, check_same_thread=False)`，已用 40 個真併發請求壓力測試驗證零錯誤
+>
+> **已用真實 DB 交叉比對通過**：2025-11-23 10K（配速 5:12/km、avgHR 148、maxHR 159、10.1089km）、2021-12-19 21K（22 圈、每圈精準 1.0km、source=fit）、HRV `range=all` 正確回 `clipped:true`
 
-**整合驗證**（Task A/B 完成後由主 session 執行）
-- [ ] 全測試通過 + 對真實 DB 打 API 交叉比對已知數字
-- [ ] 桌機瀏覽器實測 + **手機實機實測**（連得到 ✓ 且不跑版 ✓，兩項分開驗）
+**Task B — 前端 Dashboard**（2026-08-17 完成）
+- [x] `index.html`／`styles.css`／`app.js`／`charts.js`，純 HTML/CSS/JS 零建置、不引用 CDN、不裝圖表庫
+- [x] 三區塊：單場分析（含每公里分圈圖、逐秒配速/心率曲線、心率漂移、HR 區間分布）→ 跨場趨勢 → 每日身體狀況（訓練日疊圖）
+- [x] **RWD 不跑版**：viewport meta、SVG viewBox、X 軸刻度依寬度動態疏密、列表手機版改卡片、觸控目標 ≥44px、整頁 body 絕不橫向捲動——Task B 已用 Playwright 實測 6 種視窗寬度（1280/1920/768/390/320px + range=all）全數 PASS（無橫向捲動、X 軸標籤零重疊、無 JS console 錯誤）
+- [x] `app.js`（狀態）與 `charts.js`（畫圖）解耦，為未來滑動互動預留
+- [x] 假資料機制：`mock-data.js` + `window.MOCK_API`，網址加 `?mock=0` 可強制走真實 API 而不改檔案
+- [x] `grep -ri body_battery` 確認乾淨
+
+**整合驗證（主 session，2026-08-17）**
+- [x] 全測試通過（87 項）+ 對真實 `output/running_coach.db` 打 API 交叉比對已知數字（見上方 Task A 附註）
+- [x] 後端併發壓力測試（40 併發請求跨 7 種端點，零錯誤）
+- [ ] **桌機瀏覽器實際打開頁面查看**（使用者尚未看過畫面，此為 blocking——Task A/B 是否「符合期望」要靠這步才能判斷，不能只靠自動化測試通過就視為完成）
+- [ ] 手機實機測試（連得到 ✓ 且不跑版 ✓，兩項分開驗）
+
+> **接續方式**：目前 API server 已可用 `"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m src.main.python.api.app --db-path output/running_coach.db --host 127.0.0.1 --port 8000` 啟動，開瀏覽器連 `http://127.0.0.1:8000/?mock=0`（`?mock=0` 讓前端強制打真實 API）。看過畫面後若有不符合期望之處，直接說出來即可，不需要額外的交接動作——後端邏輯與資料正確性已驗證過，剩下是畫面呈現層面的調整。
 
 ## Phase 2 — 訓練科學規則引擎（純程式邏輯，不依賴 AI）
 

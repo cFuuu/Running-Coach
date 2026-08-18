@@ -1,10 +1,12 @@
 """Shared synthetic test fixtures — never real personal export data.
 
-Used by test_garmin_export_parser.py and test_garmin_import_runner.py so the
-fixture shape only has to be defined (and kept realistic) in one place.
+Used by test_garmin_export_parser.py, test_garmin_import_runner.py and
+test_dashboard_queries.py so the fixture shape only has to be defined
+(and kept realistic) in one place.
 """
 
 import json
+import sqlite3
 from pathlib import Path
 
 FAKE_USER_ID = "12345"
@@ -117,3 +119,266 @@ def build_fixture_export(root: Path, user_profile_id: str = FAKE_USER_ID) -> Pat
     )
 
     return di_connect
+
+
+# ---------------------------------------------------------------------------
+# Dashboard 查詢層用的合成資料庫
+# ---------------------------------------------------------------------------
+
+# 這組虛構資料的「最新一天」。dashboard_queries.resolve_range() 以資料庫裡的
+# 最新日期作為 range 的結束日，所以測試斷言可以直接用這個常數推算視窗邊界。
+FAKE_TODAY = "2026-03-10"
+
+FAKE_ATHLETE_NAME = "測試跑者"
+
+
+def _insert(conn: sqlite3.Connection, table: str, **values) -> int:
+    columns = ", ".join(values)
+    placeholders = ", ".join("?" for _ in values)
+    cur = conn.execute(
+        f"INSERT INTO {table} ({columns}) VALUES ({placeholders})", tuple(values.values())
+    )
+    return cur.lastrowid
+
+
+def build_fixture_db(db_path: Path) -> sqlite3.Connection:
+    """建立一個含虛構資料的 SQLite，供 dashboard 查詢層測試使用。
+
+    完全虛構——姓名、日期、心率數字都是為了讓斷言好算而挑的，不是任何真人的資料。
+    刻意涵蓋這些邊界情境：
+
+    - activity 100：有 FIT 分圈 + 逐秒 + 心率區間 + 隔天 wellness（完整情境）
+    - activity 200：無 FIT 分圈，raw_data_json 有 3 段手動分圈（退回 garmin_manual_lap）
+    - activity 300：無 FIT 分圈，手動分圈濾掉雜訊後只剩 1 段（應為 available: false）
+    - activity 400：非跑步（strength_training），完全沒有分圈/逐秒資料
+    - activity 500：落在 30d 視窗外（用來驗證 range 邊界）
+    """
+    from src.main.python.models.db import get_connection
+
+    conn = get_connection(db_path)
+
+    athlete_id = _insert(
+        conn, "athlete_profile", name=FAKE_ATHLETE_NAME, updated_at="2026-03-10T00:00:00"
+    )
+    _insert(
+        conn,
+        "athlete_source_identity",
+        athlete_id=athlete_id,
+        source="garmin_export",
+        external_ref=FAKE_USER_ID,
+        created_at="2026-03-10T00:00:00",
+    )
+
+    # metric_coverage：hrv_ms 起日刻意設在 30d 視窗之內偏晚，
+    # 這樣 range=30d 不 clipped、range=90d 會 clipped，剛好測到旗標兩種狀態。
+    for metric, earliest, latest in [
+        ("activities", "2020-01-01", "2026-03-10"),
+        ("hrv_ms", "2026-02-20", "2026-03-10"),
+        ("resting_hr_bpm", "2020-01-01", "2026-03-10"),
+        ("steps", "2020-01-01", "2026-03-10"),
+    ]:
+        _insert(
+            conn,
+            "metric_coverage",
+            athlete_id=athlete_id,
+            metric_name=metric,
+            source="garmin_export",
+            earliest_date=earliest,
+            latest_date=latest,
+            updated_at="2026-03-10T00:00:00",
+        )
+
+    common = {
+        "athlete_id": athlete_id,
+        "source": "garmin_export",
+        "fetched_at": "2026-03-10T00:00:00",
+    }
+
+    # --- activity 100：完整資料的一場 10 公里 ---
+    a100 = _insert(
+        conn,
+        "activities",
+        **common,
+        external_id="10000001",
+        activity_type="running",
+        title="測試晨跑",
+        started_at="2026-03-09T07:00:00",
+        distance_km=10.0,
+        duration_sec=3000,
+        avg_pace_sec_per_km=300,
+        avg_hr_bpm=150,
+        max_hr_bpm=170,
+        avg_cadence_spm=172,
+        aerobic_te=3.5,
+        elevation_gain_m=20.0,
+        calories=600,
+        workout_type="easy",
+        workout_type_source="auto",
+        # hrTimeInZone_N 是 Garmin 匯出的原始單位：毫秒（不是欄位名字面看起來的秒）。
+        # zone 0 全 0，其餘有值——驗證 0 值區間仍會保留，只有全 0 才算沒資料。
+        raw_data_json=json.dumps(
+            {"hrTimeInZone_0": 0.0, "hrTimeInZone_1": 600000.0, "hrTimeInZone_2": 1800000.0}
+        ),
+    )
+    for i in range(1, 4):
+        _insert(
+            conn,
+            "activity_laps",
+            activity_id=a100,
+            lap_index=i,
+            distance_km=1.0,
+            duration_sec=300.0 + i,
+            pace_sec_per_km=300 + i,
+            avg_hr_bpm=145 + i,
+            max_hr_bpm=155 + i,
+        )
+    # 逐秒：前半心率固定 100、後半固定 110 → 漂移剛好 +10%（方便斷言）
+    for idx, elapsed in enumerate(range(0, 40, 10)):
+        _insert(
+            conn,
+            "activity_records",
+            activity_id=a100,
+            elapsed_sec=elapsed,
+            distance_km=round(elapsed / 300, 4),
+            hr_bpm=100 if elapsed <= 15 else 110,
+            pace_sec_per_km=300,
+            cadence_spm=170,
+            altitude_m=10.0,
+        )
+
+    # --- activity 200：只有手動分圈可用 ---
+    # splits 用 Garmin 匯出的真實結構：每段的數值不是扁平欄位，而是包在
+    # measurements 陣列裡、用 fieldEnum 標記（實測 raw_data_json 驗證過）。
+    # 單位仍是公分／毫秒：3 段各 3km / 900s，另有一段 type=3（整場總計）與
+    # 一段 type=18（雜訊）必須被濾掉。
+    def _split(type_, distance_cm, duration_ms, avg_hr=None, max_hr=None):
+        measurements = [
+            {"fieldEnum": "SUM_DISTANCE", "value": distance_cm},
+            {"fieldEnum": "SUM_DURATION", "value": duration_ms},
+        ]
+        if avg_hr is not None:
+            measurements.append({"fieldEnum": "WEIGHTED_MEAN_HEARTRATE", "value": avg_hr})
+        if max_hr is not None:
+            measurements.append({"fieldEnum": "MAX_HEARTRATE", "value": max_hr})
+        return {"type": type_, "measurements": measurements}
+
+    manual_splits = {
+        "splits": [
+            _split(3, 900000.0, 2700000.0),
+            _split(17, 300000.0, 900000.0, avg_hr=140, max_hr=150),
+            _split(17, 300000.0, 930000.0, avg_hr=145, max_hr=155),
+            _split(17, 300000.0, 870000.0, avg_hr=150, max_hr=160),
+            _split(18, 0.0, 0.0),
+        ]
+    }
+    _insert(
+        conn,
+        "activities",
+        **common,
+        external_id="10000002",
+        activity_type="running",
+        title="測試手動分圈跑",
+        started_at="2026-03-05T18:00:00",
+        distance_km=9.0,
+        duration_sec=2700,
+        avg_pace_sec_per_km=300,
+        avg_hr_bpm=145,
+        max_hr_bpm=160,
+        workout_type="tempo",
+        workout_type_source="auto",
+        raw_data_json=json.dumps(manual_splits),
+    )
+
+    # --- activity 300：手動分圈濾完只剩 1 段 → 視同無分圈 ---
+    _insert(
+        conn,
+        "activities",
+        **common,
+        external_id="10000003",
+        activity_type="running",
+        title="測試單段跑",
+        started_at="2026-03-03T06:30:00",
+        distance_km=5.0,
+        duration_sec=1500,
+        avg_pace_sec_per_km=300,
+        raw_data_json=json.dumps(
+            {
+                "splits": [
+                    _split(3, 500000.0, 1500000.0),
+                    _split(17, 500000.0, 1500000.0),
+                ]
+            }
+        ),
+    )
+
+    # --- activity 400：非跑步活動，什麼附加資料都沒有 ---
+    _insert(
+        conn,
+        "activities",
+        **common,
+        external_id="10000004",
+        activity_type="strength_training",
+        title="測試重訓",
+        started_at="2026-03-02T20:00:00",
+        distance_km=0.0,
+        duration_sec=2400,
+        raw_data_json=None,
+    )
+
+    # --- activity 500：30 天視窗之外（2026-03-10 往回 30 天 = 2026-02-09 起）---
+    _insert(
+        conn,
+        "activities",
+        **common,
+        external_id="10000005",
+        activity_type="running",
+        title="測試舊資料跑",
+        started_at="2026-01-15T07:00:00",
+        distance_km=8.0,
+        duration_sec=2400,
+        avg_pace_sec_per_km=300,
+    )
+
+    # --- daily_wellness ---
+    # 2026-03-09 是 activity 100 的訓練日，2026-03-10 是隔天：
+    # hrv 50 -> 45（delta -5.0、-10.0%）、rhr 50 -> 53（+3）、readiness 80 -> 70（-10）。
+    # 2026-03-05（activity 200 的訓練日）刻意讓隔天 2026-03-06 完全沒有 wellness 列，
+    # 用來驗證 next_day.available:false。
+    # 2026-03-07 的 hrv_ms 是 None，驗證缺值不會被補 0、也不會進 points。
+    wellness_rows = [
+        ("2026-03-04", 48.0, 51, 75, 20, 30, 9000, 78),
+        ("2026-03-05", 49.0, 52, 78, 21, 31, 9500, 79),
+        ("2026-03-07", None, 52, 76, 22, 32, 8800, 77),
+        ("2026-03-09", 50.0, 50, 80, 19, 29, 12000, 82),
+        ("2026-03-10", 45.0, 53, 70, 25, 35, 4000, 68),
+    ]
+    for date, hrv, rhr, readiness, stress, all_day_stress, steps, sleep_score in wellness_rows:
+        _insert(
+            conn,
+            "daily_wellness",
+            **common,
+            date=date,
+            hrv_ms=hrv,
+            resting_hr_bpm=rhr,
+            spo2_pct=97.0,
+            sleep_score=sleep_score,
+            stress_avg=stress,
+            all_day_stress_avg=all_day_stress,
+            steps=steps,
+            training_readiness_score=readiness,
+        )
+
+    # --- training_plan：對照 activity 100 當天的計畫課表 ---
+    _insert(
+        conn,
+        "training_plan",
+        athlete_id=athlete_id,
+        planned_date="2026-03-09",
+        workout_type="lsd",
+        planned_distance_km=12.0,
+        plan_source="ai_coach",
+        created_at="2026-03-01T00:00:00",
+    )
+
+    conn.commit()
+    return conn

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Running Coach 訓練儀表板</title>
+  <!-- 不引用任何 CDN：離線與區網皆可運作，個人資料不外流 -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <h1 class="site-title">訓練儀表板</h1>
+      <div class="meta-info" id="meta-info"></div>
+      <div class="range-switch" role="group" aria-label="時間區間切換">
+        <button type="button" class="range-btn" data-range="7d" aria-pressed="false">7 天</button>
+        <button type="button" class="range-btn" data-range="30d" aria-pressed="true">30 天</button>
+        <button type="button" class="range-btn" data-range="90d" aria-pressed="false">90 天</button>
+        <button type="button" class="range-btn" data-range="1y" aria-pressed="false">1 年</button>
+        <button type="button" class="range-btn" data-range="all" aria-pressed="false">全部</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="notice-bar" id="notice-bar"></div>
+
+  <!--
+    版面：
+      手機（<768px）單欄堆疊，DOM 順序即為顯示順序：單場分析 → 跨場趨勢 → 每日身體狀況
+      桌機（≥768px）左右兩欄：左欄＝單場分析(上)+跨場趨勢(下)，右欄＝每日身體狀況
+  -->
+  <main class="layout">
+
+    <div class="col-left">
+
+      <!-- 區塊一：單場分析 -->
+      <section class="panel" aria-labelledby="h-session">
+        <h2 class="panel-title" id="h-session">
+          單場分析<span class="panel-hint">預設為區間內最近一場，可切換</span>
+        </h2>
+
+        <div id="session-picker"></div>
+
+        <div id="session-body">
+          <div id="session-summary"></div>
+
+          <div class="chart-block">
+            <h3 class="chart-title">每公里分圈配速</h3>
+            <div id="lap-chart"></div>
+          </div>
+
+          <div class="chart-block">
+            <h3 class="chart-title">配速／心率逐秒曲線</h3>
+            <div id="records-chart"></div>
+          </div>
+
+          <div class="chart-block">
+            <h3 class="chart-title">心率漂移（前半段 vs 後半段）</h3>
+            <div id="hr-drift"></div>
+          </div>
+
+          <div class="chart-block">
+            <h3 class="chart-title">心率區間分布</h3>
+            <div id="hrzone-chart"></div>
+          </div>
+
+          <div class="chart-block">
+            <h3 class="chart-title">隔天恢復影響</h3>
+            <div id="recovery-impact"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 區塊二：跨場次趨勢 -->
+      <section class="panel" aria-labelledby="h-trend">
+        <h2 class="panel-title" id="h-trend">跨場次趨勢</h2>
+        <div id="trend-charts"></div>
+        <div id="session-list"></div>
+      </section>
+
+    </div>
+
+    <div class="col-right">
+
+      <!-- 區塊三：每日身體狀況 -->
+      <section class="panel" aria-labelledby="h-wellness">
+        <h2 class="panel-title" id="h-wellness">
+          每日身體狀況<span class="panel-hint">X 軸下方短豎線為訓練日</span>
+        </h2>
+        <div class="legend">
+          <span class="legend-item"><span class="swatch swatch-training"></span><span>訓練日</span></span>
+        </div>
+        <div id="wellness-charts"></div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <footer class="site-footer">
+    圖表僅呈現數據與趨勢，不含任何解讀或建議。
+  </footer>
+
+  <!--
+    開發用假資料（DEV ONLY，內容為虛構）。
+    整合真實 API 時：刪除下面這一行 <script> 即可，app.js 會自動改打 /api/*。
+    也可在網址加 ?mock=0 暫時強制走真實 API。
+  -->
+  <script src="mock-data.js"></script>
+
+  <script src="charts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
