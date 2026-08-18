@@ -438,6 +438,18 @@ def _parse_manual_laps(raw_data_json: str | None) -> list[dict]:
     return laps
 
 
+# hrTimeInZone_0 是 Garmin 對「低於 Zone 1」時間的固定編號（暖身/靜止），
+# 不是使用者的訓練區間之一，故獨立回傳為 below_zone_1 而非併入 zones。
+HR_ZONE_BELOW_FIRST = 0
+
+# 使用者要求跨場次比較時圖表軸線一致：不管某場實際進過幾個區間，
+# zones 永遠回傳 Z1~Z5 這 5 列（沒進過的區間 seconds=0），而非依實際
+# 資料的最高 zone 動態增減列數。實測 266 場的 hrTimeInZone_6 恆為 0
+# （Garmin 錶只設定 5 個訓練區間時，「超過最高區間」的桶位固定產生但
+# 收不到資料），故上限訂為 5、不含 zone 6 這個裝置 padding。
+HR_ZONE_MAX = 5
+
+
 def _build_hr_zones(raw_data_json: str | None) -> dict:
     """從 raw_data_json 取心率區間停留秒數（Garmin 匯出的 hrTimeInZone_N 欄位）。
 
@@ -447,6 +459,17 @@ def _build_hr_zones(raw_data_json: str | None) -> dict:
 
     全部區間都是 0 或不存在時視為沒有資料——這種活動多半根本沒戴心率帶，
     畫一張全 0 的長條圖只會誤導。
+
+    實測發現 `hrTimeInZone_0` ~ `_N` 加總恰好等於該場 duration_sec（抽驗 12 場，
+    9 場完全吻合、3 場差 29~34 秒屬正常誤差），代表 zone 0（低於 Zone 1 的
+    暖身/靜止時間）是真實資料、且應計入百分比分母，否則各區間佔比會虛增。
+    但它不是使用者的訓練強度區間，混進 Z1~Z5 的長條圖裡會誤導，故獨立
+    回傳為 `below_zone_1`。
+
+    `zones` 固定回傳 Z1~Z5 共 5 筆（見 HR_ZONE_MAX 註解），沒進過的區間
+    `seconds=0` 照樣列出，方便前端跨場次比較時圖表軸線一致，不因某場沒
+    進某個區間就少一列。`below_zone_1` 同理固定回傳，沒有暖身時間就是
+    `seconds=0`。
     """
     unavailable = {"available": False, "reason": "此活動無心率區間資料"}
     if not raw_data_json:
@@ -458,7 +481,7 @@ def _build_hr_zones(raw_data_json: str | None) -> dict:
     if not isinstance(data, dict):
         return unavailable
 
-    zones = []
+    seconds_by_zone: dict[int, int] = {}
     for key, value in data.items():
         if not key.startswith("hrTimeInZone_") or value is None:
             continue
@@ -468,12 +491,31 @@ def _build_hr_zones(raw_data_json: str | None) -> dict:
         seconds = parser.ms_to_sec(value)
         if seconds is None:
             continue
-        zones.append({"zone": int(index), "seconds": seconds})
+        seconds_by_zone[int(index)] = seconds
 
-    zones.sort(key=lambda z: z["zone"])
-    if not zones or all(z["seconds"] == 0 for z in zones):
+    if not seconds_by_zone or all(v == 0 for v in seconds_by_zone.values()):
         return unavailable
-    return {"available": True, "zones": zones}
+
+    total_seconds = sum(
+        v for k, v in seconds_by_zone.items() if k <= HR_ZONE_MAX
+    )
+    if total_seconds <= 0:
+        return unavailable
+
+    def with_pct(zone: int) -> dict:
+        seconds = seconds_by_zone.get(zone, 0)
+        return {
+            "zone": zone,
+            "seconds": seconds,
+            "pct": round(seconds / total_seconds * 100, 1),
+        }
+
+    return {
+        "available": True,
+        "zones": [with_pct(z) for z in range(1, HR_ZONE_MAX + 1)],
+        "below_zone_1": with_pct(HR_ZONE_BELOW_FIRST),
+        "total_seconds": total_seconds,
+    }
 
 
 # --------------------------------------------------------------------------
