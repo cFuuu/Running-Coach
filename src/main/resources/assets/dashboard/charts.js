@@ -125,12 +125,20 @@ window.Charts = (function () {
     return m + ':' + String(s).padStart(2, '0');
   }
 
-  /** 'YYYY-MM-DD' → 'M/D' */
+  /** 'YYYY-MM-DD' → 'M/D'（X 軸刻度用，空間有限故不補零） */
   function shortDate(iso) {
     if (!iso) return '';
     var parts = String(iso).split('-');
     if (parts.length < 3) return iso;
     return parseInt(parts[1], 10) + '/' + parseInt(parts[2], 10);
+  }
+
+  /** 'YYYY-MM-DD' → 'MM/DD'（同步游標標籤用，補零對齊較好讀） */
+  function shortDatePadded(iso) {
+    if (!iso) return '';
+    var parts = String(iso).split('-');
+    if (parts.length < 3) return iso;
+    return parts[1] + '/' + parts[2];
   }
 
   function formatNumber(v, decimals) {
@@ -287,7 +295,7 @@ window.Charts = (function () {
 
     var slot = box.width / valid.length;
     var barWidth = Math.max(Math.min(slot * 0.68, 42), 3);
-    var tickIdx = pickTickIndexes(valid.length, maxTickCount(options.containerWidth, 34));
+    var tickIdx = pickTickIndexes(valid.length, maxTickCount(options.containerWidth, 40));
     var hitItems = [];
     // 分圈本身沒有 elapsed_sec 欄位，只有各自的 duration_sec；累加算出每圈
     // 「中點」的經過時間，作為與 records-chart（逐秒圖）同步游標比對的
@@ -426,7 +434,7 @@ window.Charts = (function () {
     }
 
     // X 軸：經過時間
-    var tickIdx = pickTickIndexes(points.length, maxTickCount(options.containerWidth, 62));
+    var tickIdx = pickTickIndexes(points.length, maxTickCount(options.containerWidth, 70));
     tickIdx.forEach(function (idx) {
       var p = points[idx];
       svg.appendChild(text(formatDuration(p.elapsed_sec), {
@@ -598,14 +606,14 @@ window.Charts = (function () {
         if (y === null) return;
         var dot = el('circle', { cx: xOf(item, i), cy: y, r: series.length > 45 ? 1.8 : 2.8, class: 'dot ' + (options.dotClass || 'dot-primary') });
         var title = el('title');
-        title.textContent = item.date + '：' + formatter(item.value);
+        title.textContent = shortDate(item.date) + '：' + formatter(item.value);
         dot.appendChild(title);
         svg.appendChild(dot);
       });
     }
 
     // X 軸標籤：依容器寬度抽稀
-    var tickIdx = pickTickIndexes(series.length, maxTickCount(options.containerWidth, 52));
+    var tickIdx = pickTickIndexes(series.length, maxTickCount(options.containerWidth, 60));
     tickIdx.forEach(function (i) {
       svg.appendChild(text(shortDate(series[i].date), {
         x: xOf(series[i], i), y: box.top + box.height + 17, class: 'tick-label', 'text-anchor': 'middle'
@@ -614,14 +622,20 @@ window.Charts = (function () {
 
     // 連續模式：range=1y/all 時 series 可能遠超過 90 筆（見上方 circle 的
     // 條件式判斷），此時完全沒有 per-point 元素可 hover，故一律額外提供
-    // 命中 meta。logicalXs 用 date 字串（跨場趨勢群組的同步基準）——場次
-    // 日期字串是 ISO 格式（YYYY-MM-DD），字典序比較與時間序一致，可直接
-    // 拿來在同群組其他圖（週跑量長條圖）的 logicalXs 陣列做二分搜尋。
+    // 命中 meta。logicalXs 用完整 ISO 日期字串（跨場趨勢群組的同步基準）
+    // ——字典序比較與時間序一致，可直接拿來在同群組其他圖（週跑量長條圖）
+    // 的 logicalXs 陣列做二分搜尋。
+    //
+    // tips 用 {label, value} 結構（而非純字串）：app.js 的同步游標標籤會把
+    // label（補零日期 MM/DD）用正常字重、value（數值）用粗體分開渲染，
+    // 讓數字在小標籤裡更醒目；label 補零對齊也比不補零讀起來整齊。
     var xsAll = series.map(xOf);
     var logicalXsAll = series.map(function (item) { return item.date; });
     var tipsAll = series.map(function (item) {
-      return item.date + '：' + (typeof item.value === 'number' && isFinite(item.value)
-        ? formatter(item.value) : '無資料');
+      return {
+        label: shortDatePadded(item.date),
+        value: typeof item.value === 'number' && isFinite(item.value) ? formatter(item.value) : '無資料'
+      };
     });
     function yOfIndexTrend(i) { return yOf(series[i]); }
     attachContinuousHitLayer(svg, box, buildContinuousHitMeta(box, xsAll, logicalXsAll, yOfIndexTrend, tipsAll));
@@ -653,7 +667,7 @@ window.Charts = (function () {
 
     var slot = box.width / bars.length;
     var barWidth = Math.max(Math.min(slot * 0.66, 46), 3);
-    var tickIdx = pickTickIndexes(bars.length, maxTickCount(options.containerWidth, 60));
+    var tickIdx = pickTickIndexes(bars.length, maxTickCount(options.containerWidth, 68));
     var hitItems = [];
     var centers = [];
 
@@ -750,20 +764,24 @@ window.Charts = (function () {
       return box.top + box.height - ((v - extent.min) / (extent.max - extent.min)) * box.height;
     }
 
-    // 訓練日標記（X 軸上的短豎線），只呈現「有訓練」這件事，不做解讀
+    // 訓練日標記：整欄淡色背景（取代原本的 X 軸短豎線）。原本的短豎線
+    // 太不顯眼，容易被誤以為「只有訓練日才有 X 軸標籤」；改成整欄背景色
+    // 後，訓練日與非訓練日的視覺區隔在繪圖區內就看得出來，不需 hover。
+    // 必須在折線/資料點之前畫（先畫的在下層），否則色帶會蓋住折線。
+    var dayWidth = spanMs > 0 ? (dayMs / spanMs) * box.width : box.width;
     var trainingDays = options.trainingDays || [];
     var tdList = trainingDays instanceof Set ? Array.from(trainingDays) : trainingDays;
     tdList.forEach(function (day) {
       if (day < start || day > end) return;
-      var x = xOfDate(day);
-      var mark = el('line', {
-        x1: x, y1: box.top + box.height, x2: x, y2: box.top + box.height + 10,
-        class: 'training-marker'
+      var cx = xOfDate(day);
+      var band = el('rect', {
+        x: cx - dayWidth / 2, y: box.top, width: dayWidth, height: box.height,
+        class: 'training-day-band'
       });
       var title = el('title');
-      title.textContent = day + '：訓練日';
-      mark.appendChild(title);
-      svg.appendChild(mark);
+      title.textContent = shortDatePadded(day) + '：訓練日';
+      band.appendChild(title);
+      svg.appendChild(band);
     });
 
     // 折線：相鄰資料點若日期相差超過 1 天，視為缺值 → 斷線（不補 0、不內插）
@@ -787,7 +805,7 @@ window.Charts = (function () {
           class: 'dot ' + (options.dotClass || 'dot-primary')
         });
         var title = el('title');
-        title.textContent = p.date + '：' + formatter(p.value);
+        title.textContent = shortDate(p.date) + '：' + formatter(p.value);
         dot.appendChild(title);
         svg.appendChild(dot);
       });
@@ -795,7 +813,7 @@ window.Charts = (function () {
 
     // X 軸標籤：依整段日期均分，並依容器寬度抽稀
     var totalDays = Math.round(spanMs / dayMs) + 1;
-    var labelIdx = pickTickIndexes(totalDays, maxTickCount(options.containerWidth, 50));
+    var labelIdx = pickTickIndexes(totalDays, maxTickCount(options.containerWidth, 58));
     labelIdx.forEach(function (i) {
       var ms = startMs + i * dayMs;
       var iso = new Date(ms).toISOString().slice(0, 10);
@@ -814,8 +832,13 @@ window.Charts = (function () {
     });
     if (valuePoints.length > 0) {
       var xsPts = valuePoints.map(function (p) { return xOfDate(p.date); });
+      // logicalXs 用完整 ISO 日期字串（同步比對基準，字典序＝時間序）；
+      // tips 用 {label, value} 結構，label 補零日期正常字重、value 數值
+      // 粗體，由 app.js 的同步游標標籤分開渲染（見 trendLineChart 同款設計）。
       var logicalXsPts = valuePoints.map(function (p) { return p.date; });
-      var tipsPts = valuePoints.map(function (p) { return p.date + '：' + formatter(p.value); });
+      var tipsPts = valuePoints.map(function (p) {
+        return { label: shortDatePadded(p.date), value: formatter(p.value) };
+      });
       function yOfIndexWellness(i) { return yOf(valuePoints[i].value); }
       attachContinuousHitLayer(svg, box, buildContinuousHitMeta(box, xsPts, logicalXsPts, yOfIndexWellness, tipsPts));
     }

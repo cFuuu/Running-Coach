@@ -118,6 +118,33 @@ class TestMeta(DashboardQueryTestCase):
         self.assertIn("earliest_date", meta["data_bounds"])
         self.assertIn("latest_date", meta["data_bounds"])
 
+    def test_meta_wellness_metric_defs_is_single_source_of_truth(self):
+        """前端刪掉了自己的 WELLNESS_METRICS 常數，改由這裡驅動渲染順序、
+        標籤、單位、小數位與顯隱預設值。"""
+        meta = queries.get_meta(self.conn)
+        defs = meta["wellness_metric_defs"]
+        self.assertEqual(len(defs), 13)
+        keys = [d["key"] for d in defs]
+        self.assertEqual(keys, list(queries.WELLNESS_METRICS))
+        for d in defs:
+            self.assertTrue(d["label"])
+            self.assertIn(d["format"], ("number", "duration"))
+            self.assertIsInstance(d["default_hidden"], bool)
+
+    def test_meta_wellness_metric_defs_marks_respiration_rate_hidden_by_default(self):
+        """respiration_rate 涵蓋率僅 17.6%，預設隱藏但仍可選（不是排除）。"""
+        meta = queries.get_meta(self.conn)
+        defs_by_key = {d["key"]: d for d in meta["wellness_metric_defs"]}
+        self.assertTrue(defs_by_key["respiration_rate"]["default_hidden"])
+        self.assertFalse(defs_by_key["hrv_ms"]["default_hidden"])
+
+    def test_meta_wellness_metric_defs_excludes_body_battery_and_skin_temp(self):
+        meta = queries.get_meta(self.conn)
+        keys = [d["key"] for d in meta["wellness_metric_defs"]]
+        self.assertNotIn("body_battery_max", keys)
+        self.assertNotIn("body_battery_min", keys)
+        self.assertNotIn("skin_temp_c", keys)
+
 
 class TestListSessions(DashboardQueryTestCase):
     def test_only_running_activities_are_listed(self):
@@ -298,24 +325,30 @@ class TestSessionDetail(DashboardQueryTestCase):
 
 
 class TestWellnessTrend(DashboardQueryTestCase):
-    def test_all_eight_metrics_present_including_new_columns(self):
+    def test_all_thirteen_metrics_present_including_phase5_columns(self):
+        """Phase 5 開放了 5 個原本存在但前端未顯示的指標，加上既有 8 個
+        共 13 個。WELLNESS_METRIC_DEFS 是唯一真實來源，這裡直接對照它，
+        不重複列一份字串清單（否則兩份清單各自維護又會漂移）。"""
         metrics = queries.get_wellness_trend(self.conn, range_key="30d")["metrics"]
-        for name in (
-            "hrv_ms",
-            "resting_hr_bpm",
-            "spo2_pct",
-            "sleep_score",
-            "training_readiness_score",
-            "stress_avg",
-            "all_day_stress_avg",
-            "steps",
-        ):
+        for name in queries.WELLNESS_METRICS:
             self.assertIn(name, metrics)
+        self.assertEqual(len(queries.WELLNESS_METRICS), 13)
 
-    def test_body_battery_never_exposed(self):
+    def test_body_battery_and_skin_temp_never_exposed(self):
+        """實測 Garmin 匯出包這三欄 100% 為 NULL，畫出來只會是空線，
+        契約明文排除，不可因為新增指標而不小心又加回來。"""
         metrics = queries.get_wellness_trend(self.conn, range_key="all")["metrics"]
         self.assertNotIn("body_battery_max", metrics)
         self.assertNotIn("body_battery_min", metrics)
+        self.assertNotIn("skin_temp_c", metrics)
+
+    def test_phase5_metrics_have_correct_values(self):
+        """交叉比對 fixture 實際寫入的值，確認新指標欄位真的接通 SQL。"""
+        metrics = queries.get_wellness_trend(self.conn, range_key="30d")["metrics"]
+        sleep_dur = {p["date"]: p["value"] for p in metrics["sleep_duration_sec"]["points"]}
+        acwr = {p["date"]: p["value"] for p in metrics["acwr"]["points"]}
+        self.assertEqual(sleep_dur["2026-03-10"], 27000)
+        self.assertEqual(acwr["2026-03-10"], 1.1)
 
     def test_stress_and_all_day_stress_stay_separate(self):
         metrics = queries.get_wellness_trend(self.conn, range_key="30d")["metrics"]

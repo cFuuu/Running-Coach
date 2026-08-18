@@ -375,6 +375,12 @@ def build_fixture_db(db_path: Path) -> sqlite3.Connection:
             all_day_stress_avg=all_day_stress,
             steps=steps,
             training_readiness_score=readiness,
+            # Phase 5 新開放的 5 個指標，驗證它們確實會出現在 /api/wellness-trend
+            sleep_duration_sec=27000,
+            hrv_weekly_avg_ms=47.5,
+            recovery_time_hours=18.0,
+            acwr=1.1,
+            respiration_rate=15.2,
         )
 
     # --- training_plan：對照 activity 100 當天的計畫課表 ---
