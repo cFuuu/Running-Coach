@@ -6,6 +6,26 @@
   <title>Running Coach 訓練儀表板</title>
   <!-- 不引用任何 CDN：離線與區網皆可運作，個人資料不外流 -->
   <link rel="stylesheet" href="styles.css">
+  <!--
+    在首次繪製前就套用主題，避免「先閃一下淺色再變深色」的 FOUC。
+    這是本專案唯一允許的 inline script（其餘邏輯一律在 app.js）。
+    讀寫的 localStorage key 與 theme.js 的 THEME_STORAGE_KEY 必須一致。
+  -->
+  <script>
+    (function () {
+      'use strict';
+      try {
+        var raw = localStorage.getItem('rc-dashboard-settings');
+        var pref = raw ? (JSON.parse(raw).theme || 'system') : 'system';
+        var resolved = pref === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : pref;
+        document.documentElement.setAttribute('data-theme', resolved);
+      } catch (e) {
+        // localStorage 不可用或內容損毀：維持預設（淺色），不阻塞頁面載入
+      }
+    })();
+  </script>
 </head>
 <body>
 
@@ -19,6 +39,11 @@
         <button type="button" class="range-btn" data-range="90d" aria-pressed="false">90 天</button>
         <button type="button" class="range-btn" data-range="1y" aria-pressed="false">1 年</button>
         <button type="button" class="range-btn" data-range="all" aria-pressed="false">全部</button>
+      </div>
+      <div class="theme-switch" role="group" aria-label="主題切換">
+        <button type="button" class="theme-btn" data-theme-choice="light" aria-pressed="false" title="淺色">☀</button>
+        <button type="button" class="theme-btn" data-theme-choice="dark" aria-pressed="false" title="深色">🌙</button>
+        <button type="button" class="theme-btn" data-theme-choice="system" aria-pressed="true" title="跟隨系統">🖥</button>
       </div>
     </div>
   </header>
@@ -109,6 +134,7 @@
   -->
   <script src="mock-data.js"></script>
 
+  <script src="theme.js"></script>
   <script src="charts.js"></script>
   <script src="app.js"></script>
 </body>
