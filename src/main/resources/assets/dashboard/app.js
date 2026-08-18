@@ -742,6 +742,7 @@
   // ------------------------------------------------------------ 啟動
 
   function init() {
+    if (window.Theme) window.Theme.init();
     bindRangeButtons();
     bindResize();
 

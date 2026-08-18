@@ -11,6 +11,8 @@
 /* ------------------------------------------------------------ 基礎 */
 
 :root {
+  color-scheme: light;
+
   --bg: #f5f6f8;
   --surface: #ffffff;
   --surface-sunken: #fafbfc;
@@ -192,6 +194,40 @@ h1, h2, h3 {
 }
 
 .range-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* 主題切換：淺色／深色／跟隨系統，三顆一組，樣式與 range-btn 一致但更窄 */
+.theme-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.theme-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-btn:hover {
+  border-color: var(--accent);
+}
+
+.theme-btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.theme-btn:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 1px;
 }
@@ -718,4 +754,97 @@ h1, h2, h3 {
   .stat-value {
     font-size: 1.02rem;
   }
+}
+
+/* ------------------------------------------------------------ 深色模式
+ *
+ * 只有一份深色定義（[data-theme="dark"]），不额外寫 @media (prefers-color-scheme)。
+ * 「跟隨系統」的解析交給 theme.js 在啟動時與系統主題變化時完成——它會把結果
+ * 直接寫進 <html data-theme="...">，所以 CSS 端不需要重複判斷一次系統偏好，
+ * 避免同一組深色數值分別出現在 media query 與屬性選擇器兩處（等同複製貼上）。
+ *
+ * 圖表色刻意不是直接反色，而是提亮並降飽和：深色底下高飽和的原色會顯得刺眼，
+ * 且與淺色版本的對比不足。
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #14181c;
+  --surface: #1c2126;
+  --surface-sunken: #20262c;
+  --border: #333c44;
+  --text: #e4e8eb;
+  --text-muted: #99a3ac;
+  --accent: #4f9e73;
+  --accent-soft: #1f3128;
+  --accent-border: #35543f;
+  --accent-text: #8fd6ac;
+  --on-accent: #0d1411;
+
+  --c-pace: #4f9e73;
+  --c-hr: #e0725a;
+  --c-distance: #5b9bd1;
+  --c-te: #a58bd4;
+  --c-volume: #6fb0d8;
+  --c-grid: #262d33;
+  --c-axis: #4a555e;
+
+  --c-metric-hrv_ms: #4f9e73;
+  --c-metric-resting_hr_bpm: #e0725a;
+  --c-metric-spo2_pct: #5b9bd1;
+  --c-metric-sleep_score: #a58bd4;
+  --c-metric-training_readiness_score: #d9a24f;
+  --c-metric-stress_avg: #7fa0b3;
+  --c-metric-all_day_stress_avg: #c07fa3;
+  --c-metric-steps: #6fb0d8;
+
+  --c-zone-0: #7c93a3;
+  --c-zone-1: #5e9bc4;
+  --c-zone-2: #5cb583;
+  --c-zone-3: #d4b25a;
+  --c-zone-4: #e0925a;
+  --c-zone-5: #e0725a;
+
+  /* .dot{fill:#fff} 在深色底會變成最亮的元素、喧賓奪主；
+     改用 surface 讓圓心融入卡片底色，描邊色（系列色）才是視覺主角 */
+  --dot-fill: #1c2126;
+  --bar-track: #2a3138;
+  /* 語意是「弱化未完成的一圈」：深色底疊半透明白會反而變亮、
+     等於強調而非弱化，改疊半透明黑才維持原本的弱化效果 */
+  --bar-partial-overlay: rgba(0, 0, 0, 0.4);
+
+  --up: #e0725a;
+  --down: #4f9e73;
+
+  --focus-ring: rgba(79, 158, 115, 0.5);
+
+  --notice-bg: #3a3320;
+  --notice-border: #5c4f2a;
+  --notice-text: #d9be6f;
+
+  --error-text: #e0725a;
+  --error-bg: #3a2420;
+  --error-border: #5c3a34;
+  --error-strong-text: #f0a08c;
+
+  --badge-clipped-bg: #3a3320;
+  --badge-clipped-border: #5c4f2a;
+  --badge-clipped-text: #d9be6f;
+  --badge-mock-bg: #322a3a;
+  --badge-mock-border: #4a3d5c;
+  --badge-mock-text: #c4a8e0;
+
+  --tag-interval-bg: #3a2620;
+  --tag-interval-border: #5c3a2e;
+  --tag-interval-text: #e0a08c;
+  --tag-tempo-bg: #3a3320;
+  --tag-tempo-border: #5c4f2a;
+  --tag-tempo-text: #d9be6f;
+  --tag-race-bg: #322a3a;
+  --tag-race-border: #4a3d5c;
+  --tag-race-text: #c4a8e0;
+  --tag-unknown-bg: #262d33;
+  --tag-planned-bg: #1f2e3a;
+  --tag-planned-border: #2e4558;
+  --tag-planned-text: #8fbde0;
 }
