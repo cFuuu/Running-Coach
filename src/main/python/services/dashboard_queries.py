@@ -47,20 +47,45 @@ CUSTOM_RANGE_PREFIX = "custom:"
 # 這是可調整的參數而非寫死的假設——之後要把其他運動也納入單場分析時擴充這裡即可。
 RUNNING_ACTIVITY_TYPES: tuple[str, ...] = ("running", "treadmill_running", "track_running", "trail_running")
 
-# `/api/wellness-trend` 要回傳的指標。刻意**不含 body_battery_max／body_battery_min**：
-# 實測 Garmin 匯出包裡這兩欄 100% 為 NULL，畫出來只會是一條空線。
+# `/api/wellness-trend` 要回傳的指標定義，唯一真實來源——同時用來組 SQL
+# 欄位清單（見 get_wellness_trend 的 columns）與回給前端的顯示中繼資料
+# （label/unit/decimals/format）。前端不再自己維護一份指標定義，改由
+# /api/meta 的 wellness_metric_defs 透出這份清單驅動渲染與排序/顯隱設定。
+#
+# 刻意**不含 skin_temp_c／body_battery_max／body_battery_min**：實測 Garmin
+# 匯出包裡這三欄 100% 為 NULL，畫出來只會是一條空線。
 # stress_avg（睡眠期間平均）與 all_day_stress_avg（全天平均）是兩個不同範疇的指標，
 # 分成兩筆而非合併成一條線。
-WELLNESS_METRICS: tuple[str, ...] = (
-    "hrv_ms",
-    "resting_hr_bpm",
-    "spo2_pct",
-    "sleep_score",
-    "training_readiness_score",
-    "stress_avg",
-    "all_day_stress_avg",
-    "steps",
+#
+# format 為 'duration' 的指標用秒數格式化成 h:mm:ss（見前端 charts.formatDuration），
+# 其餘用 decimals 位數的一般數字格式化。
+WellnessMetricDef = tuple[str, str, str, int, str]  # (column, label, unit, decimals, format)
+
+WELLNESS_METRIC_DEFS: tuple[WellnessMetricDef, ...] = (
+    ("hrv_ms", "HRV", "ms", 1, "number"),
+    ("resting_hr_bpm", "靜止心率", "bpm", 0, "number"),
+    ("spo2_pct", "血氧", "%", 0, "number"),
+    ("sleep_score", "睡眠分數", "", 0, "number"),
+    ("training_readiness_score", "訓練準備度", "", 0, "number"),
+    ("stress_avg", "壓力（睡眠期間）", "", 0, "number"),
+    ("all_day_stress_avg", "壓力（全天）", "", 0, "number"),
+    ("steps", "步數", "步", 0, "number"),
+    # 以下 5 個是 Phase 5 新開放的指標（原本 daily_wellness 有資料但前端
+    # 未顯示）。依實測涵蓋率決定：前 4 個涵蓋率 64.8%~89.1%，預設顯示；
+    # respiration_rate 僅 17.6%（與既有的 hrv_ms／spo2_pct 同量級），
+    # 可選但預設隱藏，避免初次開啟就充滿大片無資料的圖表。
+    ("sleep_duration_sec", "睡眠時長", "", 0, "duration"),
+    ("hrv_weekly_avg_ms", "HRV 週均", "ms", 1, "number"),
+    ("recovery_time_hours", "恢復時間", "hr", 1, "number"),
+    ("acwr", "急慢性負荷比（ACWR）", "", 2, "number"),
+    ("respiration_rate", "呼吸率", "/min", 1, "number"),
 )
+
+WELLNESS_METRICS: tuple[str, ...] = tuple(d[0] for d in WELLNESS_METRIC_DEFS)
+
+# 預設顯示的指標（respiration_rate 因涵蓋率低，可選但預設不顯示）。
+# 前端 localStorage 沒有使用者自訂設定時，用這份清單決定初始顯示哪些。
+WELLNESS_METRICS_DEFAULT_HIDDEN: tuple[str, ...] = ("respiration_rate",)
 
 # `/api/recovery-impact` 計算 delta 的欄位：(daily_wellness 欄位名, 回傳 key 前綴, 是否附百分比)。
 # 只有 HRV 附百分比：HRV 的絕對差值（例如 -2 ms）脫離基線就看不出幅度，
@@ -257,11 +282,24 @@ def get_meta(conn: sqlite3.Connection, athlete_id: int | None = None) -> dict:
 
     ranges = [{"key": key, "label": RANGE_LABELS[key]} for key in RANGE_DAYS]
 
+    wellness_metric_defs = [
+        {
+            "key": column,
+            "label": label,
+            "unit": unit,
+            "decimals": decimals,
+            "format": fmt,
+            "default_hidden": column in WELLNESS_METRICS_DEFAULT_HIDDEN,
+        }
+        for column, label, unit, decimals, fmt in WELLNESS_METRIC_DEFS
+    ]
+
     return {
         "athlete": athlete,
         "metric_coverage": coverage,
         "ranges": ranges,
         "data_bounds": data_bounds,
+        "wellness_metric_defs": wellness_metric_defs,
         "notice": SERVICE_NOTICE,
     }
 

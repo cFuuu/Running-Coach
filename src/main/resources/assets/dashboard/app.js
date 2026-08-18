@@ -51,17 +51,60 @@
     return CUSTOM_RANGE_PATTERN.test(range);
   }
 
-  // 八個身體狀況指標。契約規定不得呈現的那組電池指標（實測 100% NULL）已刻意排除。
-  var WELLNESS_METRICS = [
-    { key: 'hrv_ms', label: 'HRV', unit: 'ms', decimals: 1 },
-    { key: 'resting_hr_bpm', label: '靜止心率', unit: 'bpm', decimals: 0 },
-    { key: 'spo2_pct', label: '血氧', unit: '%', decimals: 0 },
-    { key: 'sleep_score', label: '睡眠分數', unit: '', decimals: 0 },
-    { key: 'training_readiness_score', label: '訓練準備度', unit: '', decimals: 0 },
-    { key: 'stress_avg', label: '壓力（睡眠期間）', unit: '', decimals: 0 },
-    { key: 'all_day_stress_avg', label: '壓力（全天）', unit: '', decimals: 0 },
-    { key: 'steps', label: '步數', unit: '步', decimals: 0 }
+  // 身體狀況指標定義改由後端 /api/meta 的 wellness_metric_defs 驅動
+  // （後端 WELLNESS_METRIC_DEFS 是唯一真實來源：label/unit/decimals/format/
+  // default_hidden），不再於前端寫死一份。見 wellnessMetricDefs() 與
+  // FALLBACK_WELLNESS_METRICS（meta 請求失敗時的最小降級路徑）。
+  var FALLBACK_WELLNESS_METRICS = [
+    { key: 'hrv_ms', label: 'HRV', unit: 'ms', decimals: 1, format: 'number', default_hidden: false },
+    { key: 'resting_hr_bpm', label: '靜止心率', unit: 'bpm', decimals: 0, format: 'number', default_hidden: false },
+    { key: 'spo2_pct', label: '血氧', unit: '%', decimals: 0, format: 'number', default_hidden: false },
+    { key: 'sleep_score', label: '睡眠分數', unit: '', decimals: 0, format: 'number', default_hidden: false },
+    { key: 'training_readiness_score', label: '訓練準備度', unit: '', decimals: 0, format: 'number', default_hidden: false },
+    { key: 'stress_avg', label: '壓力（睡眠期間）', unit: '', decimals: 0, format: 'number', default_hidden: false },
+    { key: 'all_day_stress_avg', label: '壓力（全天）', unit: '', decimals: 0, format: 'number', default_hidden: false },
+    { key: 'steps', label: '步數', unit: '步', decimals: 0, format: 'number', default_hidden: false }
   ];
+
+  function wellnessMetricDefs() {
+    return (state.meta && state.meta.wellness_metric_defs) || FALLBACK_WELLNESS_METRICS;
+  }
+
+  /**
+   * 依使用者存的 order/hidden 排出最終要渲染的指標定義清單。
+   * 關鍵設計：存的是「順序」與「隱藏清單」，不是「完整可見清單」——
+   * 後端新增指標時，不在使用者 order 裡的 key 會排到末端自動出現，
+   * 而不是被舊的 localStorage 永久隱藏（這是容易踩到的坑：使用者會
+   * 以為新指標沒生效）。已不存在於目前 defs 的舊 key 直接忽略。
+   */
+  function orderedVisibleWellnessDefs() {
+    var defs = wellnessMetricDefs();
+    var byKey = {};
+    defs.forEach(function (d) { byKey[d.key] = d; });
+
+    var settings = window.Theme && window.Theme.getSettings ? window.Theme.getSettings() : {};
+    var wellnessSettings = settings.wellness || {};
+    var order = Array.isArray(wellnessSettings.order) ? wellnessSettings.order : [];
+    var hidden = Array.isArray(wellnessSettings.hidden) ? wellnessSettings.hidden : null;
+    // hidden 為 null（使用者從未動過設定）時，用後端 default_hidden 決定初始顯隱；
+    // 使用者一旦動過設定，hidden 陣列就是完整的隱藏清單（含或不含 default_hidden 的項目）。
+
+    var ordered = [];
+    order.forEach(function (key) {
+      if (byKey[key]) { ordered.push(byKey[key]); delete byKey[key]; }
+    });
+    defs.forEach(function (d) { if (byKey[d.key]) ordered.push(d); }); // 未知/新指標排末端
+
+    return ordered.filter(function (d) {
+      return hidden ? hidden.indexOf(d.key) === -1 : !d.default_hidden;
+    });
+  }
+
+  function saveWellnessSettings(order, hidden) {
+    if (window.Theme && window.Theme.saveSettings) {
+      window.Theme.saveSettings({ wellness: { order: order, hidden: hidden } });
+    }
+  }
 
   var WORKOUT_TYPE_LABEL = {
     easy: '輕鬆跑',
@@ -212,6 +255,14 @@
     if (tooltipEl) tooltipEl.classList.remove('is-visible');
   }
 
+  /** meta.tips 的元素可能是純字串，也可能是 {label, value} 結構
+   * （見 charts.js 的 trendLineChart／wellnessChart）；純文字 tooltip
+   * 場景不需要粗體分段，統一拼成一行字串即可。 */
+  function tipToText(tip) {
+    if (tip && typeof tip === 'object') return tip.label + ' ' + tip.value;
+    return tip;
+  }
+
   /** 把螢幕座標（clientX/clientY）換算成該 SVG 內部 viewBox 座標。 */
   function toSvgPoint(svg, clientX, clientY) {
     var ctm = svg.getScreenCTM();
@@ -286,17 +337,25 @@
     return node;
   }
 
-  // 數值標籤的粗估字元寬度／高度（viewBox 單位，對應 charts.js 的 11px tick-label
-  // 字級換算）。SVG 文字無法在畫之前用 DOM API 量實際寬度，用等寬粗估即可，
-  // 標籤本身不要求像素級精準，只要不明顯溢出。
-  var SYNC_LABEL_CHAR_W = 6.4;
-  var SYNC_LABEL_PAD_X = 5;
-  var SYNC_LABEL_H = 16;
+  // 數值標籤的粗估字元寬度／高度（viewBox 單位）。SVG 文字無法在畫之前用
+  // DOM API 量實際寬度，用等寬粗估即可，標籤本身不要求像素級精準，只要
+  // 不明顯溢出。字級對應 styles.css 的 .sync-cursor-label text（13px），
+  // 比原本的 11px 更大更好讀（使用者反映原本字級太小）。
+  var SYNC_LABEL_CHAR_W = 7.6;
+  var SYNC_LABEL_PAD_X = 6;
+  var SYNC_LABEL_H = 18;
+  var SYNC_LABEL_GAP = 3; // label 與 value 之間的間距（viewBox 單位）
 
   /**
    * 在單張圖的 SVG 上畫出同步游標：跨越整個繪圖高度的垂直線、（若該圖在
    * 這個邏輯 X 有值）一個圓點、以及貼在圓點旁的數值標籤（背景框＋文字，
    * 仿 Garmin 風格——每張圖各自顯示自己的數值，不集中成單一 tooltip）。
+   *
+   * tip 支援兩種形狀：
+   *   字串（分圈圖、心率區間、逐秒曲線等）→ 整段用一般字重顯示
+   *   {label, value}（跨場趨勢／身體狀況的日期類圖表）→ label（日期）用
+   *     一般字重、value（數值）用粗體，兩個 <tspan> 拼在同一個 <text> 裡，
+   *     讓使用者一眼就能抓到數字本身
    */
   function drawSyncCursorOnSvg(svg, meta, logicalX) {
     clearSyncCursor(svg);
@@ -316,8 +375,10 @@
     }
 
     if (tip) {
+      var isStructured = typeof tip === 'object';
+      var displayText = isStructured ? (tip.label + ' ' + tip.value) : tip;
       var labelY = y !== null && y !== undefined ? y : box.top + 12;
-      var labelW = tip.length * SYNC_LABEL_CHAR_W + SYNC_LABEL_PAD_X * 2;
+      var labelW = displayText.length * SYNC_LABEL_CHAR_W + SYNC_LABEL_PAD_X * 2;
       // 貼在垂直線右側；靠近圖表右緣時翻到左側，避免超出 viewBox
       var atRightEdge = x + 6 + labelW > box.left + box.width;
       var labelX = atRightEdge ? x - 6 - labelW : x + 6;
@@ -328,11 +389,21 @@
         x: labelX, y: labelTop, width: labelW, height: SYNC_LABEL_H, rx: 3
       }));
       var textNode = svgEl('text', {
-        x: labelX + labelW / 2, y: labelTop + SYNC_LABEL_H / 2 + 4, 'text-anchor': 'middle'
+        x: labelX + SYNC_LABEL_PAD_X, y: labelTop + SYNC_LABEL_H / 2 + 4, 'text-anchor': 'start'
       });
-      textNode.textContent = tip;
+      if (isStructured) {
+        var labelSpan = svgEl('tspan', {});
+        labelSpan.textContent = tip.label + ' ';
+        var valueSpan = svgEl('tspan', { class: 'sync-cursor-label-value' });
+        valueSpan.textContent = tip.value;
+        textNode.appendChild(labelSpan);
+        textNode.appendChild(valueSpan);
+      } else {
+        textNode.textContent = tip;
+      }
       group.appendChild(textNode);
       layer.appendChild(group);
+      void SYNC_LABEL_GAP; // 間距目前靠字串中的空白達成，保留常數供未來調整
     }
 
     svg.appendChild(layer); // 必須最後 append 才會蓋在折線/長條之上
@@ -393,7 +464,7 @@
           var pt = toSvgPoint(svg, evt.clientX, evt.clientY);
           if (!pt) { hideAllSyncCursors(); return; }
           var idx = nearestIndex(meta.xs, pt.x);
-          showTooltipText(meta.tips[idx], evt.clientX, evt.clientY);
+          showTooltipText(tipToText(meta.tips[idx]), evt.clientX, evt.clientY);
         }
         return;
       }
@@ -817,17 +888,34 @@
 
   // ------------------------------------------------------------ 區塊三：每日身體狀況
 
-  function renderWellness() {
+  /** 依 def.format 選對應的格式化函式（'duration' 用時分秒，其餘用一般數字）。 */
+  function wellnessFormatter(def) {
+    if (def.format === 'duration') return function (v) { return C.formatDuration(v); };
+    return function (v) { return C.formatNumber(v, def.decimals); };
+  }
+
+  /**
+   * @param {boolean} [keepPanelOpen] 重繪後是否自動重新展開自訂面板——
+   *   排序/顯隱操作都會呼叫 renderWellness() 整批重繪（含面板容器本身
+   *   一併清掉重建），若每次操作都要使用者手動重新點開面板，連續調整
+   *   多個指標的順序會非常繁瑣，故排序/勾選操作一律傳 true。
+   */
+  function renderWellness(keepPanelOpen) {
     var node = $('wellness-charts');
     clear(node);
     if (!state.wellness) return;
+
+    var customizeWrap = wellnessCustomizeButton();
+    node.appendChild(customizeWrap);
+    if (keepPanelOpen) customizeWrap.appendChild(buildWellnessCustomizePanel());
 
     var metrics = state.wellness.metrics || {};
     var startDate = state.wellness.start_date;
     var endDate = state.wellness.end_date;
 
-    WELLNESS_METRICS.forEach(function (def) {
+    orderedVisibleWellnessDefs().forEach(function (def) {
       var m = metrics[def.key];
+      var formatter = wellnessFormatter(def);
       var card = h('div', 'chart-block');
       var titleRow = h('div', 'chart-title-row');
       titleRow.appendChild(h('h3', 'chart-title', def.label + (def.unit ? '（' + def.unit + '）' : '')));
@@ -870,7 +958,7 @@
         startDate: chartStart,
         endDate: endDate,
         trainingDays: state.trainingDays,
-        formatter: function (v) { return C.formatNumber(v, def.decimals); },
+        formatter: formatter,
         lineClass: 'line-metric-' + def.key,
         dotClass: 'dot-metric',
         containerWidth: widthOf(node)
@@ -878,10 +966,97 @@
 
       var latest = points[points.length - 1];
       card.appendChild(h('div', 'chart-note',
-        '最新（' + latest.date + '）：' + C.formatNumber(latest.value, def.decimals)
-        + (def.unit ? ' ' + def.unit : '') + '　・　共 ' + points.length + ' 天有資料'));
+        '最新（' + latest.date + '）：' + formatter(latest.value)
+        + (def.unit && def.format !== 'duration' ? ' ' + def.unit : '') + '　・　共 ' + points.length + ' 天有資料'));
       node.appendChild(card);
     });
+  }
+
+  /**
+   * 「⚙ 自訂」按鈕：展開一個可排序／可勾選顯示的指標清單面板。
+   * 排序用上下箭頭而非拖曳——HTML5 drag&drop 在行動瀏覽器完全無效
+   * （觸控不會觸發 drag 事件），自製觸控拖曳成本遠超單人自用工具的需求；
+   * 上下箭頭鍵盤可操作、觸控可點擊（≥44px），且資料模型（有序 key 陣列）
+   * 與拖曳互動層完全獨立，日後真要換成拖曳也不需要動這裡的儲存格式。
+   */
+  function wellnessCustomizeButton() {
+    var wrap = h('div', 'wellness-customize');
+    var btn = h('button', 'wellness-customize-toggle', '⚙ 自訂');
+    btn.type = 'button';
+    btn.addEventListener('click', function () { toggleWellnessCustomizePanel(wrap); });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  function toggleWellnessCustomizePanel(wrap) {
+    var existing = wrap.querySelector('.wellness-customize-panel');
+    if (existing) { existing.parentNode.removeChild(existing); return; }
+    wrap.appendChild(buildWellnessCustomizePanel());
+  }
+
+  function buildWellnessCustomizePanel() {
+    var panel = h('div', 'wellness-customize-panel');
+    var defs = wellnessMetricDefs();
+    var visible = orderedVisibleWellnessDefs();
+    var visibleKeys = visible.map(function (d) { return d.key; });
+    // 面板要能勾選「目前隱藏」的指標重新顯示，所以完整順序 = 目前可見的
+    // （依使用者順序）+ 目前隱藏的（依 defs 原始順序，排在後面）
+    var hiddenDefs = defs.filter(function (d) { return visibleKeys.indexOf(d.key) === -1; });
+    var fullOrder = visible.concat(hiddenDefs);
+
+    function currentHiddenSet() {
+      var hidden = {};
+      hiddenDefs.forEach(function (d) { hidden[d.key] = true; });
+      return hidden;
+    }
+
+    function persistAndRerender(order, hiddenSet) {
+      var hiddenList = order.filter(function (k) { return hiddenSet[k]; });
+      saveWellnessSettings(order, hiddenList);
+      renderWellness(true); // 保持面板開啟，讓連續排序/勾選操作不必每次重新點開
+    }
+
+    var list = h('div', 'wellness-customize-list');
+    var hiddenSet = currentHiddenSet();
+
+    fullOrder.forEach(function (def, idx) {
+      var row = h('div', 'wellness-customize-row');
+
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = !hiddenSet[def.key];
+      checkbox.addEventListener('change', function () {
+        var order = fullOrder.map(function (d) { return d.key; });
+        if (checkbox.checked) delete hiddenSet[def.key]; else hiddenSet[def.key] = true;
+        persistAndRerender(order, hiddenSet);
+      });
+      row.appendChild(checkbox);
+      row.appendChild(h('span', 'wellness-customize-label', def.label));
+
+      var upBtn = h('button', 'wellness-customize-move', '↑');
+      upBtn.type = 'button';
+      upBtn.disabled = idx === 0;
+      upBtn.addEventListener('click', function () {
+        var order = fullOrder.map(function (d) { return d.key; });
+        var tmp = order[idx - 1]; order[idx - 1] = order[idx]; order[idx] = tmp;
+        persistAndRerender(order, hiddenSet);
+      });
+      var downBtn = h('button', 'wellness-customize-move', '↓');
+      downBtn.type = 'button';
+      downBtn.disabled = idx === fullOrder.length - 1;
+      downBtn.addEventListener('click', function () {
+        var order = fullOrder.map(function (d) { return d.key; });
+        var tmp = order[idx + 1]; order[idx + 1] = order[idx]; order[idx] = tmp;
+        persistAndRerender(order, hiddenSet);
+      });
+      row.appendChild(upBtn);
+      row.appendChild(downBtn);
+
+      list.appendChild(row);
+    });
+
+    panel.appendChild(list);
+    return panel;
   }
 
   // ------------------------------------------------------------ 頁首資訊

@@ -268,7 +268,7 @@
     return detail;
   }
 
-  // ---- 每日身體狀況（八指標；契約排除的電池類指標一律不產生）----
+  // ---- 每日身體狀況（十三指標；契約排除的電池/皮膚溫度類指標一律不產生）----
   // coverage 刻意設定成不同起日，讓 range=1y/all 時部分指標 clipped:true
   var METRIC_DEFS = [
     { key: 'hrv_ms', base: 46, spread: 9, decimals: 1, coverageDaysAgo: 300, gapMod: 9 },
@@ -278,8 +278,34 @@
     { key: 'training_readiness_score', base: 64, spread: 18, decimals: 0, coverageDaysAgo: 260, gapMod: 8 },
     { key: 'stress_avg', base: 28, spread: 10, decimals: 0, coverageDaysAgo: 900, gapMod: 12 },
     { key: 'all_day_stress_avg', base: 38, spread: 12, decimals: 0, coverageDaysAgo: 180, gapMod: 10 },
-    { key: 'steps', base: 9200, spread: 4200, decimals: 0, coverageDaysAgo: 2100, gapMod: 17 }
+    { key: 'steps', base: 9200, spread: 4200, decimals: 0, coverageDaysAgo: 2100, gapMod: 17 },
+    // Phase 5 新開放的 5 個指標
+    { key: 'sleep_duration_sec', base: 25200, spread: 3600, decimals: 0, coverageDaysAgo: 900, gapMod: 11 },
+    { key: 'hrv_weekly_avg_ms', base: 46, spread: 6, decimals: 1, coverageDaysAgo: 900, gapMod: 8 },
+    { key: 'recovery_time_hours', base: 20, spread: 10, decimals: 1, coverageDaysAgo: 900, gapMod: 9 },
+    { key: 'acwr', base: 1.0, spread: 0.4, decimals: 2, coverageDaysAgo: 900, gapMod: 10 },
+    { key: 'respiration_rate', base: 15, spread: 2, decimals: 1, coverageDaysAgo: 300, gapMod: 9 }
   ];
+
+  // 對照後端 dashboard_queries.WELLNESS_METRIC_DEFS，供 /api/meta 假資料
+  // 動態組出 wellness_metric_defs，避免這裡與 METRIC_DEFS 重複維護一份
+  // 又和後端結構脫節。
+  var WELLNESS_METRIC_LABELS = {
+    hrv_ms: { label: 'HRV', unit: 'ms', format: 'number' },
+    resting_hr_bpm: { label: '靜止心率', unit: 'bpm', format: 'number' },
+    spo2_pct: { label: '血氧', unit: '%', format: 'number' },
+    sleep_score: { label: '睡眠分數', unit: '', format: 'number' },
+    training_readiness_score: { label: '訓練準備度', unit: '', format: 'number' },
+    stress_avg: { label: '壓力（睡眠期間）', unit: '', format: 'number' },
+    all_day_stress_avg: { label: '壓力（全天）', unit: '', format: 'number' },
+    steps: { label: '步數', unit: '步', format: 'number' },
+    sleep_duration_sec: { label: '睡眠時長', unit: '', format: 'duration' },
+    hrv_weekly_avg_ms: { label: 'HRV 週均', unit: 'ms', format: 'number' },
+    recovery_time_hours: { label: '恢復時間', unit: 'hr', format: 'number' },
+    acwr: { label: '急慢性負荷比（ACWR）', unit: '', format: 'number' },
+    respiration_rate: { label: '呼吸率', unit: '/min', format: 'number' }
+  };
+  var WELLNESS_METRICS_DEFAULT_HIDDEN = ['respiration_rate'];
 
   function buildWellness(range) {
     var window = resolveWindow(range);
@@ -391,6 +417,19 @@
       { key: 'all', label: '全部' }
     ],
     data_bounds: { earliest_date: dateMinus(2200), latest_date: BASE_DATE },
+    // 與後端 dashboard_queries.get_meta() 的 wellness_metric_defs 一致，
+    // 由 METRIC_DEFS 與 WELLNESS_METRIC_LABELS 動態組出，避免第三份重複清單。
+    wellness_metric_defs: METRIC_DEFS.map(function (def) {
+      var meta = WELLNESS_METRIC_LABELS[def.key];
+      return {
+        key: def.key,
+        label: meta.label,
+        unit: meta.unit,
+        decimals: def.decimals,
+        format: meta.format,
+        default_hidden: WELLNESS_METRICS_DEFAULT_HIDDEN.indexOf(def.key) !== -1
+      };
+    }),
     notice: '此服務僅供區網存取且無身分驗證，切勿對外網開放。（目前顯示的是開發用虛構假資料）'
   };
 
