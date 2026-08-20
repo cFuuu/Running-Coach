@@ -85,6 +85,20 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 - Dashboard API/前端契約：[docs/dev/DASHBOARD_TASKS.md](docs/dev/DASHBOARD_TASKS.md)
 - 學員個人資料（不進版控）：`output/athlete_profile.md`、`output/current_training_plan.md`、`output/training_log.md`
 
+## Agent skills
+
+### Issue tracker
+
+Issue 存於 GitHub Issues（cFuuu/Running-Coach），用 gh CLI 操作。見 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用五個標準標籤（needs-triage / needs-info / ready-for-agent / ready-for-human / wontfix）。見 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+單一 context：`CONTEXT.md` + `docs/adr/` 於根目錄。見 `docs/agents/domain.md`。
+
 ## 🚀 常用指令
 ```bash
 RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
