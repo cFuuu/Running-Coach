@@ -391,7 +391,7 @@ def build_fixture_db(db_path: Path) -> sqlite3.Connection:
         planned_date="2026-03-09",
         workout_type="lsd",
         planned_distance_km=12.0,
-        plan_source="ai_coach",
+        plan_source="generated",
         created_at="2026-03-01T00:00:00",
     )
 

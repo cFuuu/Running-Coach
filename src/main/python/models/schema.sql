@@ -134,6 +134,13 @@ CREATE TABLE IF NOT EXISTS activity_records (
     UNIQUE (activity_id, elapsed_sec)
 );
 
+-- plan_source：'generated'＝系統排程器產生，'external'＝外部來源（如跟團課表），
+-- 排程器產生課表時遇到已標記 external 的日期會直接跳過，不覆蓋。
+--
+-- 版本歷史保留（2026-08-18 grill 決策）：每次產生或調整課表都是新的一批列，
+-- 不覆蓋刪除舊列。is_active 標示這筆列是否為目前生效版本；superseded_by
+-- 指向取代此列的新版本列，讓「原計畫 vs 調整後計畫 vs 實際執行」的偏差
+-- 比對（呼應 Phase 3 評估回饋迴圈）能看到版本演進過程。
 CREATE TABLE IF NOT EXISTS training_plan (
     id                          INTEGER PRIMARY KEY AUTOINCREMENT,
     athlete_id                  INTEGER NOT NULL REFERENCES athlete_profile(id),
@@ -143,8 +150,10 @@ CREATE TABLE IF NOT EXISTS training_plan (
     planned_duration_sec        INTEGER,
     planned_pace_sec_per_km     INTEGER,
     notes                       TEXT,
-    plan_source                 TEXT NOT NULL CHECK (plan_source IN ('ai_coach', 'running_club')),
+    plan_source                 TEXT NOT NULL CHECK (plan_source IN ('generated', 'external')),
     linked_activity_id          INTEGER REFERENCES activities(id),
+    is_active                   INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    superseded_by               INTEGER REFERENCES training_plan(id),
     created_at                  TEXT NOT NULL
 );
 
