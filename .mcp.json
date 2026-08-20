@@ -5,7 +5,9 @@
       "command": "C:\\Users\\cFu\\anaconda3\\envs\\rc\\python.exe",
       "args": [
         "-m",
-        "src.main.python.mcp.server"
+        "src.main.python.mcp.server",
+        "--db-path",
+        "output/running_coach.db"
       ],
       "env": {}
     }
