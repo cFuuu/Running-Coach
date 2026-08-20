@@ -14,10 +14,10 @@
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
 | Phase 1B 即時同步 | ⏸️ 延後 | Garmin 已封鎖自動化登入，待評估 MCP／Strava |
-| **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯已完成；外部限制窗口／N-2 外部課表協調／輸出版本化尚未開始 |
+| **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；N-2 外部課表實際匯入機制待 P-1；因 Fu 尚缺 max_hr_bpm 與近期比賽成績，目前無法對其本人實際產生課表 |
 | Phase 3 AI Coach | ⏸️ 未開始 | ★ 專案主目標 |
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 239 項全通過。
+**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 281 項全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
 
 **目前資料庫內容**（`output/running_coach.db`，15.3 MB，不進版控）
@@ -228,13 +228,14 @@
   - [x] 個人化恢復閾值存 `athlete_profile.high_risk_consecutive_training_days`（Issue #16，schema migration 已補），NULL 代表未設定，判斷邏輯退回預設值 6 天
   - [x] `suggest_recovery_threshold(conn, athlete_id)` 分析函式（Issue #18）：掃描歷史連續訓練段與對應 HRV 變化估算建議閾值，樣本不足或無惡化訊號時明確回傳「資料不足」，不自動寫回
 
-> **⚠️ 目前空白：純函式尚未接到資料庫**——上述模組全數是刻意不碰資料庫的純函式（設計如此，方便單元測試），但從查詢真實資料到落地寫入 `training_plan` 這一層完全還沒做，已拆成 3 個 issue（2026-08-20）：
-> - [ ] [#19 training_plan 版本化寫入層](https://github.com/cFuuu/Running-Coach/issues/19)：把 `generate_schedule()` 輸出寫入 `training_plan`，正確維護 `is_active`／`superseded_by`
-> - [ ] [#20 VDOT→排程器 orchestrator](https://github.com/cFuuu/Running-Coach/issues/20)：串接「查活動歷史→算 VDOT/配速→產生單日課表→寫入」全流程，依賴 #19
-> - [ ] [#21 訓練負荷／恢復判斷的資料庫查詢層](https://github.com/cFuuu/Running-Coach/issues/21)：幫 `training_load.py`／`readiness.py` 補上從 `activities`／`daily_wellness`／`athlete_profile` 撈真實資料的查詢函式
+- [x] **純函式已接到資料庫**（2026-08-20，Issue #19/#20/#21）：
+  - [x] [`training_plan_store.py`](../../src/main/python/services/training_plan_store.py)（#19）：`save_schedule()` 把 `generate_schedule()` 輸出寫入 `training_plan`，同一天已有生效中的 `generated` 舊列時正確標記 `is_active=0`／`superseded_by`，不刪除不覆蓋；另提供 `get_active_schedule()`／`get_plan_history_for_date()` 查詢函式
+  - [x] [`training_plan_generator.py`](../../src/main/python/services/training_plan_generator.py)（#20）：`generate_and_save_plan()` 串接「查活動歷史→算 VDOT/配速→產生單日課表→寫入」全流程；VDOT 無法推算時明確中止、不寫入資料庫
+  - [x] [`training_load_queries.py`](../../src/main/python/services/training_load_queries.py)（#21）：把 `training_load.py`／`readiness.py` 接到 `activities`／`daily_wellness`／`athlete_profile` 真實資料；`compute_readiness_for_athlete()` 一鍵跑完整條查詢→計算流程
+  - ⚠️ 對 Fu 真實資料庫手動驗證時發現：`athlete_profile.max_hr_bpm`／`resting_hr_bpm` 目前皆為 NULL，且暫無近期 `workout_type='race'` 標記或通過新鮮度門檻的候選成績，故 `generate_and_save_plan()` 目前對 Fu 本人會回傳 `available=False`——這是既有已知資料缺口（見 Phase 0 「待實測最大心率」待辦），非本輪程式邏輯問題；`compute_readiness_for_athlete()` 不受影響，可正常算出結果（心率相關維度自動降級）
 
 - [ ] **N-2 外部課表協調**：`training_plan.plan_source` 欄位與排程器跳過邏輯已就緒（見上）；尚未做的是實際匯入/解析機制，待 P-1 有真實跟團課表格式後再啟動
-- [x] **驗證**（Task 2.9）：`periodization_scheduler` 已有不變量式單元測試（進量上限、減量比例、期別佔比、低頻率天數配置）與參數空間範圍性測試；手動展示 Fu 的實際課表供其確認合理性一項，待 #20 orchestrator 完成、能實際產生課表後才能進行
+- [x] **驗證**（Task 2.9 + #20）：`periodization_scheduler` 已有不變量式單元測試與參數空間範圍性測試；`training_plan_generator.py` 新增含真實 DB 互動的整合測試。手動展示 Fu 的實際課表供其確認合理性一項，待補齊 `max_hr_bpm`／近期比賽成績後才能實際產生課表
 
 ## Phase 3 — AI Coach 分析層（★ 專案主目標所在，資源應優先集中於此）
 - [ ] 設計 MCP server，把 Phase 1 資料查詢 + Phase 2 規則引擎包成 tools
