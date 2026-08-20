@@ -220,8 +220,9 @@
 
 **模組結構**（分層比照 Phase 1 的 `fit_parser.py`／`workout_classifier.py` 慣例，各自純函式、可獨立單元測試，最後由 orchestrator 組裝）：
 
-- [ ] **VDOT/配速引擎**：不限比賽成績，所有活動皆為候選；低強度活動先以心率強度（%HRR）推算等效全力配速再代入 Daniels 公式；雙軌新鮮度門檻（短距離 90 天／半馬全馬 6–12 個月）；通過門檻後依距離代表性排序取優先；Riegel 跨距離推算（指數 1.06）；HRmax 為 `athlete_profile` 可配置參數，帶 `hrmax_source` 信賴度標記
+- [ ] **VDOT/配速引擎**：不限比賽成績，所有活動皆為候選；低強度活動先以心率強度（%HRR）推算等效全力配速再代入 Daniels 公式；雙軌新鮮度門檻（短距離 90 天／半馬全馬 6–12 個月）；通過門檻後依距離代表性排序取優先；Riegel 跨距離推算（指數 1.06）；HRmax 沿用既有 `athlete_profile.max_hr_bpm`／`max_hr_source`（`watch_display`/`measured`/`age_formula`/`observed_from_data`）欄位，不新增欄位
 - [ ] **週期化排程器**：Base/Build/Peak/Taper 全馬 16–20 週框架，輸出到**單日級別**（日期、課種、目標距離/時間、配速區間、預期心率區間）；支援**低至每週 3 次跑步**配置，並確保 LSD 佔比與品質課配置合理；`is_first_marathon: bool` 參數驅動配速保守緩衝與補給演練日標記
+  - [ ] **⚠️ schema migration**（2026-08-19 寫 VDOT spec 時發現）：現有 `training_plan.plan_source` CHECK 只允許 `ai_coach`/`running_club`，需改成 grill 定案的 `generated`/`external`（或擴充 CHECK 涵蓋兩組語意）；且現有 schema 無版本化欄位，需新增 `is_active`／`superseded_by` 支援 §5.8 的版本歷史保留設計
 - [ ] **訓練負荷計算**：自建簡化版 ATL/CTL/TSB（不對接 Garmin 黑盒 Training Load）；跑步用距離×強度、重訓用時長×心率強度，歸一後共用同一累加池
 - [ ] **恢復判斷邏輯**：只輸出狀態評分/旗標（如 `readiness: low`），不自動改寫 `training_plan`；需能處理欄位缺失時的降級判斷（呼應 1C 完整度標記）
   - [ ] 個人化恢復閾值存 `athlete_profile` 可配置欄位（如「連續 N 天訓練即 HRV 明顯偏低」），本輪人工設定
