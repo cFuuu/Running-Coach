@@ -220,17 +220,21 @@
 
 **模組結構**（分層比照 Phase 1 的 `fit_parser.py`／`workout_classifier.py` 慣例，各自純函式、可獨立單元測試，最後由 orchestrator 組裝）：
 
-- [ ] **VDOT/配速引擎**：不限比賽成績，所有活動皆為候選；低強度活動先以心率強度（%HRR）推算等效全力配速再代入 Daniels 公式；雙軌新鮮度門檻（短距離 90 天／半馬全馬 6–12 個月）；通過門檻後依距離代表性排序取優先；Riegel 跨距離推算（指數 1.06）；HRmax 沿用既有 `athlete_profile.max_hr_bpm`／`max_hr_source`（`watch_display`/`measured`/`age_formula`/`observed_from_data`）欄位，不新增欄位
-- [ ] **週期化排程器**：Base/Build/Peak/Taper 全馬 16–20 週框架，輸出到**單日級別**（日期、課種、目標距離/時間、配速區間、預期心率區間）；支援**低至每週 3 次跑步**配置，並確保 LSD 佔比與品質課配置合理；`is_first_marathon: bool` 參數驅動配速保守緩衝與補給演練日標記
-  - [ ] **⚠️ schema migration**（2026-08-19 寫 VDOT spec 時發現）：現有 `training_plan.plan_source` CHECK 只允許 `ai_coach`/`running_club`，需改成 grill 定案的 `generated`/`external`（或擴充 CHECK 涵蓋兩組語意）；且現有 schema 無版本化欄位，需新增 `is_active`／`superseded_by` 支援 §5.8 的版本歷史保留設計
+- [x] **VDOT/配速引擎**（2026-08-19，Task 2.2/2.3）：見 [`vdot_engine.py`](../../src/main/python/services/vdot_engine.py)。不限比賽成績，所有活動皆為候選；低強度活動先以心率強度（%HRR）推算等效全力配速再代入 Daniels 公式；雙軌新鮮度門檻（短距離 90 天／半馬全馬 6–12 個月）；通過門檻後依距離代表性排序取優先；Riegel 跨距離推算（指數 1.06）
+- [x] **週期化排程器**（2026-08-19～20，Task 2.5～2.9）：見 [`periodization_scheduler.py`](../../src/main/python/services/periodization_scheduler.py)。Base/Build/Peak/Taper 全馬框架，輸出到**單日級別**；支援**低至每週 3 次跑步**配置；`is_first_marathon: bool` 驅動配速保守緩衝與補給演練日標記；外部限制窗口（`skip`/`reduced`/`flexible`）與外部課表日期跳過（`_apply_constraint_windows`／`_apply_external_dates`）皆已實作；已有範圍性測試（Task 2.9）
+  - [x] schema migration（Task 2.4）：`training_plan.plan_source` 改為 `generated`/`external`，新增 `is_active`／`superseded_by` 版本化欄位
 - [x] **訓練負荷計算**（2026-08-20，Issue #13/#14）：見 [`training_load.py`](../../src/main/python/services/training_load.py)。`compute_daily_loads()` 跑步優先用心率相對 HRR 百分比估算強度，缺心率退回用配速相對 VDOT easy 配速估算（標記不確定）；重訓同套 HRR 公式，連心率都沒有則用 50% HRR 保守估計並標記不確定；`compute_training_load_series()` 用 Banister EWMA 標準做法遞推 ATL（7 天）/CTL（42 天）/TSB
 - [x] **恢復判斷邏輯**（2026-08-20，Issue #16/#17/#18）：見 [`readiness.py`](../../src/main/python/services/readiness.py)。`assess_readiness()` 綜合連續訓練天數／TSB 趨勢／HRV 相對 7 日均值下降三維度，任一觸發即 `readiness: low` 並附觸發原因；不自動改寫 `training_plan`；HRV 缺資料時該維度跳過，不影響其他維度判斷
   - [x] 個人化恢復閾值存 `athlete_profile.high_risk_consecutive_training_days`（Issue #16，schema migration 已補），NULL 代表未設定，判斷邏輯退回預設值 6 天
   - [x] `suggest_recovery_threshold(conn, athlete_id)` 分析函式（Issue #18）：掃描歷史連續訓練段與對應 HRV 變化估算建議閾值，樣本不足或無惡化訊號時明確回傳「資料不足」，不自動寫回
-- [ ] **外部限制窗口**（旅遊／出差／賽事）：建模為「日期範圍 + 限制等級」（`reduced`/`skip`/`flexible`），具體哪天跑、跑多少仍由排程器依常規規則決定
-- [ ] **N-2 外部課表協調**：`training_plan` 表加 `plan_source`（`generated`/`external`）欄位，排程器跳過已標記 `external` 的日期；不設計實際匯入/解析機制（待 P-1 有真實跟團課表格式後再啟動）
-- [ ] **輸出與版本化**：`training_plan` 保留完整版本歷史（新增列 + `is_active`／`superseded_by`），不覆蓋刪除舊資料
-- [ ] **驗證**：不變量式單元測試為主（進量上限、減量比例、期別佔比、低頻率天數配置），跑參數空間範圍性測試；另手動展示 Fu 的實際課表供其確認合理性（非自動驗收標準）
+
+> **⚠️ 目前空白：純函式尚未接到資料庫**——上述模組全數是刻意不碰資料庫的純函式（設計如此，方便單元測試），但從查詢真實資料到落地寫入 `training_plan` 這一層完全還沒做，已拆成 3 個 issue（2026-08-20）：
+> - [ ] [#19 training_plan 版本化寫入層](https://github.com/cFuuu/Running-Coach/issues/19)：把 `generate_schedule()` 輸出寫入 `training_plan`，正確維護 `is_active`／`superseded_by`
+> - [ ] [#20 VDOT→排程器 orchestrator](https://github.com/cFuuu/Running-Coach/issues/20)：串接「查活動歷史→算 VDOT/配速→產生單日課表→寫入」全流程，依賴 #19
+> - [ ] [#21 訓練負荷／恢復判斷的資料庫查詢層](https://github.com/cFuuu/Running-Coach/issues/21)：幫 `training_load.py`／`readiness.py` 補上從 `activities`／`daily_wellness`／`athlete_profile` 撈真實資料的查詢函式
+
+- [ ] **N-2 外部課表協調**：`training_plan.plan_source` 欄位與排程器跳過邏輯已就緒（見上）；尚未做的是實際匯入/解析機制，待 P-1 有真實跟團課表格式後再啟動
+- [x] **驗證**（Task 2.9）：`periodization_scheduler` 已有不變量式單元測試（進量上限、減量比例、期別佔比、低頻率天數配置）與參數空間範圍性測試；手動展示 Fu 的實際課表供其確認合理性一項，待 #20 orchestrator 完成、能實際產生課表後才能進行
 
 ## Phase 3 — AI Coach 分析層（★ 專案主目標所在，資源應優先集中於此）
 - [ ] 設計 MCP server，把 Phase 1 資料查詢 + Phase 2 規則引擎包成 tools
