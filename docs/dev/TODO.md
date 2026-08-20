@@ -15,7 +15,7 @@
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
 | Phase 1B 即時同步 | ⏸️ 延後 | Garmin 已封鎖自動化登入，待評估 MCP／Strava |
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
-| **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成並連線成功（8 tools），對話邏輯/教練人設/N-1 onboarding 尚未開始 |
+| **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；對話邏輯/教練人設/N-1 onboarding 尚未開始 |
 
 **環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 301 項全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
@@ -245,7 +245,9 @@
   - ⚠️ **重要發現**：MCP Python SDK 剛從 v1 改版到 v2（PyPI `mcp` 目前預設安裝即 v2.0.0），`from mcp.server.fastmcp import FastMCP` 這個網路上常見教學仍在用的 import path 在 v2 已移除，改為 `from mcp.server import MCPServer`（用法幾乎一致：`@mcp.tool()`、docstring 自動變 description、支援 async）；`requirements.txt` 已鎖 `mcp[cli]>=2.0.0,<3` 避免未來 v3 無預警壞掉
   - 8 個 tools：`get_athlete_meta`／`list_running_sessions`／`get_session_detail`／`get_wellness_trend`／`get_recovery_impact`／`get_readiness_status`／`get_active_training_plan`（讀）、`generate_training_plan`（**寫**，description 明確標示會建立新版本課表並取代舊排程）
   - `suggest_recovery_threshold` 暫緩納入 v1，避免第一版 tool 清單過大難以驗證，下一輪可加
-  - 已用 16 項單元測試驗證（直接呼叫 tool 函式本體，含 datetime.date 序列化正確性）；已用 `claude mcp add running-coach` 實際註冊到本機 Claude Code，`claude mcp get running-coach` 確認 `Status: ✔ Connected`（handshake 成功）；因新增 MCP server 需要新對話 session 才會出現在可用工具清單，尚未在對話中實際呼叫過 tool，**下次開新對話時應優先驗證**
+  - 已用 16 項單元測試驗證（直接呼叫 tool 函式本體，含 datetime.date 序列化正確性）；已用 `claude mcp add running-coach` 實際註冊到本機 Claude Code，`claude mcp get running-coach` 確認 `Status: ✔ Connected`（handshake 成功）
+  - ✅ **2026-08-20 對話中實測完成**：7 個唯讀 tools（`get_athlete_meta`／`list_running_sessions`／`get_session_detail`／`get_wellness_trend`／`get_recovery_impact`／`get_readiness_status`／`get_active_training_plan`）已逐一實際呼叫，回傳 Fu 的真實資料正確。`generate_training_plan`（寫入型）尚未主動測試——會取代目前生效課表，屬有副作用動作，待使用者決定時機再測
+  - ⚠️ **修復**：實測時發現與 Task A 曾在 FastAPI 踩過的**同一類 SQLite 跨執行緒 bug**（見上方 Phase 1.5 附註）在 MCP server 重現——`app_lifespan` 用預設 `sqlite3.connect()` 開一次連線注入所有 tool call，但 MCP SDK 執行各 tool 呼叫是在跟 lifespan 不同的 thread，導致 `SQLite objects created in a thread can only be used in that same thread`。修法沿用同一原則：[`db.py`](../../src/main/python/models/db.py) 的 `get_connection()` 新增 `check_same_thread` 參數（預設 `True`，其餘 12 處呼叫端不受影響），MCP server 呼叫時傳 `False`。過程中另發現有 3 個殘留的舊 server process 同時在跑（沿用了修改前的程式碼），需手動終止並重啟 Claude Code 才讓新程式碼生效——MCP server 是獨立 process，程式碼修改不會自動熱重載。301 項單元測試全過
 - [ ] 定義「訓練品質評估」的分析維度：配速執行度、心率漂移（⚠️ 需要 1E 的 FIT 逐秒資料，daily_wellness 摘要資料做不到）、恢復是否充足、課表遵從度等
 - [ ] 對話式教練互動：查詢近況、解釋建議原因、動態微調課表
 - [ ] **N-1**：新學員 onboarding 流程須詢問希望的稱呼，並在後續對話一致使用
