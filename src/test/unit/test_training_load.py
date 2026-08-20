@@ -7,6 +7,7 @@ from src.main.python.services.training_load import (
     compute_activity_load,
     compute_daily_loads,
     compute_hrr_intensity_pct,
+    compute_training_load_series,
 )
 
 MAX_HR = 190.0
@@ -184,6 +185,91 @@ class TestComputeDailyLoads(unittest.TestCase):
     def test_start_after_end_raises(self):
         with self.assertRaises(ValueError):
             compute_daily_loads([], datetime.date(2026, 8, 5), datetime.date(2026, 8, 1))
+
+
+def _daily_loads(loads: list[float], uncertain_indices: frozenset[int] = frozenset()) -> list[dict]:
+    start = datetime.date(2026, 8, 1)
+    return [
+        {
+            "date": start + datetime.timedelta(days=i),
+            "load": load,
+            "uncertain": i in uncertain_indices,
+        }
+        for i, load in enumerate(loads)
+    ]
+
+
+class TestComputeTrainingLoadSeries(unittest.TestCase):
+    def test_empty_input_returns_empty_series(self):
+        self.assertEqual(compute_training_load_series([]), [])
+
+    def test_first_day_atl_and_ctl_equal_daily_load(self):
+        daily = _daily_loads([1000.0])
+        series = compute_training_load_series(daily)
+        self.assertEqual(series[0]["atl"], 1000.0)
+        self.assertEqual(series[0]["ctl"], 1000.0)
+
+    def test_tsb_equals_ctl_minus_atl_every_day(self):
+        daily = _daily_loads([1000.0, 800.0, 0.0, 1200.0, 500.0])
+        series = compute_training_load_series(daily)
+        for day in series:
+            self.assertAlmostEqual(day["tsb"], day["ctl"] - day["atl"], places=9)
+
+    def test_series_covers_full_input_range_without_gaps(self):
+        daily = _daily_loads([500.0] * 10)
+        series = compute_training_load_series(daily)
+        self.assertEqual(len(series), 10)
+        self.assertEqual([d["date"] for d in series], [d["date"] for d in daily])
+
+    def test_sustained_high_load_atl_rises_faster_than_ctl(self):
+        """穩定基線負荷後突然拉高強度，ATL 應比 CTL 更快、更多地反映這波增量
+        （急性反應快於慢性累積），因此 ATL 應明顯高於 CTL。"""
+        baseline = _daily_loads([500.0] * 30)
+        spike = [
+            {"date": baseline[-1]["date"] + datetime.timedelta(days=i + 1), "load": 1500.0, "uncertain": False}
+            for i in range(14)
+        ]
+        series = compute_training_load_series(baseline + spike)
+        last = series[-1]
+        self.assertGreater(last["atl"], last["ctl"])
+
+    def test_sustained_rest_atl_decays_faster_than_ctl(self):
+        """先累積負荷，再連續多日休息（load=0），ATL 衰減速度快於 CTL。"""
+        build_up = _daily_loads([1500.0] * 20)
+        rest = [
+            {"date": build_up[-1]["date"] + datetime.timedelta(days=i + 1), "load": 0.0, "uncertain": False}
+            for i in range(14)
+        ]
+        series = compute_training_load_series(build_up + rest)
+
+        atl_before_rest = series[len(build_up) - 1]["atl"]
+        ctl_before_rest = series[len(build_up) - 1]["ctl"]
+        atl_after_rest = series[-1]["atl"]
+        ctl_after_rest = series[-1]["ctl"]
+
+        atl_drop_ratio = (atl_before_rest - atl_after_rest) / atl_before_rest
+        ctl_drop_ratio = (ctl_before_rest - ctl_after_rest) / ctl_before_rest
+        self.assertGreater(atl_drop_ratio, ctl_drop_ratio)
+
+    def test_uncertain_flag_is_passed_through(self):
+        daily = _daily_loads([500.0, 500.0, 500.0], uncertain_indices=frozenset({1}))
+        series = compute_training_load_series(daily)
+        self.assertEqual([d["uncertain"] for d in series], [False, True, False])
+
+    def test_daily_load_value_is_passed_through_unchanged(self):
+        daily = _daily_loads([500.0, 700.0])
+        series = compute_training_load_series(daily)
+        self.assertEqual(series[0]["load"], 500.0)
+        self.assertEqual(series[1]["load"], 700.0)
+
+    def test_constant_load_converges_atl_and_ctl_toward_that_load(self):
+        """長期固定負荷下，ATL/CTL 應收斂到接近該負荷值（EWMA 穩態特性）。"""
+        daily = _daily_loads([1000.0] * 200)
+        series = compute_training_load_series(daily)
+        last = series[-1]
+        self.assertAlmostEqual(last["atl"], 1000.0, delta=1.0)
+        self.assertAlmostEqual(last["ctl"], 1000.0, delta=1.0)
+        self.assertAlmostEqual(last["tsb"], 0.0, delta=1.0)
 
 
 if __name__ == "__main__":

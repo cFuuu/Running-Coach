@@ -14,8 +14,11 @@
     - 完全無法估算強度的活動（跑步無心率也無配速）明確排除，不列入負荷計算，
       不強行給 0 或預設值掩蓋缺失。
 
-本 ticket 只算「今天身體承受了多少負荷」，不含任何跨日疲勞累積邏輯（那是
-Issue #14 EWMA 遞推的職責）。
+Issue #13（compute_daily_loads）只算「今天身體承受了多少負荷」，不含任何跨日
+疲勞累積邏輯；Issue #14（compute_training_load_series）接手這段每日負荷序列，
+用 Banister impulse-response 模型的標準做法——指數加權移動平均（EWMA）分別對
+每日負荷做急性（ATL，7 天時間常數）與慢性（CTL，42 天時間常數）平滑，
+TSB（形態分數）= CTL − ATL。兩個時間常數沿用運動科學界廣泛驗證的標準值。
 """
 
 from __future__ import annotations
@@ -50,6 +53,14 @@ _PACE_RATIO_TO_HRR_PCT: tuple[tuple[float, float], ...] = (
 )
 # 比值超過上表最後一個門檻時的強度下限（極慢配速，如健走）。
 _PACE_RATIO_FALLBACK_HRR_PCT = 0.5
+
+# ATL（急性疲勞）EWMA 時間常數（天）。Banister impulse-response 模型標準值，
+# 反映短期訓練壓力的快速累積與消退。
+ATL_TIME_CONSTANT_DAYS = 7
+
+# CTL（慢性體能水平）EWMA 時間常數（天）。同上標準值，反映長期訓練適應，
+# 累積與消退速度皆遠慢於 ATL。
+CTL_TIME_CONSTANT_DAYS = 42
 
 
 def compute_hrr_intensity_pct(
@@ -224,3 +235,66 @@ def compute_daily_loads(
         {"date": date, "load": entry["load"], "uncertain": entry["uncertain"]}
         for date, entry in sorted(daily.items())
     ]
+
+
+def _ewma_step(previous: float, today_load: float, time_constant_days: int) -> float:
+    """Banister impulse-response 模型的 EWMA 遞推單步公式。
+
+    today_value = previous + (today_load - previous) * (1 - e^(-1/time_constant))
+    時間常數越小，對當日負荷的反應越快（ATL）；越大則越平滑、反應越慢（CTL）。
+    """
+    alpha = 1 - pow(2.718281828459045, -1.0 / time_constant_days)
+    return previous + (today_load - previous) * alpha
+
+
+def compute_training_load_series(
+    daily_loads: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """把 compute_daily_loads() 輸出的每日負荷序列，遞推成 ATL/CTL/TSB 時間序列。
+
+    daily_loads：依日期升冪排序的 list，每筆至少含 "date"／"load"／"uncertain"
+        （即 compute_daily_loads() 的回傳格式）。
+
+    遞推規則：
+        - 第一天的 ATL/CTL 直接等於當天負荷（不人為設為 0），避免起始段被低估。
+        - 之後每一天依 _ewma_step() 用當天負荷更新前一天的 ATL/CTL。
+        - 沒有訓練的日期（load=0）仍照規則遞推，讓 ATL/CTL 依 EWMA 公式自然
+          衰減，反映恢復過程。
+        - TSB = CTL − ATL，逐日計算。
+        - "uncertain" 標記原樣透傳（不對負荷數值做任何主觀判讀，那是恢復判斷
+          邏輯或 Phase 3 AI 教練的職責）。
+
+    回傳：依日期升冪排序的 list，每筆
+        {
+            "date": datetime.date,
+            "load": float,      # 當日總負荷（原樣透傳）
+            "atl": float,
+            "ctl": float,
+            "tsb": float,
+            "uncertain": bool,  # 原樣透傳自輸入
+        }
+        涵蓋輸入的整段日期範圍，無缺漏日期。輸入為空清單時回傳空清單。
+    """
+    series: list[dict[str, Any]] = []
+    atl = ctl = 0.0
+
+    for index, day in enumerate(daily_loads):
+        load = day["load"]
+        if index == 0:
+            atl = ctl = load
+        else:
+            atl = _ewma_step(atl, load, ATL_TIME_CONSTANT_DAYS)
+            ctl = _ewma_step(ctl, load, CTL_TIME_CONSTANT_DAYS)
+
+        series.append(
+            {
+                "date": day["date"],
+                "load": load,
+                "atl": atl,
+                "ctl": ctl,
+                "tsb": ctl - atl,
+                "uncertain": day["uncertain"],
+            }
+        )
+
+    return series
