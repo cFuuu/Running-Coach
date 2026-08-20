@@ -14,10 +14,10 @@
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
 | Phase 1B 即時同步 | ⏸️ 延後 | Garmin 已封鎖自動化登入，待評估 MCP／Strava |
-| Phase 2 規則引擎 | ⏸️ 未開始 | VDOT、週期化課表、訓練負荷 |
+| **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯已完成；外部限制窗口／N-2 外部課表協調／輸出版本化尚未開始 |
 | Phase 3 AI Coach | ⏸️ 未開始 | ★ 專案主目標 |
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 106 項全通過。
+**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 239 項全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
 
 **目前資料庫內容**（`output/running_coach.db`，15.3 MB，不進版控）
@@ -223,10 +223,10 @@
 - [ ] **VDOT/配速引擎**：不限比賽成績，所有活動皆為候選；低強度活動先以心率強度（%HRR）推算等效全力配速再代入 Daniels 公式；雙軌新鮮度門檻（短距離 90 天／半馬全馬 6–12 個月）；通過門檻後依距離代表性排序取優先；Riegel 跨距離推算（指數 1.06）；HRmax 沿用既有 `athlete_profile.max_hr_bpm`／`max_hr_source`（`watch_display`/`measured`/`age_formula`/`observed_from_data`）欄位，不新增欄位
 - [ ] **週期化排程器**：Base/Build/Peak/Taper 全馬 16–20 週框架，輸出到**單日級別**（日期、課種、目標距離/時間、配速區間、預期心率區間）；支援**低至每週 3 次跑步**配置，並確保 LSD 佔比與品質課配置合理；`is_first_marathon: bool` 參數驅動配速保守緩衝與補給演練日標記
   - [ ] **⚠️ schema migration**（2026-08-19 寫 VDOT spec 時發現）：現有 `training_plan.plan_source` CHECK 只允許 `ai_coach`/`running_club`，需改成 grill 定案的 `generated`/`external`（或擴充 CHECK 涵蓋兩組語意）；且現有 schema 無版本化欄位，需新增 `is_active`／`superseded_by` 支援 §5.8 的版本歷史保留設計
-- [ ] **訓練負荷計算**：自建簡化版 ATL/CTL/TSB（不對接 Garmin 黑盒 Training Load）；跑步用距離×強度、重訓用時長×心率強度，歸一後共用同一累加池
-- [ ] **恢復判斷邏輯**：只輸出狀態評分/旗標（如 `readiness: low`），不自動改寫 `training_plan`；需能處理欄位缺失時的降級判斷（呼應 1C 完整度標記）
-  - [ ] 個人化恢復閾值存 `athlete_profile` 可配置欄位（如「連續 N 天訓練即 HRV 明顯偏低」），本輪人工設定
-  - [ ] 另建 `suggest_recovery_threshold(athlete_id)` 分析函式，掃描歷史資料算出建議值，不自動寫回，人工確認後才寫入
+- [x] **訓練負荷計算**（2026-08-20，Issue #13/#14）：見 [`training_load.py`](../../src/main/python/services/training_load.py)。`compute_daily_loads()` 跑步優先用心率相對 HRR 百分比估算強度，缺心率退回用配速相對 VDOT easy 配速估算（標記不確定）；重訓同套 HRR 公式，連心率都沒有則用 50% HRR 保守估計並標記不確定；`compute_training_load_series()` 用 Banister EWMA 標準做法遞推 ATL（7 天）/CTL（42 天）/TSB
+- [x] **恢復判斷邏輯**（2026-08-20，Issue #16/#17/#18）：見 [`readiness.py`](../../src/main/python/services/readiness.py)。`assess_readiness()` 綜合連續訓練天數／TSB 趨勢／HRV 相對 7 日均值下降三維度，任一觸發即 `readiness: low` 並附觸發原因；不自動改寫 `training_plan`；HRV 缺資料時該維度跳過，不影響其他維度判斷
+  - [x] 個人化恢復閾值存 `athlete_profile.high_risk_consecutive_training_days`（Issue #16，schema migration 已補），NULL 代表未設定，判斷邏輯退回預設值 6 天
+  - [x] `suggest_recovery_threshold(conn, athlete_id)` 分析函式（Issue #18）：掃描歷史連續訓練段與對應 HRV 變化估算建議閾值，樣本不足或無惡化訊號時明確回傳「資料不足」，不自動寫回
 - [ ] **外部限制窗口**（旅遊／出差／賽事）：建模為「日期範圍 + 限制等級」（`reduced`/`skip`/`flexible`），具體哪天跑、跑多少仍由排程器依常規規則決定
 - [ ] **N-2 外部課表協調**：`training_plan` 表加 `plan_source`（`generated`/`external`）欄位，排程器跳過已標記 `external` 的日期；不設計實際匯入/解析機制（待 P-1 有真實跟團課表格式後再啟動）
 - [ ] **輸出與版本化**：`training_plan` 保留完整版本歷史（新增列 + `is_active`／`superseded_by`），不覆蓋刪除舊資料
