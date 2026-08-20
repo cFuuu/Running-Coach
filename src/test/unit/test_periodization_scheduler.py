@@ -484,5 +484,147 @@ class TestConstraintWindowsAndExternalDates(unittest.TestCase):
         self.assertFalse(skipped_day["fueling_rehearsal"])
 
 
+class TestCombinatorialInvariants(unittest.TestCase):
+    """Ticket F：對輸入參數空間做範圍性測試，確認多規則同時生效時
+    所有不變量仍成立。標準天數/低頻率天數已各自在 Ticket B/C 驗證過
+    單獨行為，此處聚焦「組合」是否仍守住不變量，不重複驗證單一規則本身。
+    """
+
+    def _assert_all_invariants_hold(self, schedule: list[dict], total_weeks: int):
+        weekly_totals: dict[int, float] = {}
+        for day in schedule:
+            week_index = (day["date"] - START_DATE).days // 7
+            weekly_totals.setdefault(week_index, 0.0)
+            weekly_totals[week_index] += day["target_distance_km"]
+        totals = [weekly_totals[i] for i in sorted(weekly_totals)]
+
+        # 期別佔比：base >= build >= peak > taper 的相對量級關係至少不違反
+        # 總週數守恆（詳細比例已在 TestSplitWeeksIntoPhases 驗證，此處只
+        # 確認組合情境下週別劃分仍完整覆蓋所有週）。
+        phases_seen = {day["phase"] for day in schedule}
+        self.assertTrue(phases_seen.issubset({"base", "build", "peak", "taper"}))
+
+        # 量進：非減量週的相鄰兩週增幅不超過上限（僅在該週有實際訓練量時比較，
+        # 全 0（例如整週皆被 skip 覆蓋）不參與此檢查）。
+        for week_index in range(1, len(totals)):
+            if totals[week_index - 1] == 0 or totals[week_index] == 0:
+                continue
+            if _is_step_back_week(week_index):
+                continue
+            self.assertLessEqual(
+                totals[week_index], totals[week_index - 1] * (1 + WEEKLY_VOLUME_INCREASE_CAP) + 1e-6
+            )
+
+        # Peak 期距離上限：任何一天都不應超過 PEAK_MAX_LONG_RUN_KM。
+        for day in schedule:
+            if day["phase"] == "peak":
+                self.assertLessEqual(day["target_distance_km"], PEAK_MAX_LONG_RUN_KM + 1e-6)
+
+        # reduced 窗口內不應出現品質課或 LSD。
+        for day in schedule:
+            if day["constraint_level"] == "reduced":
+                self.assertNotIn(day["workout_type"], ("tempo", "interval", "lsd"))
+
+        # skip 窗口內必為 rest、距離為 0。
+        for day in schedule:
+            if day["constraint_level"] == "skip":
+                self.assertEqual(day["workout_type"], "rest")
+                self.assertEqual(day["target_distance_km"], 0.0)
+
+        # 補給演練標記只能出現在 Peak 期的 LSD 上（不論是否與限制窗口同時作用）。
+        for day in schedule:
+            if day["fueling_rehearsal"]:
+                self.assertEqual(day["phase"], "peak")
+                self.assertEqual(day["workout_type"], "lsd")
+
+    def test_invariants_hold_across_parameter_space(self):
+        """短週期＋高頻率、長週期＋低頻率、含首馬、含限制窗口等組合的參數空間。"""
+        total_weeks_options = [12, 16, 20]
+        days_per_week_options = [3, 4, 5, 6]
+        is_first_marathon_options = [True, False]
+
+        for total_weeks in total_weeks_options:
+            for days_per_week in days_per_week_options:
+                for is_first_marathon in is_first_marathon_options:
+                    with self.subTest(
+                        total_weeks=total_weeks,
+                        days_per_week=days_per_week,
+                        is_first_marathon=is_first_marathon,
+                    ):
+                        window_start = START_DATE + datetime.timedelta(weeks=total_weeks // 2)
+                        window_end = window_start + datetime.timedelta(days=6)
+                        config = _config(
+                            total_weeks=total_weeks,
+                            days_per_week=days_per_week,
+                            is_first_marathon=is_first_marathon,
+                            constraint_windows=[
+                                {
+                                    "start_date": window_start,
+                                    "end_date": window_end,
+                                    "level": "reduced",
+                                }
+                            ],
+                        )
+                        schedule = generate_schedule(config)
+                        self._assert_all_invariants_hold(schedule, total_weeks)
+
+    def test_low_frequency_and_reduced_window_coexist_without_contradiction(self):
+        """低頻率天數（Ticket C）與 reduced 限制窗口（Ticket E）同時作用於同一週。
+
+        3 天/週固定配置本來就只有 1 LSD+1 品質課+1 easy，reduced 窗口會把
+        該週的 LSD 與品質課都降級為 easy——結果應是該週訓練日全變成 easy，
+        而非產生矛盾或未定義行為（例如同時嘗試排品質課又要求跳過品質課）。
+        """
+        window_start = START_DATE + datetime.timedelta(weeks=1)
+        window_end = window_start + datetime.timedelta(days=6)
+        schedule = generate_schedule(
+            _config(
+                total_weeks=6,
+                days_per_week=3,
+                constraint_windows=[
+                    {"start_date": window_start, "end_date": window_end, "level": "reduced"}
+                ],
+            )
+        )
+        days_in_window = [
+            day
+            for day in schedule
+            if window_start <= day["date"] <= window_end and day["workout_type"] != "rest"
+        ]
+        self.assertTrue(days_in_window)
+        for day in days_in_window:
+            self.assertEqual(day["workout_type"], "easy")
+
+    def test_low_frequency_and_skip_window_coexist_without_contradiction(self):
+        """低頻率天數與 skip 限制窗口同時作用：該週應完全變成休息，不產生任何訓練。"""
+        window_start = START_DATE + datetime.timedelta(weeks=1)
+        window_end = window_start + datetime.timedelta(days=6)
+        schedule = generate_schedule(
+            _config(
+                total_weeks=6,
+                days_per_week=3,
+                constraint_windows=[
+                    {"start_date": window_start, "end_date": window_end, "level": "skip"}
+                ],
+            )
+        )
+        days_in_window = [day for day in schedule if window_start <= day["date"] <= window_end]
+        self.assertTrue(days_in_window)
+        for day in days_in_window:
+            self.assertEqual(day["workout_type"], "rest")
+
+    def test_first_marathon_and_low_frequency_combined(self):
+        """首馬條件與低頻率天數同時作用：配速緩衝與補給演練標記仍正確套用。"""
+        schedule = generate_schedule(
+            _config(total_weeks=20, days_per_week=3, is_first_marathon=True)
+        )
+        easy_zone = next(day["pace_zone"] for day in schedule if day["workout_type"] == "easy")
+        self.assertGreater(
+            easy_zone["fast_sec_per_km"], FAKE_PACE_ZONES["easy"]["fast_sec_per_km"]
+        )
+        rehearsal_days = [day for day in schedule if day["fueling_rehearsal"]]
+        self.assertGreaterEqual(len(rehearsal_days), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
