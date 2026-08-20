@@ -13,4 +13,8 @@ uvicorn>=0.52.0
 # Garmin FIT 檔解析（逐秒心率/配速/GPS、每公里分圈）
 fitparse>=1.2.0
 
+# MCP server（把 Phase 1 資料查詢 + Phase 2 規則引擎包成 AI 可呼叫的 tools）
+# 鎖 <3：v1→v2 曾有重大改版（FastMCP 移除，改用 MCPServer），避免未來 v3 無預警破壞相容性
+mcp[cli]>=2.0.0,<3
+
 # 註：資料庫用 Python 內建的 sqlite3，測試用內建的 unittest，皆無需額外安裝。
