@@ -14,7 +14,7 @@
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
 | Phase 1B 即時同步 | ⏸️ 延後 | Garmin 已封鎖自動化登入，待評估 MCP／Strava |
-| **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天）；N-2 外部課表實際匯入機制待 P-1；`max_hr_bpm` 為暫定保守值，待實測更新 |
+| **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | Phase 3 AI Coach | ⏸️ 未開始 | ★ 專案主目標 |
 
 **環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 285 項全通過。
@@ -69,9 +69,9 @@
   - `resting_hr_bpm` **優先序合併**：healthStatusData 有值優先（較精確），缺的日期才退回 UDSFile 全天 RHR，藉此把 RHR 可用範圍從約 10 個月延伸到近 6 年
   - 連帶修正既有 bug：`steps` 雖早在 INSERT 語句中，卻不在 `ON CONFLICT DO UPDATE SET` 子句內，代表重複匯入時既有列的 steps 永遠不會被更新
 - [x] **驗證最大心率（資料面分析，2026-08-17）**：查詢 `activity_records`（逐秒）／`activity_laps`／`activities` 的心率分布，結論——手錶顯示的 200 bpm**並非反覆出現的實測值**，資料庫實測最高為 **192 bpm**（2022-12-18 lsd 21.26K），190+ 出現在至少 6 個不同日期、185+ 累計 148 次，非單次感測器雜訊，具生理一致性；但觸發這些數值的都只是 easy/tempo/lsd 訓練強度、非力竭測試，故 192 只是**下界**，真實 HRmax 可能更高。**200 大機率為年齡公式估算值而非實測**。暫定保守值 194-196（192+ 緩衝）供 Phase 2 配速區間計算暫用。
-  - [x] **2026-08-20 已寫入 `athlete_profile`**：`max_hr_bpm=195`（`max_hr_source='observed_from_data'`）、`resting_hr_bpm=56`（近 30 天 `daily_wellness` 平均值），供 Phase 2 orchestrator 實際運作
-  - [ ] **待辦（需使用者本人執行）**：實際進行一次最大心率測試（熱身後 3-5 分鐘全力跑到力竭，或多組衝刺間歇）取得真正實測值後更新 `max_hr_bpm` 並改 `max_hr_source='measured'`，資料分析無法替代生理測試
-- [ ] 順帶盤點歷史比賽成績（協助補齊配速推算依據）——2026-08-20 確認近 90 天活動皆未標記 `workout_type='race'`，Phase 2 orchestrator 目前靠非全力候選的心率換算路徑運作，仍建議之後補標記實際比賽成績以提升配速推算信賴度
+  - [x] **2026-08-20 已寫入 `athlete_profile`**：`max_hr_bpm=198`（`max_hr_source='watch_display'`，Fu 本人確認採用手錶目前顯示值，非資料分析暫定值）、`resting_hr_bpm=56`（近 30 天 `daily_wellness` 平均值），供 Phase 2 orchestrator 實際運作
+  - [ ] **待辦（需使用者本人執行，非阻塞）**：實際進行一次最大心率測試（熱身後 3-5 分鐘全力跑到力竭，或多組衝刺間歇）取得真正實測值後更新 `max_hr_bpm` 並改 `max_hr_source='measured'`，資料分析無法替代生理測試
+- [x] 盤點歷史比賽成績——2026-08-20 Fu 確認**近期沒有比賽成績**，維持空白不臆測代填；Phase 2 orchestrator 靠非全力候選的心率換算路徑運作（已驗證可行），待未來有新比賽成績再補標記 `workout_type='race'` 以提升配速推算信賴度
 
 > **實測驗證（2026-08-17）**：對 Fu 的真實匯出包完整跑過一次（`python -m src.main.python.services.garmin_import_runner`），寫入 520 筆活動、1580 筆每日 wellness、11 個指標的 `metric_coverage`。與 `output/athlete_profile.md` 已記錄的已知成績逐項比對：2025-11-23 10K 算出配速 5:12/km、avgHR 148、maxHR 159、距離 10.1089km，與手動記錄完全一致；`metric_coverage` 算出的各指標日期範圍也與先前手動盤點的結果吻合（活動 7 年、HRV 約 10 個月、Training Readiness 約 3 年）。單元測試（15 項，合成假資料，不含真實個人資料）與這次真實資料驗證分開進行，兩者都通過。
 
@@ -234,11 +234,11 @@
   - [x] [`training_plan_generator.py`](../../src/main/python/services/training_plan_generator.py)（#20）：`generate_and_save_plan()` 串接「查活動歷史→算 VDOT/配速→產生單日課表→寫入」全流程；VDOT 無法推算時明確中止、不寫入資料庫
   - [x] [`training_load_queries.py`](../../src/main/python/services/training_load_queries.py)（#21）：把 `training_load.py`／`readiness.py` 接到 `activities`／`daily_wellness`／`athlete_profile` 真實資料；`compute_readiness_for_athlete()` 一鍵跑完整條查詢→計算流程
   - ⚠️ **修復**（見上方 db.py 的 CHECK 重建遷移）：對真實資料庫實測時另外發現 `training_plan.plan_source` CHECK 一直卡在 Task 2.4 之前的舊版（`ALTER TABLE` 無法修改既有 CHECK，早前 migration 只補了欄位沒補 CHECK），導致真實資料庫完全無法寫入 `training_plan`；已新增重建表格的遷移修正，並在 `output/running_coach.db` 實際套用驗證
-  - ✅ **2026-08-20 已補齊 Fu 的心率參數**：`max_hr_bpm=195`（`max_hr_source='observed_from_data'`，取自 2026-08-17 資料分析的實測 192 bpm + 保守緩衝，仍待日後實際做一次力竭測試更新為 `'measured'`，見 Phase 0 待辦）、`resting_hr_bpm=56`（近 30 天 `daily_wellness` 平均值，n=31）。比賽成績維持空白（近期活動皆未標記 `workout_type='race'`，未臆測代填），改靠非全力候選的心率換算路徑
-  - ✅ **端到端驗證成功**：`generate_and_save_plan()` 已對 Fu 本人實際產生並寫入一份 16 週課表（111 天，VDOT 42.13），`get_active_schedule()` 可正確查回；`compute_readiness_for_athlete()` 同樣運作正常
+  - ✅ **2026-08-20 已補齊 Fu 的心率參數**：`max_hr_bpm=198`（`max_hr_source='watch_display'`，Fu 本人指定為手錶目前顯示值；先前資料分析暫定的 195 已作廢，改用此值）、`resting_hr_bpm=56`（近 30 天 `daily_wellness` 平均值，n=31）。比賽成績確認**維持空白**（Fu 表示近期沒有比賽成績），系統靠非全力候選的心率換算路徑運作，不臆測代填 `workout_type='race'`
+  - ✅ **端到端驗證成功**：`generate_and_save_plan()` 已對 Fu 本人實際產生並寫入一份 16 週課表（111 天，VDOT 42.91，以 `max_hr_bpm=198` 重新產生），`get_active_schedule()` 可正確查回；`compute_readiness_for_athlete()` 同樣運作正常
 
 - [ ] **N-2 外部課表協調**：`training_plan.plan_source` 欄位與排程器跳過邏輯已就緒（見上）；尚未做的是實際匯入/解析機制，待 P-1 有真實跟團課表格式後再啟動
-- [x] **驗證**（Task 2.9 + #20）：`periodization_scheduler` 已有不變量式單元測試與參數空間範圍性測試；`training_plan_generator.py` 新增含真實 DB 互動的整合測試。手動展示 Fu 的實際課表供其確認合理性一項，待補齊 `max_hr_bpm`／近期比賽成績後才能實際產生課表
+- [x] **驗證**（Task 2.9 + #20）：`periodization_scheduler` 已有不變量式單元測試與參數空間範圍性測試；`training_plan_generator.py` 新增含真實 DB 互動的整合測試；已用 Fu 真實資料實際產生課表（見上）
 
 ## Phase 3 — AI Coach 分析層（★ 專案主目標所在，資源應優先集中於此）
 - [ ] 設計 MCP server，把 Phase 1 資料查詢 + Phase 2 規則引擎包成 tools
