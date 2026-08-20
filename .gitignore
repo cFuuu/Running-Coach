@@ -43,6 +43,7 @@ logs/
 *.csv
 *.json
 *.xlsx
+!.mcp.json
 output/
 
 # Personal data dumps (Garmin exports, race data, etc.) — never commit real user data
