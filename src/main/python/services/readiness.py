@@ -20,11 +20,18 @@
 
 任一維度觸發即整體判定為 low；三個維度都無法判斷（訓練與 wellness 資料都缺）
 時明確標記 unavailable，不勉強給出誤導性的 normal。
+
+suggest_recovery_threshold()（Issue #18）是另一個定位：獨立的**分析工具**，
+會碰資料庫掃描歷史 activities/daily_wellness，估算「連續訓練幾天後開始出現
+HRV 惡化」的建議閾值，供人工參考後手動寫入 athlete_profile（子 A 的欄位）。
+這與本模組其餘函式「純函式、不碰資料庫」的定位不同，故獨立標註；明確不寫入
+athlete_profile，任何寫入都必須是呼叫端另外執行的獨立步驟。
 """
 
 from __future__ import annotations
 
 import datetime
+import sqlite3
 from typing import Any
 
 # --- 可調閾值（集中管理，勿散落於邏輯中）---
@@ -42,6 +49,14 @@ TSB_LOW_THRESHOLD = -30.0
 # 當日 HRV 相對 7 日均值的下降幅度超過此比例，視為自律神經恢復不足的訊號。
 # 取 15% 作為常見訓練監控實務中的保守分界。
 HRV_DROP_PCT_THRESHOLD = 0.15
+
+# suggest_recovery_threshold() 用同一套 HRV 下降門檻判斷「該次連續訓練是否
+# 觀察到恢復訊號惡化」，與 _evaluate_hrv() 的判斷基準一致，避免兩套標準漂移。
+_SUGGESTION_HRV_DROP_PCT_THRESHOLD = HRV_DROP_PCT_THRESHOLD
+
+# 建議閾值分析至少需要幾段「連續訓練」樣本才視為可信，樣本過少時估算值
+# 容易被單一段落主導、不具代表性，回傳「資料不足」而非誤導性建議。
+_SUGGESTION_MIN_TRAINING_STREAKS = 3
 
 
 def _consecutive_training_days_ending_at(
@@ -165,3 +180,119 @@ def assess_readiness(
         )
 
     return results
+
+
+def _training_streaks(training_dates: set[datetime.date]) -> list[tuple[datetime.date, int]]:
+    """把訓練日期集合切成連續段，回傳 [(該段最後一天, 該段長度), ...]。
+
+    只回傳每段的「結束日＋長度」，因為 suggest_recovery_threshold 只關心
+    「這段連續訓練跑到第幾天時，緊接著出現恢復訊號惡化」。
+    """
+    streaks: list[tuple[datetime.date, int]] = []
+    for date in sorted(training_dates):
+        if date - datetime.timedelta(days=1) in training_dates:
+            # 延續前一段：把上一筆的長度 +1。
+            last_end, last_len = streaks[-1]
+            streaks[-1] = (date, last_len + 1)
+        else:
+            streaks.append((date, 1))
+    return streaks
+
+
+def suggest_recovery_threshold(
+    conn: sqlite3.Connection, athlete_id: int
+) -> dict[str, Any]:
+    """分析該學員的歷史訓練頻率與 HRV 變化，估算建議的個人化恢復閾值。
+
+    只分析、只建議，**明確不寫入 athlete_profile**——結果須由人工確認後，
+    呼叫端另外執行獨立的寫入步驟（見 Issue #16 的
+    high_risk_consecutive_training_days 欄位）。
+
+    做法：找出所有「連續訓練段」（activities 有紀錄的連續日期），對每段
+    掃描其中每一天，檢查「截至當天的連續訓練天數」與「當天 HRV 相對 7 日
+    均值是否明顯下降」（門檻同 _evaluate_hrv()），找出連續訓練天數達到多少
+    時，開始伴隨 HRV 惡化訊號的比例明顯提高。
+
+    回傳：
+        資料足夠時：
+            {
+                "available": True,
+                "suggested_threshold_days": int,
+                "basis": {
+                    "training_streaks_analyzed": int,
+                    "streaks_with_degradation": int,
+                    "explanation": str,
+                },
+            }
+        資料不足時（可信連續訓練段樣本數 < _SUGGESTION_MIN_TRAINING_STREAKS）：
+            {
+                "available": False,
+                "reason": str,
+            }
+    """
+    training_dates = {
+        datetime.date.fromisoformat(row["d"])
+        for row in conn.execute(
+            "SELECT DISTINCT date(started_at) AS d FROM activities WHERE athlete_id = ?",
+            (athlete_id,),
+        )
+    }
+    hrv_by_date: dict[datetime.date, tuple[float | None, float | None]] = {
+        datetime.date.fromisoformat(row["date"]): (row["hrv_ms"], row["hrv_weekly_avg_ms"])
+        for row in conn.execute(
+            "SELECT date, hrv_ms, hrv_weekly_avg_ms FROM daily_wellness WHERE athlete_id = ?",
+            (athlete_id,),
+        )
+    }
+
+    streaks = _training_streaks(training_dates)
+    # 只保留有對應 HRV 資料可判讀的段落，樣本數不足時直接回報資料不足。
+    analyzable_streaks = [
+        (end_date, length)
+        for end_date, length in streaks
+        if hrv_by_date.get(end_date, (None, None))[0] is not None
+        and hrv_by_date.get(end_date, (None, None))[1] is not None
+    ]
+
+    if len(analyzable_streaks) < _SUGGESTION_MIN_TRAINING_STREAKS:
+        return {
+            "available": False,
+            "reason": (
+                f"可分析的連續訓練段樣本數僅 {len(analyzable_streaks)} 筆"
+                f"（需要至少 {_SUGGESTION_MIN_TRAINING_STREAKS} 筆含對應 HRV 資料的樣本），"
+                "資料量不足以支持可信建議"
+            ),
+        }
+
+    degraded_streaks = []
+    for end_date, length in analyzable_streaks:
+        hrv_ms, hrv_weekly_avg_ms = hrv_by_date[end_date]
+        drop_pct = (hrv_weekly_avg_ms - hrv_ms) / hrv_weekly_avg_ms
+        if drop_pct >= _SUGGESTION_HRV_DROP_PCT_THRESHOLD:
+            degraded_streaks.append(length)
+
+    if not degraded_streaks:
+        return {
+            "available": False,
+            "reason": (
+                f"分析了 {len(analyzable_streaks)} 段連續訓練，皆未觀察到明顯 HRV 惡化訊號，"
+                "無法估算有意義的建議閾值"
+            ),
+        }
+
+    suggested_threshold_days = min(degraded_streaks)
+
+    return {
+        "available": True,
+        "suggested_threshold_days": suggested_threshold_days,
+        "basis": {
+            "training_streaks_analyzed": len(analyzable_streaks),
+            "streaks_with_degradation": len(degraded_streaks),
+            "explanation": (
+                f"分析了 {len(analyzable_streaks)} 段含 HRV 資料的連續訓練段，"
+                f"其中 {len(degraded_streaks)} 段在結束當天觀察到 HRV 較 7 日均值下降 "
+                f"{_SUGGESTION_HRV_DROP_PCT_THRESHOLD * 100:.0f}% 以上；"
+                f"觀察到惡化訊號的最短連續訓練天數為 {suggested_threshold_days} 天"
+            ),
+        },
+    }
