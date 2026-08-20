@@ -16,8 +16,25 @@ from src.main.python.models.db import get_connection
 def _build_legacy_training_plan_db(db_path: Path) -> None:
     """建立一個模擬「Ticket A 之前」既有資料庫的最小 training_plan 表：
     舊版 plan_source CHECK（ai_coach/running_club），無 is_active/superseded_by。
+
+    也建立最小的 athlete_profile 表並插入 id=1 的一筆——training_plan.athlete_id
+    有 REFERENCES athlete_profile(id) 外鍵，重建表格遷移（_migrate_training_plan_check_
+    constraint）在 PRAGMA foreign_keys=ON 下重新插入資料時會檢查這個外鍵，
+    fixture 若不建對應的 athlete_profile 列會造成遷移本身誤判為外鍵違反。
     """
     conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE athlete_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO athlete_profile (id, name, updated_at) VALUES (1, '測試學員', '2026-01-01T00:00:00')"
+    )
     conn.execute(
         """
         CREATE TABLE training_plan (
@@ -183,7 +200,11 @@ class TestTrainingPlanSchemaMigration(unittest.TestCase):
                 conn.close()
 
     def test_legacy_database_existing_rows_backfilled_to_active(self):
-        """既有資料庫遷移前的舊資料，is_active 應被回填為 1（生效中），而非 NULL。"""
+        """既有資料庫遷移前的舊資料，is_active 應被回填為 1（生效中），而非 NULL。
+
+        遷移後 plan_source 已從 'ai_coach' 映射為 'generated'（見上方 CHECK
+        重建遷移），故用 planned_date 而非舊 plan_source 值來定位這筆舊資料。
+        """
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "legacy.db"
             _build_legacy_training_plan_db(db_path)
@@ -191,7 +212,7 @@ class TestTrainingPlanSchemaMigration(unittest.TestCase):
             conn = get_connection(db_path)
             try:
                 row = conn.execute(
-                    "SELECT is_active FROM training_plan WHERE plan_source = 'ai_coach'"
+                    "SELECT is_active FROM training_plan WHERE planned_date = '2026-01-01'"
                 ).fetchone()
                 self.assertEqual(row["is_active"], 1)
             finally:
@@ -215,11 +236,15 @@ class TestTrainingPlanSchemaMigration(unittest.TestCase):
             finally:
                 conn.close()
 
-    def test_legacy_database_retains_old_plan_source_values_after_migration(self):
-        """既有資料庫的舊 plan_source 值（ai_coach）遷移後仍可讀取，不強制轉換舊資料。
+    def test_legacy_database_old_plan_source_value_is_mapped_to_generated(self):
+        """既有資料庫的舊 plan_source 值（ai_coach）遷移後對應到新語意的 'generated'。
 
-        （ALTER TABLE 無法修改既有 CHECK 約束，故既有資料庫的 CHECK 仍是舊版；
-        本測試只確認既有資料不會因遷移而遺失或損毀，不驗證 CHECK 本身是否更新。）
+        2026-08-20 發現：純 ALTER TABLE ADD COLUMN 無法修改既有 CHECK 約束，
+        導致舊資料庫即使補上 is_active/superseded_by，plan_source 仍卡在舊
+        CHECK（'ai_coach'/'running_club'），連合法新值 'generated' 都會被
+        擋下——見 _migrate_training_plan_check_constraint()：本函式改為重建
+        整張表，並把舊值一律映射為 'generated'（舊語意的 AI 教練／跑團課表
+        皆非本輪才新增的「外部課表協調」語意，故不臆測哪些舊列其實是 external）。
         """
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "legacy.db"
@@ -230,9 +255,98 @@ class TestTrainingPlanSchemaMigration(unittest.TestCase):
                 row = conn.execute(
                     "SELECT plan_source FROM training_plan"
                 ).fetchone()
-                self.assertEqual(row["plan_source"], "ai_coach")
+                self.assertEqual(row["plan_source"], "generated")
             finally:
                 conn.close()
+
+    def test_legacy_database_check_constraint_accepts_new_values_after_migration(self):
+        """遷移後的 CHECK 約束應是新版，能正確接受 'generated'/'external'，
+        且正確拒絕已被取代的舊值——這是本次真實資料庫實際踩到的問題
+        （旁修 is_active/superseded_by 沒有解決 CHECK 本身，見上方測試說明）。
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy.db"
+            _build_legacy_training_plan_db(db_path)
+
+            conn = get_connection(db_path)
+            try:
+                # 新語意的合法值應可成功寫入，不再被舊 CHECK 擋下。
+                conn.execute(
+                    """
+                    INSERT INTO training_plan
+                        (athlete_id, planned_date, workout_type, plan_source, created_at)
+                    VALUES (1, '2026-09-01', 'easy', 'external', '2026-09-01T00:00:00')
+                    """
+                )
+                conn.commit()
+
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute(
+                        """
+                        INSERT INTO training_plan
+                            (athlete_id, planned_date, workout_type, plan_source, created_at)
+                        VALUES (1, '2026-09-02', 'easy', 'ai_coach', '2026-09-02T00:00:00')
+                        """
+                    )
+            finally:
+                conn.close()
+
+    def test_legacy_database_row_ids_and_columns_preserved_after_rebuild(self):
+        """重建表格後，既有列的 id 與其餘欄位值應保持不變（供 linked_activity_id
+        等外鍵／既有引用不失效）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy.db"
+            _build_legacy_training_plan_db(db_path)
+
+            conn = get_connection(db_path)
+            try:
+                row = conn.execute(
+                    "SELECT id, planned_date, workout_type FROM training_plan"
+                ).fetchone()
+                self.assertEqual(row["id"], 1)
+                self.assertEqual(row["planned_date"], "2026-01-01")
+                self.assertEqual(row["workout_type"], "easy")
+            finally:
+                conn.close()
+
+    def test_rebuild_migration_is_idempotent(self):
+        """CHECK 重建遷移可重複執行不報錯（第二次呼叫時 CHECK 已是新版，no-op）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy.db"
+            _build_legacy_training_plan_db(db_path)
+
+            first_conn = get_connection(db_path)
+            first_conn.close()
+
+            conn = get_connection(db_path)
+            try:
+                row = conn.execute(
+                    "SELECT plan_source FROM training_plan"
+                ).fetchone()
+                self.assertEqual(row["plan_source"], "generated")
+                count = conn.execute("SELECT COUNT(*) AS c FROM training_plan").fetchone()["c"]
+                self.assertEqual(count, 1)  # 沒有因重複遷移而重複插入或遺失資料
+            finally:
+                conn.close()
+
+    def test_new_database_is_unaffected_by_rebuild_migration(self):
+        """全新資料庫（走 schema.sql，CHECK 本來就是新版）不會觸發重建邏輯。"""
+        conn = get_connection(":memory:")
+        conn.execute(
+            "INSERT INTO athlete_profile (name, updated_at) VALUES ('測試學員', '2026-01-01T00:00:00')"
+        )
+        athlete_id = conn.execute("SELECT id FROM athlete_profile").fetchone()["id"]
+        conn.execute(
+            """
+            INSERT INTO training_plan
+                (athlete_id, planned_date, workout_type, plan_source, created_at)
+            VALUES (?, '2026-01-01', 'easy', 'generated', '2026-01-01T00:00:00')
+            """,
+            (athlete_id,),
+        )
+        conn.commit()
+        row = conn.execute("SELECT plan_source FROM training_plan").fetchone()
+        self.assertEqual(row["plan_source"], "generated")
 
 
 def _build_legacy_athlete_profile_db(db_path: Path) -> None:
