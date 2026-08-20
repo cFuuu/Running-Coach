@@ -30,12 +30,6 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
     注意：SQLite 的 ALTER TABLE ADD COLUMN 不支援加上 CHECK 條件，
     因此這裡加的欄位沒有 CHECK 約束，但全新建立的資料庫（走 schema.sql）有。
     寫入端不應依賴資料庫層的約束來驗證這兩個欄位的值。
-
-    同理，既有資料庫中 training_plan.plan_source 欄位原本的 CHECK
-    （'ai_coach'/'running_club'）不會被本函式更新為新的合法值集合
-    （'generated'/'external'）——ALTER TABLE 無法修改既有欄位的 CHECK 約束。
-    既有資料庫上寫入新值時，應用層需自行確保只寫入新的合法值，不依賴
-    資料庫層擋下舊值。
     """
     for table, column, coltype in _COLUMN_MIGRATIONS:
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -45,6 +39,69 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
     _backfill_training_plan_is_active(conn)
+    _migrate_training_plan_check_constraint(conn)
+
+
+def _migrate_training_plan_check_constraint(conn: sqlite3.Connection) -> None:
+    """把既有資料庫的 training_plan 表從舊版 plan_source CHECK
+    （'ai_coach'/'running_club'）遷移到新版（'generated'/'external'）。
+
+    2026-08-20 實測發現：ALTER TABLE ADD COLUMN 無法修改既有欄位的 CHECK
+    約束，導致舊資料庫即使補上了 is_active/superseded_by 欄位，plan_source
+    仍卡在舊 CHECK，連合法的新值 'generated' 都會被擋下（sqlite3.IntegrityError）。
+    純加欄位無法解決，必須重建整張表：建暫存新表（schema 與 schema.sql 一致，
+    含新 CHECK）→ 複製既有資料、把舊值對應成新值 → 刪舊表 → 新表改名。
+
+    只在偵測到舊 CHECK 仍存在時才執行（用 sqlite_master.sql 是否包含
+    'ai_coach' 判斷），可重複執行不報錯：新資料庫或已遷移過的資料庫，
+    CHECK 已是新版，本函式直接 no-op。
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'training_plan'"
+    ).fetchone()
+    if row is None or row["sql"] is None or "ai_coach" not in row["sql"]:
+        return  # 表不存在，或已是新版 CHECK，無需遷移
+
+    conn.execute("ALTER TABLE training_plan RENAME TO training_plan_legacy_pre_generated_external")
+    conn.execute(
+        """
+        CREATE TABLE training_plan (
+            id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id                  INTEGER NOT NULL REFERENCES athlete_profile(id),
+            planned_date                TEXT NOT NULL,
+            workout_type                TEXT NOT NULL CHECK (workout_type IN ('easy', 'tempo', 'interval', 'lsd', 'race', 'rest', 'strength', 'cross_training')),
+            planned_distance_km         REAL,
+            planned_duration_sec        INTEGER,
+            planned_pace_sec_per_km     INTEGER,
+            notes                       TEXT,
+            plan_source                 TEXT NOT NULL CHECK (plan_source IN ('generated', 'external')),
+            linked_activity_id          INTEGER REFERENCES activities(id),
+            is_active                   INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+            superseded_by               INTEGER REFERENCES training_plan(id),
+            created_at                  TEXT NOT NULL
+        )
+        """
+    )
+    # 舊資料的 plan_source 只有 'ai_coach'/'running_club' 兩種值，皆對應新語意
+    # 的 'generated'（AI 教練與跑團課表在舊版都代表「非使用者手動輸入」的
+    # 產生課表；新版的 'external' 專指本輪才新增的外部課表協調語意，舊資料
+    # 沒有這個概念，故一律映射為 'generated'，不臆測哪些舊列其實是外部課表）。
+    conn.execute(
+        """
+        INSERT INTO training_plan
+            (id, athlete_id, planned_date, workout_type, planned_distance_km,
+             planned_duration_sec, planned_pace_sec_per_km, notes, plan_source,
+             linked_activity_id, is_active, superseded_by, created_at)
+        SELECT id, athlete_id, planned_date, workout_type, planned_distance_km,
+               planned_duration_sec, planned_pace_sec_per_km, notes, 'generated',
+               linked_activity_id, COALESCE(is_active, 1), superseded_by, created_at
+        FROM training_plan_legacy_pre_generated_external
+        """
+    )
+    conn.execute("DROP TABLE training_plan_legacy_pre_generated_external")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_training_plan_athlete_date ON training_plan (athlete_id, planned_date)"
+    )
 
 
 def _backfill_training_plan_is_active(conn: sqlite3.Connection) -> None:
