@@ -116,9 +116,14 @@ def _backfill_training_plan_is_active(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE training_plan SET is_active = 1 WHERE is_active IS NULL")
 
 
-def get_connection(db_path: str | Path) -> sqlite3.Connection:
-    """Open (creating if needed) the SQLite database and ensure the schema is applied."""
-    conn = sqlite3.connect(db_path)
+def get_connection(db_path: str | Path, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open (creating if needed) the SQLite database and ensure the schema is applied.
+
+    check_same_thread=False 供跨執行緒但保證序列化存取的呼叫端使用（例如 MCP
+    server：lifespan 開一次 connection，各 tool call 在 SDK 的另一個 thread
+    執行，但同一時間只有一個呼叫在跑，符合 SQLite 官方文件對關閉此檢查的前提）。
+    """
+    conn = sqlite3.connect(db_path, check_same_thread=check_same_thread)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     with open(SCHEMA_PATH, encoding="utf-8") as f:

@@ -54,7 +54,10 @@ _db_path: str | None = None
 async def app_lifespan(server: MCPServer) -> AsyncIterator[AppContext]:
     if _db_path is None:
         raise RuntimeError("db_path 尚未設定，請透過 main() 的 --db-path 啟動本模組")
-    conn = get_connection(_db_path)
+    # MCP SDK 在跟 lifespan 不同的 thread 執行各個 tool call，需關閉
+    # check_same_thread（lifespan 保證同一時間只有一個 tool 呼叫在跑，
+    # 符合官方文件對關閉此檢查的前提）。
+    conn = get_connection(_db_path, check_same_thread=False)
     try:
         yield AppContext(db=conn)
     finally:
