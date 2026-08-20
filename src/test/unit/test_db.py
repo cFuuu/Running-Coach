@@ -1,5 +1,6 @@
 """db.py 的 _apply_column_migrations() 單元測試——聚焦 training_plan 的
-plan_source 命名修正與版本化欄位（is_active/superseded_by）遷移行為。
+plan_source 命名修正與版本化欄位（is_active/superseded_by）遷移行為，
+以及 athlete_profile 的個人化恢復閾值欄位（Issue #16）遷移行為。
 
 全部使用合成測試資料，不含真實個人資料。
 """
@@ -230,6 +231,117 @@ class TestTrainingPlanSchemaMigration(unittest.TestCase):
                     "SELECT plan_source FROM training_plan"
                 ).fetchone()
                 self.assertEqual(row["plan_source"], "ai_coach")
+            finally:
+                conn.close()
+
+
+def _build_legacy_athlete_profile_db(db_path: Path) -> None:
+    """建立一個模擬「Issue #16 之前」既有資料庫的最小 athlete_profile 表：
+    無 high_risk_consecutive_training_days 欄位。
+    """
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE athlete_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            max_hr_bpm INTEGER,
+            resting_hr_bpm INTEGER,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO athlete_profile (name, updated_at)
+        VALUES ('測試學員', '2026-01-01T00:00:00')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+class TestAthleteProfileRecoveryThresholdMigration(unittest.TestCase):
+    def test_new_database_has_recovery_threshold_column(self):
+        """全新資料庫（走 schema.sql）應含新增的恢復閾值欄位。"""
+        conn = get_connection(":memory:")
+        existing_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(athlete_profile)")
+        }
+        self.assertIn("high_risk_consecutive_training_days", existing_columns)
+
+    def test_new_database_column_defaults_to_null(self):
+        conn = get_connection(":memory:")
+        conn.execute(
+            """
+            INSERT INTO athlete_profile (name, updated_at)
+            VALUES ('測試學員', '2026-01-01T00:00:00')
+            """
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT high_risk_consecutive_training_days FROM athlete_profile"
+        ).fetchone()
+        self.assertIsNone(row["high_risk_consecutive_training_days"])
+
+    def test_new_database_can_write_and_read_threshold_value(self):
+        conn = get_connection(":memory:")
+        conn.execute(
+            """
+            INSERT INTO athlete_profile
+                (name, high_risk_consecutive_training_days, updated_at)
+            VALUES ('測試學員', 6, '2026-01-01T00:00:00')
+            """
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT high_risk_consecutive_training_days FROM athlete_profile"
+        ).fetchone()
+        self.assertEqual(row["high_risk_consecutive_training_days"], 6)
+
+    def test_legacy_database_gains_new_column_after_migration(self):
+        """既有資料庫（無此欄位）套用遷移後可正常讀寫新欄位。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy_profile.db"
+            _build_legacy_athlete_profile_db(db_path)
+
+            conn = get_connection(db_path)
+            try:
+                existing_columns = {
+                    row["name"] for row in conn.execute("PRAGMA table_info(athlete_profile)")
+                }
+                self.assertIn("high_risk_consecutive_training_days", existing_columns)
+
+                row = conn.execute(
+                    "SELECT high_risk_consecutive_training_days FROM athlete_profile"
+                ).fetchone()
+                self.assertIsNone(row["high_risk_consecutive_training_days"])
+
+                conn.execute(
+                    "UPDATE athlete_profile SET high_risk_consecutive_training_days = 5"
+                )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT high_risk_consecutive_training_days FROM athlete_profile"
+                ).fetchone()
+                self.assertEqual(row["high_risk_consecutive_training_days"], 5)
+            finally:
+                conn.close()
+
+    def test_migration_is_idempotent(self):
+        """遷移機制可重複執行不報錯。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy_profile.db"
+            _build_legacy_athlete_profile_db(db_path)
+
+            first_conn = get_connection(db_path)
+            first_conn.close()
+            conn = get_connection(db_path)
+            try:
+                existing_columns = {
+                    row["name"] for row in conn.execute("PRAGMA table_info(athlete_profile)")
+                }
+                self.assertIn("high_risk_consecutive_training_days", existing_columns)
             finally:
                 conn.close()
 
