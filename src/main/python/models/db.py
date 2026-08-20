@@ -19,6 +19,8 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     # 否則既有資料庫的舊資料 is_active 會是 NULL 而非 1。
     ("training_plan", "is_active", "INTEGER"),
     ("training_plan", "superseded_by", "INTEGER"),
+    # 2026-08-20：個人化恢復閾值（Issue #16），NULL 代表尚未人工設定。
+    ("athlete_profile", "high_risk_consecutive_training_days", "INTEGER"),
 ]
 
 

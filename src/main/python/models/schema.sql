@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS athlete_profile (
     max_hr_bpm      INTEGER,
     max_hr_source   TEXT CHECK (max_hr_source IN ('watch_display', 'measured', 'age_formula', 'observed_from_data')),
     resting_hr_bpm  INTEGER,
+    -- 個人化恢復閾值（Issue #15/#16）：連續訓練達此天數視為高風險，觸發
+    -- readiness 判斷邏輯的警訊。NULL 代表尚未人工設定，判斷邏輯需降級為
+    -- 使用預設閾值（預設值由判斷邏輯本體決定，不在 schema 層硬編碼）。
+    high_risk_consecutive_training_days  INTEGER,
     updated_at      TEXT NOT NULL
 );
 
