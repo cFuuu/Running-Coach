@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "running-coach": {
+      "type": "stdio",
+      "command": "C:\\Users\\cFu\\anaconda3\\envs\\rc\\python.exe",
+      "args": [
+        "-m",
+        "src.main.python.mcp.server"
+      ],
+      "env": {}
+    }
+  }
+}
