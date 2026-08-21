@@ -114,11 +114,16 @@ def assess_readiness(
     training_load_series: list[dict[str, Any]],
     daily_wellness: list[dict[str, Any]],
     high_risk_consecutive_training_days: int | None = None,
+    output_from_date: datetime.date | None = None,
 ) -> list[dict[str, Any]]:
     """對 training_load_series 涵蓋的每一天，輸出恢復狀態評分/旗標。
 
     training_load_series：training_load.compute_training_load_series() 的輸出
-        （每筆至少含 "date"／"load"／"tsb"）。
+        （每筆至少含 "date"／"load"／"tsb"）。呼叫端若為了讓 ATL/CTL 有足夠
+        暖機期而多算了序列前段（見 training_load_queries.compute_readiness_for_athlete）,
+        仍應把完整序列傳進來——本函式用完整序列建立連續訓練天數的查詢表，
+        只有「輸出哪幾天的結果」由 output_from_date 控制，避免暖機期天數
+        因為查不到前一天的負荷資料而被誤判為連續中斷。
 
     daily_wellness：每筆至少含 "date"／"hrv_ms"／"hrv_weekly_avg_ms"（其餘
         daily_wellness 欄位本模組目前不使用，但不因額外欄位存在而出錯）。
@@ -130,6 +135,10 @@ def assess_readiness(
         DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS，並在輸出中標記
         "threshold_source": "default"；否則標記 "threshold_source": "personalized"。
 
+    output_from_date：只輸出這天（含）之後的結果，之前的天數僅用於連續訓練
+        天數與 ATL/CTL 暖機計算，不出現在回傳結果中。為 None 時輸出
+        training_load_series 的整段日期範圍（既有行為不變）。
+
     回傳：依日期升冪排序的 list，每筆
         {
             "date": datetime.date,
@@ -138,7 +147,8 @@ def assess_readiness(
             "threshold_source": "default" | "personalized",
             "consecutive_training_days": int,
         }
-        涵蓋輸入 training_load_series 的整段日期範圍。輸入為空清單時回傳空清單。
+        涵蓋輸入 training_load_series 的整段日期範圍（或 output_from_date 之後）。
+        輸入為空清單時回傳空清單。
 
     本函式不碰資料庫，呼叫後不會、也無從修改 training_plan 或其他任何資料表。
     """
@@ -157,6 +167,8 @@ def assess_readiness(
     results: list[dict[str, Any]] = []
     for day in training_load_series:
         date = day["date"]
+        if output_from_date is not None and date < output_from_date:
+            continue
         consecutive_days = _consecutive_training_days_ending_at(daily_loads_by_date, date)
         wellness = wellness_by_date.get(date, {})
 
