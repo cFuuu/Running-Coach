@@ -25,6 +25,7 @@ from typing import Any
 
 from src.main.python.services.readiness import assess_readiness
 from src.main.python.services.training_load import (
+    CTL_TIME_CONSTANT_DAYS,
     RUNNING_ACTIVITY_TYPES,
     STRENGTH_ACTIVITY_TYPES,
     compute_daily_loads,
@@ -149,13 +150,22 @@ def compute_readiness_for_athlete(
 
     回傳：readiness.assess_readiness() 的輸出，依日期升冪排序，涵蓋
     [start_date, end_date] 整段區間。
+
+    ATL/CTL 暖機期：compute_training_load_series() 把序列第一天的 ATL/CTL
+    直接設為當天負荷（見該函式 docstring），若序列就從使用者要求的 start_date
+    開始算，正好撞上高強度訓練日時，ATL（7 天時間常數）與 CTL（42 天時間常數）
+    會以不同速度收斂，短期內把 TSB 撐出不合理的極端值——且同一天的判讀結果會
+    因為呼叫端傳入的 start_date 不同而改變，不可接受。故這裡往前多抓
+    CTL_TIME_CONSTANT_DAYS 天的活動資料讓 ATL/CTL 先行收斂，再只取使用者
+    要的 [start_date, end_date] 切片回傳，暖機期本身不出現在回傳結果中。
     """
     max_hr_bpm, resting_hr_bpm = get_hr_params(conn, athlete_id)
 
-    activities = get_activities_for_load(conn, athlete_id, start_date, end_date)
+    warmup_start = start_date - datetime.timedelta(days=CTL_TIME_CONSTANT_DAYS)
+    activities = get_activities_for_load(conn, athlete_id, warmup_start, end_date)
     daily_loads = compute_daily_loads(
         activities,
-        start_date,
+        warmup_start,
         end_date,
         max_hr_bpm=max_hr_bpm,
         resting_hr_bpm=resting_hr_bpm,
@@ -177,4 +187,5 @@ def compute_readiness_for_athlete(
         training_load_series,
         daily_wellness,
         high_risk_consecutive_training_days=high_risk_consecutive_training_days,
+        output_from_date=start_date,
     )
