@@ -25,7 +25,7 @@ from typing import Any
 
 from src.main.python.services.readiness import assess_readiness
 from src.main.python.services.training_load import (
-    CTL_TIME_CONSTANT_DAYS,
+    CTL_WARMUP_DAYS,
     RUNNING_ACTIVITY_TYPES,
     STRENGTH_ACTIVITY_TYPES,
     compute_daily_loads,
@@ -156,12 +156,17 @@ def compute_readiness_for_athlete(
     開始算，正好撞上高強度訓練日時，ATL（7 天時間常數）與 CTL（42 天時間常數）
     會以不同速度收斂，短期內把 TSB 撐出不合理的極端值——且同一天的判讀結果會
     因為呼叫端傳入的 start_date 不同而改變，不可接受。故這裡往前多抓
-    CTL_TIME_CONSTANT_DAYS 天的活動資料讓 ATL/CTL 先行收斂，再只取使用者
-    要的 [start_date, end_date] 切片回傳，暖機期本身不出現在回傳結果中。
+    CTL_WARMUP_DAYS 天的活動資料讓 ATL/CTL 先行收斂，再只取使用者要的
+    [start_date, end_date] 切片回傳，暖機期本身不出現在回傳結果中。
+
+    （2026-08-21 修正：先前這裡只抓 CTL_TIME_CONSTANT_DAYS，即 1 倍時間常數，
+    對 ATL 夠用但對 CTL 自己不夠收斂，實測仍會出現「同一天因 start_date
+    不同而判讀不同」的問題，改抓 training_load.CTL_WARMUP_DAYS，理由見
+    該常數的定義處。）
     """
     max_hr_bpm, resting_hr_bpm = get_hr_params(conn, athlete_id)
 
-    warmup_start = start_date - datetime.timedelta(days=CTL_TIME_CONSTANT_DAYS)
+    warmup_start = start_date - datetime.timedelta(days=CTL_WARMUP_DAYS)
     activities = get_activities_for_load(conn, athlete_id, warmup_start, end_date)
     daily_loads = compute_daily_loads(
         activities,
