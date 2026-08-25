@@ -77,7 +77,11 @@ WELLNESS_METRIC_DEFS: tuple[WellnessMetricDef, ...] = (
     ("sleep_duration_sec", "睡眠時長", "", 0, "duration"),
     ("hrv_weekly_avg_ms", "HRV 週均", "ms", 1, "number"),
     ("recovery_time_hours", "恢復時間", "hr", 1, "number"),
-    ("acwr", "急慢性負荷比（ACWR）", "", 2, "number"),
+    # ⚠️ 此欄位存的是 Garmin `acwrFactorPercent`（0–100 量表，代表 ACWR 對
+    # readiness 分數的貢獻度），**不是**古典的 0.8–1.3 急慢性負荷比。
+    # 見 garmin_export_parser.parse_training_readiness() 的說明。
+    # 標籤刻意不用「ACWR」字樣，避免下游（含 AI 對話層）誤讀為比值。
+    ("acwr", "Garmin 負荷比指數（0–100）", "", 0, "number"),
     ("respiration_rate", "呼吸率", "/min", 1, "number"),
 )
 

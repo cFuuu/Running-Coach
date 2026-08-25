@@ -140,6 +140,11 @@ def get_wellness_trend(
 ) -> dict:
     """取得指定時間區間內的每日身體數據趨勢（HRV、睡眠、靜止心率、
     全天壓力、Training Readiness 等）。缺資料的日期不補值。
+
+    ⚠️ 欄位語意警告：`acwr` 欄位存的是 Garmin `acwrFactorPercent`
+    （0–100 量表，代表 ACWR 對 readiness 分數的貢獻度），**不是**古典的
+    0.8–1.3 急慢性負荷比。**不可**用「>1.3 即過載」這類比值門檻解讀它。
+    此為 Garmin 黑盒衍生值，僅供對照參考，不應作為判讀依據。
     """
     return _serialize(dashboard_queries.get_wellness_trend(_conn(ctx), athlete_id, range_key))
 
