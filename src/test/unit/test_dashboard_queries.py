@@ -103,6 +103,18 @@ class TestMeta(DashboardQueryTestCase):
         self.assertEqual(meta["metric_coverage"]["hrv_ms"]["earliest_date"], "2026-02-20")
         self.assertIn("notice", meta)
 
+    def test_meta_exposes_hrmax_with_confidence(self):
+        """HRmax 必須帶信賴度傳到判斷層（PLAN.md §7.3 三欄位契約）。
+
+        過去 get_meta 只回傳 {id, name}，導致 max_hr_source 這個標記
+        存在資料庫卻傳不出去，AI 無從得知以 %HRR 推算的一切都帶著
+        同一個系統性偏移。fixture 未設來源 → 應保守標為未實測。
+        """
+        athlete = queries.get_meta(self.conn)["athlete"]
+        self.assertEqual(set(athlete["max_hr"]), {"value", "source", "confidence"})
+        self.assertEqual(athlete["max_hr"]["confidence"]["level"], "low")
+        self.assertTrue(athlete["max_hr"]["confidence"]["biases"])
+
     def test_meta_ranges_is_single_source_of_truth_for_frontend(self):
         """前端依此動態產生 range 按鈕，不再各自硬編碼一份清單。"""
         meta = queries.get_meta(self.conn)
@@ -207,6 +219,24 @@ class TestSessionDetail(DashboardQueryTestCase):
         self.assertEqual(detail["workout_type"], "easy")
         # 同一天有計畫課表（lsd）→ 可與實際的 easy 對照出課表遵從度
         self.assertEqual(detail["planned"]["workout_type"], "lsd")
+
+    def test_labeled_workout_blocks_nothing(self):
+        detail = self._detail("測試晨跑")  # workout_type = easy
+        self.assertEqual(detail["assessability"]["blocked"], [])
+
+    def test_unknown_workout_type_blocks_pace_execution(self):
+        """workout_type 為 unknown 時不得評配速執行度（PLAN.md §7.4）——
+        unknown 是分類器失敗而非某個課種，拿 easy 的標準評一場其實是
+        間歇的課會得到完全錯誤的結論。
+        """
+        session_id = self._detail("測試晨跑")["id"]
+        self.conn.execute(
+            "UPDATE activities SET workout_type = 'unknown' WHERE id = ?", (session_id,)
+        )
+        blocked = queries.get_session_detail(self.conn, session_id)["assessability"]["blocked"]
+        self.assertEqual(len(blocked), 1)
+        self.assertIn("pace_execution", blocked[0]["dimensions"])
+        self.assertEqual(blocked[0]["bias_code"], "workout_type_unknown")
 
     def test_planned_is_none_when_no_plan_that_day(self):
         self.assertIsNone(self._detail("測試手動分圈跑")["planned"])

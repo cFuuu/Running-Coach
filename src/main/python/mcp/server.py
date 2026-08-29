@@ -102,6 +102,11 @@ def get_athlete_meta(ctx: Context[AppContext], athlete_id: int | None = None) ->
     """取得學員基本資料、各項身體指標的可用日期範圍、預設可選時間區間清單。
 
     athlete_id 省略時預設取資料庫中第一位學員（單人自用情境）。
+
+    `athlete.max_hr` 採事實層三欄位契約 `{value, source, confidence}`。
+    ⚠️ 若 `confidence.level` 為 `low`，代表 HRmax 非實測（手錶顯示值或年齡
+    公式），**所有以 %HRR 推算的強度、訓練負荷、等效配速都帶著同一個系統性
+    偏移**。據此下結論時必須一併說明此不確定性，不可當作精確值使用。
     """
     return _serialize(dashboard_queries.get_meta(_conn(ctx), athlete_id))
 
@@ -128,6 +133,13 @@ def get_session_detail(
 ) -> dict | None:
     """取得單場活動的完整細節：摘要、心率區間分布、每公里分圈、
     逐秒配速/心率、心率漂移。查無此活動時回傳 None。
+
+    ⚠️ **務必先看 `assessability.blocked`**：其中列出的判讀維度缺的是
+    「前提」而非資料品質微瑕，**不得對這些維度下任何結論**。最常見的情形是
+    `workout_type` 為 unknown/NULL（全體 266 場中佔 25.6%）——這不是
+    「未知的課種」而是分類器失敗，該場可能是任何課種，拿 easy 的標準去評
+    一場其實是間歇的課會產出完全錯誤的「執行度不佳」。此時應明說「這場無法
+    評配速執行度，因為課種未知」，而非自行猜測課種後照評。
     """
     return _serialize(dashboard_queries.get_session_detail(_conn(ctx), session_id, athlete_id))
 

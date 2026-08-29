@@ -25,6 +25,7 @@ from typing import Any
 
 from src.main.python.services import fit_parser
 from src.main.python.services import garmin_export_parser as parser
+from . import data_confidence
 
 # range 參數合法值 → 往回推的天數。"all" 代表不設起日。
 RANGE_DAYS: dict[str, int | None] = {
@@ -252,10 +253,28 @@ def get_meta(conn: sqlite3.Connection, athlete_id: int | None = None) -> dict:
     athlete = None
     if resolved is not None:
         row = conn.execute(
-            "SELECT id, name FROM athlete_profile WHERE id = ?", (resolved,)
+            """
+            SELECT id, name, max_hr_bpm, max_hr_source, resting_hr_bpm
+            FROM athlete_profile WHERE id = ?
+            """,
+            (resolved,),
         ).fetchone()
         if row:
-            athlete = {"id": row["id"], "name": row["name"]}
+            # HRmax 與其來源標記一併輸出（PLAN.md §7.3 三欄位契約）。
+            # 過去只回傳 {id, name}，導致 max_hr_source='watch_display' 這個
+            # 信賴度標記存在資料庫卻傳不到判斷層——AI 無從得知所有以 %HRR
+            # 推算的強度/負荷/等效配速都帶著同一個系統性偏移。
+            hrmax_biases = data_confidence.hrmax_bias_codes(row["max_hr_source"])
+            athlete = {
+                "id": row["id"],
+                "name": row["name"],
+                "resting_hr_bpm": row["resting_hr_bpm"],
+                "max_hr": data_confidence.fact(
+                    row["max_hr_bpm"],
+                    source=f"athlete_profile.max_hr_source={row['max_hr_source']}",
+                    bias_codes=hrmax_biases,
+                ),
+            }
 
     coverage: dict[str, dict] = {}
     if resolved is not None:
@@ -420,6 +439,36 @@ def get_session_detail(
         "hr_drift": fit_parser.compute_hr_drift(records)
         if records
         else {"available": False, "reason": "需要逐秒資料才能計算心率漂移"},
+        "assessability": _build_assessability(row),
+    }
+
+
+def _build_assessability(row: sqlite3.Row) -> dict:
+    """標示這場活動有哪些判讀維度不可評、為什麼（PLAN.md §7.4 定案）。
+
+    不改既有欄位形狀（dashboard 前端契約依賴它們），而是另闢一個區塊
+    告訴判斷層「這裡不要下結論」。`workout_type` 為 unknown/NULL 時
+    （全體 266 場中佔 25.6%）不評需要課種前提的維度——unknown 不是
+    「未知的課種」而是分類器失敗，拿 easy 的標準評一場其實是間歇的課
+    會得到完全錯誤的「執行度不佳」。
+    """
+    blocked: list[dict] = []
+    codes = data_confidence.workout_type_bias_codes(row["workout_type"])
+    if codes:
+        bias = data_confidence.describe_bias(codes[0])
+        blocked.append(
+            {
+                "dimensions": ["pace_execution", "workout_type_conformance"],
+                "reason": bias["detail"],
+                "bias_code": bias["code"],
+            }
+        )
+    return {
+        "blocked": blocked,
+        "note": (
+            "blocked 內列出的維度**不得**做判讀，缺的是前提而非資料品質微瑕；"
+            "其餘維度仍可評，但須併同各自的 confidence 標記一起考量"
+        ),
     }
 
 
