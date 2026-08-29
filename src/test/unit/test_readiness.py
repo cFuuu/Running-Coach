@@ -94,6 +94,47 @@ class TestAssessReadinessTsb(unittest.TestCase):
         self.assertTrue(all(r["triggers"] == [] for r in result))
 
 
+class TestAssessReadinessTriggerConfidence(unittest.TestCase):
+    """每個觸發都要帶信賴度標記（PLAN.md §7.3 三欄位契約）。"""
+
+    def _tsb_trigger(self, max_hr_source):
+        series = _load_series([0.0], tsb_overrides={0: TSB_LOW_THRESHOLD - 5})
+        result = assess_readiness(series, [], max_hr_source=max_hr_source)
+        return next(t for t in result[0]["triggers"] if t["dimension"] == "tsb")
+
+    def test_every_trigger_carries_confidence(self):
+        series = _load_series([0.0], tsb_overrides={0: TSB_LOW_THRESHOLD - 5})
+        result = assess_readiness(series, [])
+        self.assertTrue(result[0]["triggers"])
+        for trigger in result[0]["triggers"]:
+            with self.subTest(dimension=trigger["dimension"]):
+                self.assertIn("confidence", trigger)
+                self.assertIn(trigger["confidence"]["level"], ("high", "low"))
+
+    def test_tsb_confidence_degrades_when_hrmax_not_measured(self):
+        """負荷以 %HRR 推算——HRmax 非實測則整條 ATL/CTL/TSB 同步偏移。"""
+        self.assertEqual(self._tsb_trigger("watch_display")["confidence"]["level"], "low")
+
+    def test_tsb_confidence_is_high_when_hrmax_measured(self):
+        self.assertEqual(self._tsb_trigger("measured")["confidence"]["level"], "high")
+
+    def test_omitted_hrmax_source_is_conservatively_degraded(self):
+        """省略參數不等於實測——保守視為未實測。"""
+        self.assertEqual(self._tsb_trigger(None)["confidence"]["level"], "low")
+
+    def test_consecutive_training_days_has_no_known_bias(self):
+        """純粹數活動日，不經估算。"""
+        series = _load_series([100.0] * 10)
+        result = assess_readiness(series, [], high_risk_consecutive_training_days=3)
+        trigger = next(
+            t
+            for t in result[-1]["triggers"]
+            if t["dimension"] == "consecutive_training_days"
+        )
+        self.assertEqual(trigger["confidence"]["level"], "high")
+        self.assertEqual(trigger["confidence"]["biases"], [])
+
+
 class TestAssessReadinessHrv(unittest.TestCase):
     def test_significant_hrv_drop_triggers_low(self):
         series = _load_series([0.0])

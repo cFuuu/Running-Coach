@@ -188,9 +188,18 @@ def compute_readiness_for_athlete(
         threshold_row["high_risk_consecutive_training_days"] if threshold_row else None
     )
 
+    # HRmax 的來源標記一併傳下去，讓 TSB 維度的觸發帶上信賴度
+    # （負荷以 %HRR 推算，HRmax 非實測則整條 ATL/CTL/TSB 同步偏移）。
+    # 不改 get_hr_params() 的回傳形狀——它有多處呼叫端，另查一次成本極低。
+    source_row = conn.execute(
+        "SELECT max_hr_source FROM athlete_profile WHERE id = ?", (athlete_id,)
+    ).fetchone()
+    max_hr_source = source_row["max_hr_source"] if source_row else None
+
     return assess_readiness(
         training_load_series,
         daily_wellness,
         high_risk_consecutive_training_days=high_risk_consecutive_training_days,
         output_from_date=start_date,
+        max_hr_source=max_hr_source,
     )
