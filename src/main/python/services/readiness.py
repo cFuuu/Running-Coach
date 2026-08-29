@@ -34,6 +34,8 @@ import datetime
 import sqlite3
 from typing import Any
 
+from . import data_confidence
+
 # --- 可調閾值（集中管理，勿散落於邏輯中）---
 
 # 個人化閾值（athlete_profile.high_risk_consecutive_training_days）未設定時
@@ -82,15 +84,23 @@ def _evaluate_consecutive_training(
     return {
         "dimension": "consecutive_training_days",
         "detail": f"連續訓練 {consecutive_days} 天，達到閾值 {threshold} 天",
+        # 純粹數活動日，不經任何估算，無已知偏誤。
+        "confidence": {"level": "high", "biases": []},
     }
 
 
-def _evaluate_tsb(tsb: float) -> dict[str, Any] | None:
+def _evaluate_tsb(tsb: float, hrmax_bias_codes: list[str]) -> dict[str, Any] | None:
     if tsb >= TSB_LOW_THRESHOLD:
         return None
     return {
         "dimension": "tsb",
         "detail": f"TSB 為 {tsb:.1f}，低於門檻 {TSB_LOW_THRESHOLD:.1f}（急性疲勞明顯高於慢性負荷）",
+        # TSB 由 ATL/CTL 遞推而來，而每日負荷是用 %HRR 算的強度——
+        # HRmax 若非實測，整條負荷序列都帶著同一個系統性偏移。
+        "confidence": {
+            "level": data_confidence.combine_level(hrmax_bias_codes),
+            "biases": [data_confidence.describe_bias(c) for c in hrmax_bias_codes],
+        },
     }
 
 
@@ -103,6 +113,10 @@ def _evaluate_hrv(hrv_ms: float | None, hrv_weekly_avg_ms: float | None) -> dict
         return None
     return {
         "dimension": "hrv",
+        # 這裡比的是「當日 vs 自己的 7 日均值」，屬短期變化，7 日均值不需要
+        # 長歷史即可成立，故標 high；長期個人基準（「你的正常 HRV 是多少」）
+        # 才受 292 天樣本期不足所限，那屬另一種用法，見 PLAN.md §7.4。
+        "confidence": {"level": "high", "biases": []},
         "detail": (
             f"當日 HRV {hrv_ms:.1f}ms 較 7 日均值 {hrv_weekly_avg_ms:.1f}ms "
             f"下降 {drop_pct * 100:.1f}%，超過門檻 {HRV_DROP_PCT_THRESHOLD * 100:.0f}%"
@@ -115,6 +129,7 @@ def assess_readiness(
     daily_wellness: list[dict[str, Any]],
     high_risk_consecutive_training_days: int | None = None,
     output_from_date: datetime.date | None = None,
+    max_hr_source: str | None = None,
 ) -> list[dict[str, Any]]:
     """對 training_load_series 涵蓋的每一天，輸出恢復狀態評分/旗標。
 
@@ -135,6 +150,10 @@ def assess_readiness(
         DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS，並在輸出中標記
         "threshold_source": "default"；否則標記 "threshold_source": "personalized"。
 
+    max_hr_source：athlete_profile.max_hr_source，決定 TSB 維度的信賴度標記
+        （負荷以 %HRR 推算，HRmax 非實測則整條 ATL/CTL/TSB 同步偏移）。
+        省略時保守視為未實測。
+
     output_from_date：只輸出這天（含）之後的結果，之前的天數僅用於連續訓練
         天數與 ATL/CTL 暖機計算，不出現在回傳結果中。為 None 時輸出
         training_load_series 的整段日期範圍（既有行為不變）。
@@ -143,7 +162,9 @@ def assess_readiness(
         {
             "date": datetime.date,
             "readiness": "low" | "normal",
-            "triggers": list[dict],  # 觸發的維度與說明，空 list 代表無觸發
+            "triggers": list[dict],  # 觸發的維度、說明與該維度的信賴度標記
+                # （{"dimension", "detail", "confidence": {"level", "biases"}}），
+                # 空 list 代表無觸發
             "threshold_source": "default" | "personalized",
             "consecutive_training_days": int,
         }
@@ -161,6 +182,10 @@ def assess_readiness(
         "personalized" if high_risk_consecutive_training_days is not None else "default"
     )
 
+    # HRmax 來源決定 TSB 這條線的信賴度：負荷是用 %HRR 算的，
+    # HRmax 非實測則整條 ATL/CTL/TSB 同步偏移。省略參數時保守視為未實測。
+    hrmax_bias_codes = data_confidence.hrmax_bias_codes(max_hr_source)
+
     daily_loads_by_date = {day["date"]: day["load"] for day in training_load_series}
     wellness_by_date = {day["date"]: day for day in daily_wellness}
 
@@ -175,7 +200,7 @@ def assess_readiness(
         triggers = []
         for trigger in (
             _evaluate_consecutive_training(consecutive_days, threshold),
-            _evaluate_tsb(day["tsb"]),
+            _evaluate_tsb(day["tsb"], hrmax_bias_codes),
             _evaluate_hrv(wellness.get("hrv_ms"), wellness.get("hrv_weekly_avg_ms")),
         ):
             if trigger is not None:
