@@ -120,6 +120,12 @@ from src.main.python.services.fit_import_runner import (
     store_laps,
     update_workout_type,
 )
+# ⚠️ 只重用 ms_to_sec()：這不是「套用匯出包的單位換算係數」——hrTimeInZone_N
+# 這個特定欄位經 dashboard_queries.py 實測證實在 API 回傳裡就是毫秒（與同一
+# payload 裡 distance/duration 的公尺/秒慣例不同），是欄位本身的例外，
+# 不是本模組 docstring 警告的「誤用匯出包係數」情境。沿用同一顆已驗證過的
+# 函式，而非另外複製一份 /1000 邏輯（CLAUDE.md：禁止複製貼上程式碼區塊）。
+from src.main.python.services.garmin_export_parser import ms_to_sec
 
 # 寫入時採用的 source 值。沿用 garmin_export 的理由見模組 docstring。
 SYNC_SOURCE = "garmin_export"
@@ -139,16 +145,18 @@ DEFAULT_SYNC_DAYS = 7
 OVERLAP_DAYS = 3
 
 # 自動模式單次回溯上限。90 天可涵蓋一個完整馬拉松訓練週期（12–16 週），
-# 成本為 361 次請求／約 6 分鐘（見 estimate_sync_cost）。更早的缺口應走
+# 成本為 451 次請求／約 7.5 分鐘（見 estimate_sync_cost）。更早的缺口應走
 # 官方匯出包——一次拿完整歷史，且含分圈與 workout_type，品質優於 API 摘要。
-# ⚠️ 不可貿然調高：wellness 是逐日各打 4 個端點，天數與請求數成正比，
-# garmin_api_client 的硬上限 365 天等於 1461 次請求／約 24 分鐘連續請求，
+# ⚠️ 不可貿然調高：wellness 是逐日各打 5 個端點，天數與請求數成正比，
+# garmin_api_client 的硬上限 365 天等於 1826 次請求／約 30 分鐘連續請求，
 # 已超出正常使用者行為的樣子，有觸發 Cloudflare 風控的風險。
 MAX_AUTO_SYNC_DAYS = 90
 
-# 每日身體數據的端點數（stats／sleep／hrv／training_readiness），
-# 與 garmin_api_client.fetch_daily_wellness_raw() 的來源數一致。
-_WELLNESS_ENDPOINTS_PER_DAY = 4
+# 每日身體數據的端點數（stats／sleep／hrv／training_readiness／
+# training_status），與 garmin_api_client.fetch_daily_wellness_raw() 的
+# 來源數一致。2026-09-02：Task 1B-9 新增 training_status，由 4 → 5
+# ——若忘記同步更新，耗時預告會低估，違反與 Fu 議定的預告行為。
+_WELLNESS_ENDPOINTS_PER_DAY = 5
 
 # 節流間隔沿用 client 的預設值，讓耗時預估與實際行為一致。
 REQUEST_INTERVAL_SEC = DEFAULT_REQUEST_INTERVAL_SEC
@@ -169,6 +177,21 @@ _WELLNESS_METRIC_COLUMNS = (
     "training_readiness_score",
     "recovery_time_hours",
     "acwr",
+    # --- 2026-09-02：Task 1B-9 新增（見 GARMIN_METRICS_AUDIT.md）---
+    "hrv_baseline_low_upper",
+    "hrv_baseline_balanced_low",
+    "hrv_baseline_balanced_upper",
+    "hrv_status",
+    "hrv_last_night_5min_high",
+    "acute_load",
+    "rhr_7day_avg_bpm",
+    "sleep_deep_sec",
+    "sleep_light_sec",
+    "sleep_rem_sec",
+    "sleep_awake_sec",
+    "body_battery_at_wake",
+    "readiness_input_context",
+    "readiness_timestamp_local",
 )
 
 
@@ -188,6 +211,37 @@ def _as_int(value) -> int | None:
         return int(float(value))
     except (TypeError, ValueError):
         return None
+
+
+_HR_ZONE_PREFIX = "hrTimeInZone_"
+# 只收 Zone 1~5（使用者的訓練強度區間）。Zone 0（低於 Zone 1 的暖身/靜止）
+# 與 Zone 6（裝置固定產生但收不到資料的 padding 桶，見 dashboard_queries.py
+# HR_ZONE_MAX 註解）不列入，避免與既有的 below_zone_1 查詢語意重複定義。
+_HR_ZONE_MIN = 1
+_HR_ZONE_MAX = 5
+
+
+def _build_hr_time_in_zone_json(raw: dict) -> str | None:
+    """從活動摘要抽出 `hrTimeInZone_1..5`，換算成秒後存為 JSON 字串。
+
+    ⚠️ 欄位值單位是**毫秒**（與同一 payload 裡 distance/duration 的
+    公尺/秒慣例不同），須用 `ms_to_sec()` 換算——見本模組頂部 import 註解
+    與 `dashboard_queries._build_hr_zones()` 的既有實測佐證。
+
+    全部區間皆缺值或為 0 視為無心率資料，回傳 None（不存一個全 0 的 JSON，
+    那會讓下游誤以為「查過了、確實是 0」而非「根本沒量到」）。
+    """
+    zones: dict[str, int] = {}
+    for i in range(_HR_ZONE_MIN, _HR_ZONE_MAX + 1):
+        value = raw.get(f"{_HR_ZONE_PREFIX}{i}")
+        if value is None:
+            continue
+        seconds = ms_to_sec(value)
+        if seconds is not None:
+            zones[str(i)] = seconds
+    if not zones or all(v == 0 for v in zones.values()):
+        return None
+    return json.dumps(zones, ensure_ascii=False)
 
 
 def normalize_activity(raw: dict) -> dict | None:
@@ -222,6 +276,13 @@ def normalize_activity(raw: dict) -> dict | None:
     max_speed = raw.get("maxSpeed")
     best_pace = round(1000 / max_speed) if max_speed else None
 
+    # 坡度校正配速（Grade Adjusted Pace）：avgGradeAdjustedSpeed 同樣是
+    # 公尺/秒，換算方式與 best_pace 一致。
+    grade_adj_speed = raw.get("avgGradeAdjustedSpeed")
+    avg_grade_adj_pace = (
+        round(1000 / grade_adj_speed) if grade_adj_speed else None
+    )
+
     return {
         "external_id": str(raw["activityId"]) if raw.get("activityId") else None,
         "activity_type": type_key,
@@ -239,6 +300,27 @@ def normalize_activity(raw: dict) -> dict | None:
         "max_cadence_spm": _round_or_none(raw.get("maxRunningCadenceInStepsPerMinute")),
         "avg_pace_sec_per_km": avg_pace,
         "best_pace_sec_per_km": best_pace,
+        # 無氧訓練效果（Anaerobic Training Effect）：與既有 aerobic_te 成對，
+        # 是間歇課品質判讀的核心（見 schema.sql 註解）。
+        "anaerobic_te": raw.get("anaerobicTrainingEffect"),
+        # 單場運動負荷（Activity Training Load）：累加成 acute load 的來源。
+        "activity_training_load": raw.get("activityTrainingLoad"),
+        # 訓練效果標籤（如 AEROBIC_BASE／TEMPO／VO2MAX）。
+        "training_effect_label": raw.get("trainingEffectLabel"),
+        "avg_grade_adj_pace_sec_per_km": avg_grade_adj_pace,
+        # --- 跑步動態（Running Dynamics，需錶端支援，實測覆蓋率約 72%）---
+        "avg_ground_contact_time_ms": raw.get("avgGroundContactTime"),
+        "avg_vertical_oscillation_cm": raw.get("avgVerticalOscillation"),
+        "avg_vertical_ratio_pct": raw.get("avgVerticalRatio"),
+        "avg_stride_length_cm": raw.get("avgStrideLength"),
+        # --- 跑步功率（Running Power，瓦特）---
+        "avg_power_watts": raw.get("avgPower"),
+        "max_power_watts": raw.get("maxPower"),
+        "norm_power_watts": raw.get("normPower"),
+        # --- 環境溫度：手腕體溫污染值，照存但不可當氣溫用，見 schema.sql 註解 ---
+        "min_temperature_c": raw.get("minTemperature"),
+        "max_temperature_c": raw.get("maxTemperature"),
+        "hr_time_in_zone_json": _build_hr_time_in_zone_json(raw),
         # API 已是公尺，不需換算（匯出包才是公分）
         "elevation_gain_m": raw.get("elevationGain"),
         "elevation_loss_m": raw.get("elevationLoss"),
@@ -277,6 +359,34 @@ def normalize_laps(lap_dtos: list[dict]) -> list[dict]:
     return rows
 
 
+# Training Readiness 快照選取（缺陷 C）：課表決策要問的是「今天能不能練」，
+# 而非「恢復得如何」，故取起床時的那筆而非睡前最後一筆。
+_READINESS_PREFERRED_CONTEXT = "AFTER_WAKEUP_RESET"
+
+
+def _select_readiness_snapshot(readiness_list: list[dict]) -> dict:
+    """依缺陷 C 的決策，從單日多筆 Training Readiness 快照中選出起床那筆。
+
+    該端點每日回傳多筆快照（實測 2–4 筆），分數在一天內可劇烈變動
+    （實測 2026-08-31：起床 60 分、睡前 75 分）。本專案取
+    `inputContext == 'AFTER_WAKEUP_RESET'` 的那筆，因為教練決策要問的是
+    「今天能不能練」而非「恢復得如何」。
+
+    ⚠️ 沒有該 context 的日子**不靜默取錯**：退回沿用修正前的既有行為
+    （取 `[0]`，實測確認為時間戳最新的一筆），但無論退回與否，實際採用的
+    `inputContext`／`timestampLocal` 一律存進 `readiness_input_context`／
+    `readiness_timestamp_local` 兩欄，讓下游能判斷「這天沒有起床快照，
+    這個分數代表的是別的時點」，而不是誤以為每天都是同一種語意。
+    此頻率（多常沒有起床快照）待本機對真實帳號驗證確認。
+    """
+    if not readiness_list:
+        return {}
+    for entry in readiness_list:
+        if entry.get("inputContext") == _READINESS_PREFERRED_CONTEXT:
+            return entry
+    return readiness_list[0]
+
+
 def normalize_wellness(raw: dict) -> dict | None:
     """把單日各來源的原始回傳彙整成 `daily_wellness` 表的欄位。
 
@@ -284,8 +394,9 @@ def normalize_wellness(raw: dict) -> dict | None:
     照存但取用時須帶 `garmin_blackbox` 標記。
 
     ⚠️ `acwr` 欄位存的是 `acwrFactorPercent`（0–100 貢獻度分數），
-    **不是**古典的 0.8–1.3 急慢性負荷比——沿用既有欄位語意，
-    信賴度標記已於 `data_confidence.KNOWN_BIASES` 定義。
+    **不是**古典的 0.8–1.3 急慢性負荷比——沿用既有欄位語意。真正的 ACWR
+    （急慢性負荷比）改存於 `training_status.acwr_ratio`（見
+    `normalize_training_status()`），依決策視為可判讀的累加量而非黑盒。
 
     全日皆無資料時回傳 None（不寫入空列）。
     """
@@ -293,10 +404,11 @@ def normalize_wellness(raw: dict) -> dict | None:
     sleep = raw.get("sleep") or {}
     hrv = raw.get("hrv") or {}
     readiness_list = raw.get("training_readiness") or []
-    readiness = readiness_list[0] if readiness_list else {}
+    readiness = _select_readiness_snapshot(readiness_list)
 
     sleep_dto = sleep.get("dailySleepDTO") or {}
     hrv_summary = hrv.get("hrvSummary") or {}
+    hrv_baseline = hrv_summary.get("baseline") or {}
 
     row = {
         "date": raw["date"],
@@ -313,7 +425,11 @@ def normalize_wellness(raw: dict) -> dict | None:
         "sleep_score": (sleep_dto.get("sleepScores") or {})
         .get("overall", {})
         .get("value"),
-        "stress_avg": stats.get("averageStressLevel"),
+        # ⚠️ 缺陷 A 修正：stress_avg 為**睡眠期間**平均壓力
+        # （sleepData.dailySleepDTO.avgSleepStress），與 all_day_stress_avg
+        # 的**全天**平均壓力（stats.averageStressLevel）範疇不同，
+        # 修正前兩欄被誤寫入同一個值（見 schema.sql 註解與審計報告缺陷 A）。
+        "stress_avg": sleep_dto.get("avgSleepStress"),
         "all_day_stress_avg": stats.get("averageStressLevel"),
         "body_battery_max": stats.get("bodyBatteryHighestValue"),
         "body_battery_min": stats.get("bodyBatteryLowestValue"),
@@ -325,8 +441,172 @@ def normalize_wellness(raw: dict) -> dict | None:
             else None
         ),
         "acwr": readiness.get("acwrFactorPercent"),
+        # --- HRV 個人基準線（三值）：單一讀數無意義，須對照基準線 ---
+        "hrv_baseline_low_upper": hrv_baseline.get("lowUpper"),
+        "hrv_baseline_balanced_low": hrv_baseline.get("balancedLow"),
+        "hrv_baseline_balanced_upper": hrv_baseline.get("balancedUpper"),
+        "hrv_status": hrv_summary.get("status"),
+        "hrv_last_night_5min_high": hrv_summary.get("lastNight5MinHigh"),
+        # 短期訓練負荷（Acute Load）：零額外 API 成本，已在 readiness payload 內。
+        "acute_load": readiness.get("acuteLoad"),
+        "rhr_7day_avg_bpm": _round_or_none(stats.get("lastSevenDaysAvgRestingHeartRate")),
+        # --- 睡眠階段拆解（秒）---
+        "sleep_deep_sec": _as_int(sleep_dto.get("deepSleepSeconds")),
+        "sleep_light_sec": _as_int(sleep_dto.get("lightSleepSeconds")),
+        "sleep_rem_sec": _as_int(sleep_dto.get("remSleepSeconds")),
+        "sleep_awake_sec": _as_int(sleep_dto.get("awakeSleepSeconds")),
+        "body_battery_at_wake": stats.get("bodyBatteryAtWakeTime"),
+        # --- Training Readiness 快照的時點資訊（缺陷 C）---
+        "readiness_input_context": readiness.get("inputContext"),
+        "readiness_timestamp_local": readiness.get("timestampLocal"),
     }
     # 除了日期以外全為 None 代表該日無任何資料，不寫入空列。
+    if all(v is None for k, v in row.items() if k != "date"):
+        return None
+    return row
+
+
+def _select_primary_device(device_map: dict | None) -> dict:
+    """從以 deviceId 字串為 key 的 dict 中選出主力錶（`primaryTrainingDevice=True`）。
+
+    ⚠️ `get_training_status()` 的 `latestTrainingStatusData` 與
+    `mostRecentTrainingLoadBalance.metricsTrainingLoadBalanceDTOMap` 皆以
+    **deviceId 字串**為 key（非固定名稱），不可寫死 device id，也不可直接
+    取第一個 key——換錶或多錶並用時會取錯（見審計報告 §2.1「結構陷阱」）。
+
+    找不到任何標記 primary 的裝置時（理論上不應發生，但單錶使用者的
+    payload 也可能不帶這個旗標）退回取第一筆，而非整批丟棄——這不是
+    靜默取錯：只有單一裝置時「第一筆」就是唯一解，多裝置又缺旗標的
+    情況待本機對真實帳號驗證後再評估是否需要更保守的處理。
+    """
+    if not device_map:
+        return {}
+    for entry in device_map.values():
+        if isinstance(entry, dict) and entry.get("primaryTrainingDevice") is True:
+            return entry
+    first = next(iter(device_map.values()), None)
+    return first if isinstance(first, dict) else {}
+
+
+def normalize_training_status(date_str: str, raw: dict | None) -> dict | None:
+    """把 `get_training_status()` 的原始回傳轉成 `training_status` 表的欄位。
+
+    一支端點同時帶回真 ACWR（急慢性負荷比）、急/慢性負荷、最佳負荷範圍、
+    VO2Max 精確值、熱適應——這些是可解釋的累加量（依決策視為可判讀，
+    非黑盒對照組），與 `daily_wellness.acwr`（Garmin 的 0–100 貢獻度分數，
+    語意不同）分開存表，理由見 schema.sql 表註解。
+
+    ⚠️ 欄位巢狀路徑依審計報告 §2.1 記錄的真實帳號探測結果推導，**尚未**
+    對真實帳號重新驗證過完整結構（本機驗證清單項目）。裝置維度的資料
+    一律經 `_select_primary_device()` 挑選，見其 docstring。
+
+    `raw` 為 None 或空 dict 時回傳 None（不寫入空列）。
+    """
+    if not raw:
+        return None
+
+    device = _select_primary_device(raw.get("latestTrainingStatusData"))
+    load_balance = _select_primary_device(
+        (raw.get("mostRecentTrainingLoadBalance") or {}).get(
+            "metricsTrainingLoadBalanceDTOMap"
+        )
+    )
+    acute_dto = device.get("acuteTrainingLoadDTO") or {}
+    heat_dto = device.get("heatAltitudeAcclimation") or {}
+    vo2max = (raw.get("mostRecentVO2Max") or {}).get("generic") or {}
+
+    row = {
+        "date": date_str,
+        "training_status_code": device.get("trainingStatus"),
+        "training_status_phrase": device.get("trainingStatusFeedbackPhrase"),
+        "acute_load": acute_dto.get("dailyTrainingLoadAcute"),
+        "chronic_load": acute_dto.get("dailyTrainingLoadChronic"),
+        "acwr_ratio": acute_dto.get("dailyAcuteChronicWorkloadRatio"),
+        "chronic_load_optimal_min": acute_dto.get("minTrainingLoadChronic"),
+        "chronic_load_optimal_max": acute_dto.get("maxTrainingLoadChronic"),
+        "acwr_status": acute_dto.get("acwrStatus"),
+        "vo2max_precise": vo2max.get("vo2MaxPreciseValue"),
+        "vo2max_date": vo2max.get("calendarDate"),
+        "heat_acclimation_pct": heat_dto.get("heatAcclimationPercentage"),
+        "heat_trend": heat_dto.get("heatTrend"),
+        "altitude_acclimation_pct": heat_dto.get("altitudeAcclimation"),
+        "fitness_trend": device.get("fitnessTrend"),
+        "monthly_load_aerobic_low": load_balance.get("monthlyLoadAerobicLow"),
+        "monthly_load_aerobic_high": load_balance.get("monthlyLoadAerobicHigh"),
+        "monthly_load_anaerobic": load_balance.get("monthlyLoadAnaerobic"),
+        "training_balance_feedback": load_balance.get("trainingBalanceFeedbackPhrase"),
+    }
+    if all(v is None for k, v in row.items() if k != "date"):
+        return None
+    return row
+
+
+def normalize_performance_metrics(date_str: str, raw: dict) -> dict | None:
+    """把賽事預測／乳酸閾值／耐力分數／體能年齡／爬坡分數彙整成
+    `performance_metrics` 表的欄位。
+
+    這些端點語意上是「當前值快照」而非逐日序列（見 schema.sql 表註解），
+    `date_str` 由呼叫端傳入同步當下的日期，不是從回傳內容推導。
+
+    ⚠️ 除 `endurance_contributors_json` 的巢狀鍵名（`activityTypeId`／
+    `group`／`contribution`）已於審計時對真實帳號確認外，其餘欄位路徑
+    （賽事預測、乳酸閾值、體能年齡的巢狀結構）為依 `garminconnect`
+    慣例與審計報告文字描述的最佳推斷，**尚未**對真實帳號驗證，
+    屬本機驗證清單的額外項目（見 TODO.md 1B-9）。若真實欄位路徑不同，
+    對應欄位會落成 NULL（`data_confidence` 已要求信賴度必填，不會產生
+    「看似有值但語意錯誤」的欄位），不影響其他已驗證欄位的寫入。
+
+    `raw` 為 `garmin_api_client.fetch_performance_metrics_raw()` 的回傳，
+    五項獨立容錯，全部為 None／空 dict 時回傳 None（不寫入空列）。
+    """
+    race = raw.get("race_predictions") or {}
+    lactate = raw.get("lactate_threshold") or {}
+    endurance = raw.get("endurance_score") or {}
+    fitness_age = raw.get("fitness_age") or {}
+    hill = raw.get("hill_score") or {}
+
+    contributors = endurance.get("contributors")
+    contributors_json = None
+    if contributors:
+        contributors_json = json.dumps(
+            [
+                {
+                    "activity_type_id": c.get("activityTypeId"),
+                    "group": c.get("group"),
+                    "contribution": c.get("contribution"),
+                }
+                for c in contributors
+            ],
+            ensure_ascii=False,
+        )
+
+    # 乳酸閾值配速：speed 為公尺/秒，換算方式與 activities 的 best_pace 一致。
+    lactate_speed = lactate.get("speed")
+    lactate_pace = round(1000 / lactate_speed) if lactate_speed else None
+
+    row = {
+        "date": date_str,
+        "race_predict_5k_sec": race.get("time5K"),
+        "race_predict_10k_sec": race.get("time10K"),
+        "race_predict_half_sec": race.get("timeHalfMarathon"),
+        "race_predict_marathon_sec": race.get("timeMarathon"),
+        # ⚠️ 依審計報告，garminconnect 函式庫在合併回傳時會處理 Garmin
+        # 原始欄位的歷史拼字錯誤 `hearRate`（缺一個 t）；究竟是改名為
+        # `heartRate` 還是原樣保留待本機驗證，故兩個鍵名都嘗試讀取。
+        "lactate_threshold_hr_bpm": _round_or_none(
+            lactate.get("heartRate") if lactate.get("heartRate") is not None
+            else lactate.get("hearRate")
+        ),
+        "lactate_threshold_pace_sec_per_km": lactate_pace,
+        "functional_threshold_power": _round_or_none(lactate.get("functionalThresholdPower")),
+        "endurance_score": _round_or_none(endurance.get("overallScore")),
+        "endurance_classification": endurance.get("classification"),
+        "endurance_contributors_json": contributors_json,
+        "fitness_age": fitness_age.get("fitnessAge"),
+        "chronological_age": fitness_age.get("chronologicalAge"),
+        "achievable_fitness_age": fitness_age.get("achievableFitnessAge"),
+        "hill_score": _round_or_none(hill.get("overallScore")),
+    }
     if all(v is None for k, v in row.items() if k != "date"):
         return None
     return row
@@ -365,7 +645,12 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
                     aerobic_te=?, avg_cadence_spm=?, max_cadence_spm=?,
                     avg_pace_sec_per_km=?, best_pace_sec_per_km=?, elevation_gain_m=?,
                     elevation_loss_m=?, calories=?, raw_data_json=?, fetched_at=?,
-                    source_version=?
+                    source_version=?, anaerobic_te=?, activity_training_load=?,
+                    training_effect_label=?, avg_grade_adj_pace_sec_per_km=?,
+                    avg_ground_contact_time_ms=?, avg_vertical_oscillation_cm=?,
+                    avg_vertical_ratio_pct=?, avg_stride_length_cm=?, avg_power_watts=?,
+                    max_power_watts=?, norm_power_watts=?, min_temperature_c=?,
+                    max_temperature_c=?, hr_time_in_zone_json=?
                 WHERE id = ?
                 """,
                 (
@@ -374,7 +659,15 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
                     row["avg_cadence_spm"], row["max_cadence_spm"],
                     row["avg_pace_sec_per_km"], row["best_pace_sec_per_km"],
                     row["elevation_gain_m"], row["elevation_loss_m"], row["calories"],
-                    row["raw_data_json"], now, SYNC_SOURCE_VERSION, existing["id"],
+                    row["raw_data_json"], now, SYNC_SOURCE_VERSION,
+                    row["anaerobic_te"], row["activity_training_load"],
+                    row["training_effect_label"], row["avg_grade_adj_pace_sec_per_km"],
+                    row["avg_ground_contact_time_ms"], row["avg_vertical_oscillation_cm"],
+                    row["avg_vertical_ratio_pct"], row["avg_stride_length_cm"],
+                    row["avg_power_watts"], row["max_power_watts"], row["norm_power_watts"],
+                    row["min_temperature_c"], row["max_temperature_c"],
+                    row["hr_time_in_zone_json"],
+                    existing["id"],
                 ),
             )
             count += 1
@@ -387,8 +680,16 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
                 distance_km, duration_sec, moving_time_sec, avg_hr_bpm, max_hr_bpm,
                 aerobic_te, avg_cadence_spm, max_cadence_spm, avg_pace_sec_per_km,
                 best_pace_sec_per_km, elevation_gain_m, elevation_loss_m, calories,
-                source, source_version, fetched_at, has_wellness_data, raw_data_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source, source_version, fetched_at, has_wellness_data, raw_data_json,
+                anaerobic_te, activity_training_load, training_effect_label,
+                avg_grade_adj_pace_sec_per_km, avg_ground_contact_time_ms,
+                avg_vertical_oscillation_cm, avg_vertical_ratio_pct, avg_stride_length_cm,
+                avg_power_watts, max_power_watts, norm_power_watts,
+                min_temperature_c, max_temperature_c, hr_time_in_zone_json
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
             ON CONFLICT (athlete_id, started_at, activity_type, distance_km) DO UPDATE SET
                 title=excluded.title, duration_sec=excluded.duration_sec,
                 moving_time_sec=excluded.moving_time_sec, avg_hr_bpm=excluded.avg_hr_bpm,
@@ -400,7 +701,21 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
                 elevation_gain_m=excluded.elevation_gain_m,
                 elevation_loss_m=excluded.elevation_loss_m,
                 calories=excluded.calories, raw_data_json=excluded.raw_data_json,
-                fetched_at=excluded.fetched_at, source_version=excluded.source_version
+                fetched_at=excluded.fetched_at, source_version=excluded.source_version,
+                anaerobic_te=excluded.anaerobic_te,
+                activity_training_load=excluded.activity_training_load,
+                training_effect_label=excluded.training_effect_label,
+                avg_grade_adj_pace_sec_per_km=excluded.avg_grade_adj_pace_sec_per_km,
+                avg_ground_contact_time_ms=excluded.avg_ground_contact_time_ms,
+                avg_vertical_oscillation_cm=excluded.avg_vertical_oscillation_cm,
+                avg_vertical_ratio_pct=excluded.avg_vertical_ratio_pct,
+                avg_stride_length_cm=excluded.avg_stride_length_cm,
+                avg_power_watts=excluded.avg_power_watts,
+                max_power_watts=excluded.max_power_watts,
+                norm_power_watts=excluded.norm_power_watts,
+                min_temperature_c=excluded.min_temperature_c,
+                max_temperature_c=excluded.max_temperature_c,
+                hr_time_in_zone_json=excluded.hr_time_in_zone_json
             """,
             (
                 athlete_id,
@@ -426,6 +741,20 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
                 now,
                 0,
                 row["raw_data_json"],
+                row["anaerobic_te"],
+                row["activity_training_load"],
+                row["training_effect_label"],
+                row["avg_grade_adj_pace_sec_per_km"],
+                row["avg_ground_contact_time_ms"],
+                row["avg_vertical_oscillation_cm"],
+                row["avg_vertical_ratio_pct"],
+                row["avg_stride_length_cm"],
+                row["avg_power_watts"],
+                row["max_power_watts"],
+                row["norm_power_watts"],
+                row["min_temperature_c"],
+                row["max_temperature_c"],
+                row["hr_time_in_zone_json"],
             ),
         )
         count += 1
@@ -443,8 +772,16 @@ def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]
                 skin_temp_c, respiration_rate, sleep_duration_sec, sleep_quality,
                 sleep_score, stress_avg, all_day_stress_avg, body_battery_max,
                 body_battery_min, steps, training_readiness_score, recovery_time_hours,
-                acwr, source, source_version, fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                acwr, hrv_baseline_low_upper, hrv_baseline_balanced_low,
+                hrv_baseline_balanced_upper, hrv_status, hrv_last_night_5min_high,
+                acute_load, rhr_7day_avg_bpm, sleep_deep_sec, sleep_light_sec,
+                sleep_rem_sec, sleep_awake_sec, body_battery_at_wake,
+                readiness_input_context, readiness_timestamp_local,
+                source, source_version, fetched_at
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
             ON CONFLICT (athlete_id, date, source) DO UPDATE SET
                 resting_hr_bpm=COALESCE(excluded.resting_hr_bpm, resting_hr_bpm),
                 hrv_ms=COALESCE(excluded.hrv_ms, hrv_ms),
@@ -462,6 +799,27 @@ def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]
                     excluded.training_readiness_score, training_readiness_score),
                 recovery_time_hours=COALESCE(excluded.recovery_time_hours, recovery_time_hours),
                 acwr=COALESCE(excluded.acwr, acwr),
+                hrv_baseline_low_upper=COALESCE(
+                    excluded.hrv_baseline_low_upper, hrv_baseline_low_upper),
+                hrv_baseline_balanced_low=COALESCE(
+                    excluded.hrv_baseline_balanced_low, hrv_baseline_balanced_low),
+                hrv_baseline_balanced_upper=COALESCE(
+                    excluded.hrv_baseline_balanced_upper, hrv_baseline_balanced_upper),
+                hrv_status=COALESCE(excluded.hrv_status, hrv_status),
+                hrv_last_night_5min_high=COALESCE(
+                    excluded.hrv_last_night_5min_high, hrv_last_night_5min_high),
+                acute_load=COALESCE(excluded.acute_load, acute_load),
+                rhr_7day_avg_bpm=COALESCE(excluded.rhr_7day_avg_bpm, rhr_7day_avg_bpm),
+                sleep_deep_sec=COALESCE(excluded.sleep_deep_sec, sleep_deep_sec),
+                sleep_light_sec=COALESCE(excluded.sleep_light_sec, sleep_light_sec),
+                sleep_rem_sec=COALESCE(excluded.sleep_rem_sec, sleep_rem_sec),
+                sleep_awake_sec=COALESCE(excluded.sleep_awake_sec, sleep_awake_sec),
+                body_battery_at_wake=COALESCE(
+                    excluded.body_battery_at_wake, body_battery_at_wake),
+                readiness_input_context=COALESCE(
+                    excluded.readiness_input_context, readiness_input_context),
+                readiness_timestamp_local=COALESCE(
+                    excluded.readiness_timestamp_local, readiness_timestamp_local),
                 source_version=excluded.source_version,
                 fetched_at=excluded.fetched_at
             """,
@@ -485,6 +843,20 @@ def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]
                 row["training_readiness_score"],
                 row["recovery_time_hours"],
                 row["acwr"],
+                row["hrv_baseline_low_upper"],
+                row["hrv_baseline_balanced_low"],
+                row["hrv_baseline_balanced_upper"],
+                row["hrv_status"],
+                row["hrv_last_night_5min_high"],
+                row["acute_load"],
+                row["rhr_7day_avg_bpm"],
+                row["sleep_deep_sec"],
+                row["sleep_light_sec"],
+                row["sleep_rem_sec"],
+                row["sleep_awake_sec"],
+                row["body_battery_at_wake"],
+                row["readiness_input_context"],
+                row["readiness_timestamp_local"],
                 SYNC_SOURCE,
                 SYNC_SOURCE_VERSION,
                 now,
@@ -492,6 +864,157 @@ def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]
         )
         count += 1
     return count
+
+
+def _upsert_training_status(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
+    """寫入 `training_status`。沿用 daily_wellness 的 ON CONFLICT + COALESCE 慣例
+    ——重複同步同一天只補空值，不覆寫已有值。
+    """
+    now = _utc_now_iso()
+    count = 0
+    for row in rows:
+        conn.execute(
+            """
+            INSERT INTO training_status (
+                athlete_id, date, training_status_code, training_status_phrase,
+                acute_load, chronic_load, acwr_ratio, chronic_load_optimal_min,
+                chronic_load_optimal_max, acwr_status, vo2max_precise, vo2max_date,
+                heat_acclimation_pct, heat_trend, altitude_acclimation_pct,
+                fitness_trend, monthly_load_aerobic_low, monthly_load_aerobic_high,
+                monthly_load_anaerobic, training_balance_feedback,
+                source, source_version, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (athlete_id, date, source) DO UPDATE SET
+                training_status_code=COALESCE(
+                    excluded.training_status_code, training_status_code),
+                training_status_phrase=COALESCE(
+                    excluded.training_status_phrase, training_status_phrase),
+                acute_load=COALESCE(excluded.acute_load, acute_load),
+                chronic_load=COALESCE(excluded.chronic_load, chronic_load),
+                acwr_ratio=COALESCE(excluded.acwr_ratio, acwr_ratio),
+                chronic_load_optimal_min=COALESCE(
+                    excluded.chronic_load_optimal_min, chronic_load_optimal_min),
+                chronic_load_optimal_max=COALESCE(
+                    excluded.chronic_load_optimal_max, chronic_load_optimal_max),
+                acwr_status=COALESCE(excluded.acwr_status, acwr_status),
+                vo2max_precise=COALESCE(excluded.vo2max_precise, vo2max_precise),
+                vo2max_date=COALESCE(excluded.vo2max_date, vo2max_date),
+                heat_acclimation_pct=COALESCE(
+                    excluded.heat_acclimation_pct, heat_acclimation_pct),
+                heat_trend=COALESCE(excluded.heat_trend, heat_trend),
+                altitude_acclimation_pct=COALESCE(
+                    excluded.altitude_acclimation_pct, altitude_acclimation_pct),
+                fitness_trend=COALESCE(excluded.fitness_trend, fitness_trend),
+                monthly_load_aerobic_low=COALESCE(
+                    excluded.monthly_load_aerobic_low, monthly_load_aerobic_low),
+                monthly_load_aerobic_high=COALESCE(
+                    excluded.monthly_load_aerobic_high, monthly_load_aerobic_high),
+                monthly_load_anaerobic=COALESCE(
+                    excluded.monthly_load_anaerobic, monthly_load_anaerobic),
+                training_balance_feedback=COALESCE(
+                    excluded.training_balance_feedback, training_balance_feedback),
+                source_version=excluded.source_version,
+                fetched_at=excluded.fetched_at
+            """,
+            (
+                athlete_id,
+                row["date"],
+                row["training_status_code"],
+                row["training_status_phrase"],
+                row["acute_load"],
+                row["chronic_load"],
+                row["acwr_ratio"],
+                row["chronic_load_optimal_min"],
+                row["chronic_load_optimal_max"],
+                row["acwr_status"],
+                row["vo2max_precise"],
+                row["vo2max_date"],
+                row["heat_acclimation_pct"],
+                row["heat_trend"],
+                row["altitude_acclimation_pct"],
+                row["fitness_trend"],
+                row["monthly_load_aerobic_low"],
+                row["monthly_load_aerobic_high"],
+                row["monthly_load_anaerobic"],
+                row["training_balance_feedback"],
+                SYNC_SOURCE,
+                SYNC_SOURCE_VERSION,
+                now,
+            ),
+        )
+        count += 1
+    return count
+
+
+def _upsert_performance_metrics(
+    conn: sqlite3.Connection, athlete_id: int, row: dict | None
+) -> int:
+    """寫入 `performance_metrics`。每次同步只有一筆（快照，非逐日序列），
+    沿用同樣的 ON CONFLICT + COALESCE 慣例，讓同一天內重複同步不覆寫已有值。
+    """
+    if row is None:
+        return 0
+    now = _utc_now_iso()
+    conn.execute(
+        """
+        INSERT INTO performance_metrics (
+            athlete_id, date, race_predict_5k_sec, race_predict_10k_sec,
+            race_predict_half_sec, race_predict_marathon_sec,
+            lactate_threshold_hr_bpm, lactate_threshold_pace_sec_per_km,
+            functional_threshold_power, endurance_score, endurance_classification,
+            endurance_contributors_json, fitness_age, chronological_age,
+            achievable_fitness_age, hill_score,
+            source, source_version, fetched_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (athlete_id, date, source) DO UPDATE SET
+            race_predict_5k_sec=COALESCE(excluded.race_predict_5k_sec, race_predict_5k_sec),
+            race_predict_10k_sec=COALESCE(excluded.race_predict_10k_sec, race_predict_10k_sec),
+            race_predict_half_sec=COALESCE(excluded.race_predict_half_sec, race_predict_half_sec),
+            race_predict_marathon_sec=COALESCE(
+                excluded.race_predict_marathon_sec, race_predict_marathon_sec),
+            lactate_threshold_hr_bpm=COALESCE(
+                excluded.lactate_threshold_hr_bpm, lactate_threshold_hr_bpm),
+            lactate_threshold_pace_sec_per_km=COALESCE(
+                excluded.lactate_threshold_pace_sec_per_km,
+                lactate_threshold_pace_sec_per_km),
+            functional_threshold_power=COALESCE(
+                excluded.functional_threshold_power, functional_threshold_power),
+            endurance_score=COALESCE(excluded.endurance_score, endurance_score),
+            endurance_classification=COALESCE(
+                excluded.endurance_classification, endurance_classification),
+            endurance_contributors_json=COALESCE(
+                excluded.endurance_contributors_json, endurance_contributors_json),
+            fitness_age=COALESCE(excluded.fitness_age, fitness_age),
+            chronological_age=COALESCE(excluded.chronological_age, chronological_age),
+            achievable_fitness_age=COALESCE(
+                excluded.achievable_fitness_age, achievable_fitness_age),
+            hill_score=COALESCE(excluded.hill_score, hill_score),
+            source_version=excluded.source_version,
+            fetched_at=excluded.fetched_at
+        """,
+        (
+            athlete_id,
+            row["date"],
+            row["race_predict_5k_sec"],
+            row["race_predict_10k_sec"],
+            row["race_predict_half_sec"],
+            row["race_predict_marathon_sec"],
+            row["lactate_threshold_hr_bpm"],
+            row["lactate_threshold_pace_sec_per_km"],
+            row["functional_threshold_power"],
+            row["endurance_score"],
+            row["endurance_classification"],
+            row["endurance_contributors_json"],
+            row["fitness_age"],
+            row["chronological_age"],
+            row["achievable_fitness_age"],
+            row["hill_score"],
+            SYNC_SOURCE,
+            SYNC_SOURCE_VERSION,
+            now,
+        ),
+    )
+    return 1
 
 
 def _refresh_metric_coverage(conn: sqlite3.Connection, athlete_id: int) -> int:
@@ -587,7 +1110,8 @@ def estimate_sync_cost(days: int, expected_activities: int = 0) -> dict:
     """預估同步的 API 請求數與耗時，供呼叫端在真的打 API 前告知使用者。
 
     成本結構：活動只打 1 次（`get_activities_by_date` 吃日期區間），
-    wellness 則**逐日**各打 4 個端點，故基本總數 = 1 + days × 4。
+    wellness 則**逐日**各打 `_WELLNESS_ENDPOINTS_PER_DAY`（5）個端點，
+    故基本總數 = 1 + days × 5。
     另若要補抓分圈，**每場跑步各多 1 次**（`get_activity_splits`）——
     `expected_activities` 即該筆數，未知時傳 0（僅低估分圈部分）。
     每次呼叫之間有 `REQUEST_INTERVAL_SEC` 的節流間隔。
@@ -668,11 +1192,24 @@ def sync(
         ]
 
         wellness_rows = []
+        training_status_rows = []
         for offset in range(days):
             day = start_date + datetime.timedelta(days=offset)
-            normalized = normalize_wellness(api.fetch_daily_wellness_raw(day))
+            day_raw = api.fetch_daily_wellness_raw(day)
+            normalized = normalize_wellness(day_raw)
             if normalized is not None:
                 wellness_rows.append(normalized)
+            status_row = normalize_training_status(
+                day.isoformat(), day_raw.get("training_status")
+            )
+            if status_row is not None:
+                training_status_rows.append(status_row)
+
+        # 效能指標為「當前值快照」，每次同步只需打一次，落到今天（同步當下）
+        # 的日期，非逐日序列（見 normalize_performance_metrics docstring）。
+        performance_row = normalize_performance_metrics(
+            end_date.isoformat(), api.fetch_performance_metrics_raw(end_date)
+        )
     except GarminRateLimited as e:
         return {**plan, "available": False, "dry_run": False,
                 "reason": str(e), "rate_limited": True}
@@ -681,6 +1218,8 @@ def sync(
 
     n_act = _upsert_activities(conn, athlete_id, activity_rows)
     n_well = _upsert_wellness(conn, athlete_id, wellness_rows)
+    n_status = _upsert_training_status(conn, athlete_id, training_status_rows)
+    n_perf = _upsert_performance_metrics(conn, athlete_id, performance_row)
 
     n_laps = 0
     n_classified = 0
@@ -702,6 +1241,8 @@ def sync(
         "dry_run": False,
         "activities_synced": n_act,
         "wellness_days_synced": n_well,
+        "training_status_days_synced": n_status,
+        "performance_metrics_synced": n_perf,
         "activities_skipped": len(raw_activities) - n_act,
         "metrics_coverage_updated": n_cov,
         "laps_synced": n_laps,
@@ -833,6 +1374,9 @@ def main() -> int:
     print(f"     活動 {result['activities_synced']} 筆"
           f"（略過 {result['activities_skipped']} 筆無法正規化）")
     print(f"     每日身體數據 {result['wellness_days_synced']} 天")
+    print(f"     訓練狀態 {result['training_status_days_synced']} 天")
+    if result.get("performance_metrics_synced"):
+        print("     效能指標快照 1 筆（賽事預測／乳酸閾值／耐力分數／體能年齡／爬坡分數）")
     if result.get("laps_synced"):
         print(
             f"     分圈 {result['laps_synced']} 圈，"

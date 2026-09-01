@@ -173,11 +173,52 @@ class GarminApiClient:
         """取得單日總覽統計（步數、靜止心率、壓力等）。"""
         return self._call("get_stats", cdate.isoformat())
 
+    def fetch_training_status(self, cdate: datetime.date) -> dict | None:
+        """取得單日訓練狀態與訓練負荷（Training Status）。
+
+        一支端點同時帶回真 ACWR（急慢性負荷比，Acute:Chronic Workload
+        Ratio）、急/慢性負荷、最佳負荷範圍、VO2Max 精確值、熱適應——
+        每日僅 +1 次請求。⚠️ 回傳結構以 deviceId 字串為 key（非固定名稱），
+        解析邏輯見 `garmin_sync_runner.normalize_training_status()`。
+        """
+        return self._call("get_training_status", cdate.isoformat())
+
+    def fetch_race_predictions(self) -> dict | None:
+        """取得賽事完賽預測（5K／10K／半馬／全馬）。
+
+        ⚠️ 實測（2026-09-01）此端點**不吃日期參數**，回傳「當前」推估值，
+        非逐日序列——故不帶 cdate 引數。
+        """
+        return self._call("get_race_predictions")
+
+    def fetch_lactate_threshold(self) -> dict | None:
+        """取得乳酸閾值心率與配速。
+
+        ⚠️ 與 `fetch_race_predictions()` 同樣不吃日期參數，回傳當前值。
+        """
+        return self._call("get_lactate_threshold")
+
+    def fetch_endurance_score(self, cdate: datetime.date) -> dict | None:
+        """取得耐力分數與來源貢獻拆解（P1，中長期趨勢用）。"""
+        return self._call("get_endurance_score", cdate.isoformat())
+
+    def fetch_fitness_age(self, cdate: datetime.date) -> dict | None:
+        """取得體能年齡與四項成分（P1）。"""
+        return self._call("get_fitnessage_data", cdate.isoformat())
+
+    def fetch_hill_score(self, cdate: datetime.date) -> dict | None:
+        """取得爬坡分數（P1）。"""
+        return self._call("get_hill_score", cdate.isoformat())
+
     def fetch_daily_wellness_raw(self, cdate: datetime.date) -> dict:
         """彙整單日各來源的原始回傳，供正規化層使用。
 
         各項獨立容錯：某一項抓不到（該日無資料）不影響其他項，
         以 `None` 表示。但 rate limit 一律往外拋——那代表應停止整批同步。
+
+        `training_status` 為 2026-09-02 新增（Task 1B-9）：每日 wellness
+        端點數由 4 → 5，`garmin_sync_runner._WELLNESS_ENDPOINTS_PER_DAY`
+        須同步更新，否則耗時預告會低估。
         """
         out: dict[str, Any] = {"date": cdate.isoformat()}
         for key, fn in (
@@ -185,9 +226,41 @@ class GarminApiClient:
             ("sleep", self.fetch_sleep),
             ("hrv", self.fetch_hrv),
             ("training_readiness", self.fetch_training_readiness),
+            ("training_status", self.fetch_training_status),
         ):
             try:
                 out[key] = fn(cdate)
+            except GarminRateLimited:
+                raise
+            except GarminFetchError:
+                out[key] = None
+        return out
+
+    def fetch_performance_metrics_raw(self, cdate: datetime.date) -> dict:
+        """彙整賽事預測／乳酸閾值／耐力分數／體能年齡／爬坡分數的原始回傳。
+
+        這五個端點語意上是「快照」而非逐日序列（見 `performance_metrics`
+        表 schema 註解），故本方法**不**放進 `fetch_daily_wellness_raw()`
+        的逐日迴圈，改由呼叫端每次同步只呼叫一次，以同步當下日期落地。
+
+        ⚠️ `get_endurance_score`／`get_fitnessage_data`／`get_hill_score`
+        的實際函式簽章（是否吃日期、單日或區間）未經真實帳號驗證
+        （審計報告僅確認 `get_race_predictions`／`get_lactate_threshold`
+        不吃日期參數）。簽章不符時 `_call()` 會把 `TypeError` 轉為
+        `GarminFetchError`，該項獨立容錯為 `None`，不影響其他四項，
+        也不會讓整批同步失敗——但仍須待本機對真實帳號驗證後才能確認
+        欄位語意正確。
+        """
+        out: dict[str, Any] = {}
+        for key, fn in (
+            ("race_predictions", self.fetch_race_predictions),
+            ("lactate_threshold", self.fetch_lactate_threshold),
+            ("endurance_score", lambda: self.fetch_endurance_score(cdate)),
+            ("fitness_age", lambda: self.fetch_fitness_age(cdate)),
+            ("hill_score", lambda: self.fetch_hill_score(cdate)),
+        ):
+            try:
+                out[key] = fn()
             except GarminRateLimited:
                 raise
             except GarminFetchError:
