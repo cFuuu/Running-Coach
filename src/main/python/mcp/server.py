@@ -329,9 +329,13 @@ def sync_garmin_data(
     ⚠️ 若回傳含 `rate_limited=True`，代表已觸發 Garmin 的 IP 層限制：
     **不可重試**，請告知使用者稍後再試。
 
-    ⚠️ 本工具寫入的活動 `workout_type` 為 NULL——API 摘要不含分圈資料，
-    無從判斷配速結構。這是刻意不猜（見行為約束第 2 條）：這些場次在
-    `assess_session_quality` 等工具中會被列為不可評，屬正確行為。
+    本工具會為每場跑步另抓逐圈明細寫入 `activity_laps`，並套用既有分類器
+    補上 `workout_type`（與歷史資料同一套標準）。抓不到分圈的場次
+    `workout_type` 維持 NULL，在 `assess_session_quality` 中會被列為不可評
+    ——這是刻意不猜（見行為約束第 2 條），屬正確行為。
+
+    ⚠️ 逐秒資料仍需 FIT，本工具不提供，故同步進來的活動**心率漂移與
+    配速穩定度兩個維度仍不可評**。
 
     athlete_id 省略時預設取資料庫中第一位學員。
     """
