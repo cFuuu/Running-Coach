@@ -59,6 +59,45 @@ CREATE TABLE IF NOT EXISTS activities (
     max_cadence_spm         INTEGER,
     avg_pace_sec_per_km     INTEGER,
     best_pace_sec_per_km    INTEGER,
+    -- 無氧訓練效果（Anaerobic Training Effect，0–5）。與既有的 aerobic_te
+    -- （有氧訓練效果）成對：只看有氧等於只看到訓練刺激的一半，間歇課的
+    -- 品質主要反映在無氧側。Garmin（Firstbeat）衍生值，取用須帶
+    -- `garmin_blackbox` 標記。
+    anaerobic_te            REAL,
+    -- 單場運動負荷（Activity Training Load）。Garmin 對這一場的負荷量化值，
+    -- 是累加成 acute load（短期訓練負荷）的來源。單位為 Garmin 自訂尺度，
+    -- 不可與本專案自建的「秒 × %HRR」負荷混用或相加。
+    activity_training_load  REAL,
+    -- 訓練效果標籤（如 AEROBIC_BASE／TEMPO／VO2MAX）。Garmin 對本場訓練
+    -- 性質的分類，可與 workout_type（本專案分類器的結果）交叉驗證。
+    training_effect_label   TEXT,
+    -- 坡度校正配速（Grade Adjusted Pace，秒/公里）。把上下坡換算成等效
+    -- 平地配速，讓不同路線的配速可比。來源為 API 的 avgGradeAdjustedSpeed
+    -- （公尺/秒），換算方式與 avg_pace_sec_per_km 一致。
+    avg_grade_adj_pace_sec_per_km INTEGER,
+    -- --- 跑步動態（Running Dynamics）：需錶端支援，實測覆蓋率約 72% ---
+    -- ⚠️ 左右平衡（GCT Balance）在 Forerunner 965 單錶（無 HRM-Pro／RD Pod）
+    -- 下不產生，實測 271 場覆蓋率 0%，故不建欄位。
+    -- 觸地時間（Ground Contact Time，毫秒）
+    avg_ground_contact_time_ms  REAL,
+    -- 垂直振幅（Vertical Oscillation，公分）
+    avg_vertical_oscillation_cm REAL,
+    -- 垂直步幅比（Vertical Ratio，%）＝垂直振幅 ÷ 步幅，跑姿經濟性指標
+    avg_vertical_ratio_pct      REAL,
+    -- 平均步幅（Stride Length，公分）
+    avg_stride_length_cm        REAL,
+    -- --- 跑步功率（Running Power，瓦特）---
+    avg_power_watts         REAL,
+    max_power_watts         REAL,
+    -- 標準化功率（Normalized Power）：加權後的功率，反映變動強度的生理成本
+    norm_power_watts        REAL,
+    -- --- 環境條件（影響配速判讀，台北夏季尤其顯著）---
+    min_temperature_c       REAL,
+    max_temperature_c       REAL,
+    -- 心率區間停留時間（hrTimeInZone_1..5，秒）。存 JSON 而非五個欄位：
+    -- 它本質是一組陣列，攤成五欄會讓表變寬且無法隨區間定義調整。
+    -- 格式：{"1": 203.994, "2": 5197.439, ...}
+    hr_time_in_zone_json    TEXT,
     elevation_gain_m        REAL,
     elevation_loss_m        REAL,
     calories                INTEGER,
@@ -113,7 +152,149 @@ CREATE TABLE IF NOT EXISTS daily_wellness (
     steps               INTEGER,
     training_readiness_score   INTEGER,
     recovery_time_hours        REAL,
+    -- ⚠️ 欄位名易誤導：此處存的是 Garmin 的 `acwrFactorPercent`
+    -- （0–100 的 readiness 貢獻度分數），**不是**古典的急慢性負荷比。
+    -- 真正的 ACWR（Acute:Chronic Workload Ratio，急慢性負荷比，0.8–1.3）
+    -- 存於 training_status.acwr_ratio。兩者不可混用。
     acwr                       REAL,
+    -- --- HRV 個人基準線（Heart Rate Variability，心率變異度，單位 ms）---
+    -- 單一 HRV 讀數沒有意義，必須對照個人基準線才知道是否偏離。
+    -- 三個門檻由 Garmin 依個人約 3 週歷史推算：
+    --   低於 low_upper           → 偏低（Low）
+    --   balanced_low ~ upper 之間 → 平衡（Balanced）
+    hrv_baseline_low_upper       REAL,
+    hrv_baseline_balanced_low    REAL,
+    hrv_baseline_balanced_upper  REAL,
+    -- HRV 狀態評級（BALANCED／UNBALANCED／LOW）。Garmin 黑盒衍生值。
+    hrv_status                   TEXT,
+    -- 夜間 5 分鐘最高 HRV 讀數
+    hrv_last_night_5min_high     REAL,
+    -- 短期訓練負荷（Acute Load）：近 7 日的訓練負荷累加。
+    -- 與 training_status.acute_load 同源（皆為 Garmin 值），此欄取自
+    -- training_readiness 端點，方便與同日 readiness 分數一起查詢。
+    acute_load                   REAL,
+    -- 近 7 日平均靜止心率（bpm），RHR 異常偵測的基準線。
+    rhr_7day_avg_bpm             INTEGER,
+    -- --- 睡眠階段拆解（秒）---
+    sleep_deep_sec               INTEGER,
+    sleep_light_sec              INTEGER,
+    sleep_rem_sec                INTEGER,
+    sleep_awake_sec              INTEGER,
+    -- 起床時的身體電池（Body Battery，0–100）。Garmin 黑盒衍生值。
+    body_battery_at_wake         INTEGER,
+    -- --- Training Readiness 快照的時點資訊 ---
+    -- ⚠️ 該端點每日回傳多筆快照，分數在一天內可劇烈變動（實測 2026-08-31：
+    -- 起床 60 分、睡前 75 分）。本專案取「起床那筆」（AFTER_WAKEUP_RESET），
+    -- 因為課表決策要問的是「今天能不能練」而非「恢復得如何」。
+    -- 以下兩欄記錄實際採用的是哪一筆，讓下游知道分數代表的時點。
+    readiness_input_context      TEXT,
+    readiness_timestamp_local    TEXT,
+    source               TEXT NOT NULL CHECK (source IN ('fit_manual', 'garmin_export', 'garmin_mcp', 'strava')),
+    source_version        TEXT,
+    fetched_at            TEXT NOT NULL,
+    UNIQUE (athlete_id, date, source)
+);
+
+-- 每日訓練狀態與訓練負荷，來源為 Garmin 的 `get_training_status` 端點。
+--
+-- 為何獨立建表而非併入 daily_wellness（2026-09-02 決策）：
+-- 1. daily_wellness 的語意是「身體／恢復數據」，本表是**訓練面**的衍生量，
+--    來自不同端點、且原始結構帶 device 維度。
+-- 2. 併入會讓 daily_wellness 的每日 upsert 必須處理兩組互不相干的空值模式。
+-- 3. 最具體的理由：daily_wellness.acwr 已存了語意不同的東西（貢獻度分數），
+--    同表再放一個 acwr_ratio 極易誤用。
+--
+-- ⚠️ 來源 payload 的 latestTrainingStatusData 與 metricsTrainingLoadBalanceDTOMap
+-- 以 **deviceId 字串**為 key（非固定名稱），解析時須挑 primaryTrainingDevice=True
+-- 的那筆，不可寫死 device id 或直接取第一個 key（換錶／多錶並用會取錯）。
+CREATE TABLE IF NOT EXISTS training_status (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id          INTEGER NOT NULL REFERENCES athlete_profile(id),
+    date                TEXT NOT NULL,
+    -- 訓練狀態（Training Status）：Garmin 對整體訓練狀態的分類。
+    -- code 為數值代碼，phrase 為文字（如 MAINTAINING_2＝維持、
+    -- PRODUCTIVE＝高效、OVERREACHING＝過度訓練、STRAINED＝疲勞）。
+    training_status_code    INTEGER,
+    training_status_phrase  TEXT,
+    -- 短期訓練負荷（Acute Load）：近 7 日負荷累加，反映當前疲勞累積。
+    acute_load              REAL,
+    -- 長期訓練負荷（Chronic Load）：近 4 週負荷累加，反映體能基礎。
+    chronic_load            REAL,
+    -- 急慢性負荷比（ACWR, Acute:Chronic Workload Ratio）＝短期負荷 ÷ 長期負荷。
+    -- 古典區間 0.8–1.3 為「甜蜜點」，>1.5 常被視為受傷風險升高。
+    -- ⚠️ 這才是真正的 ACWR 比值；daily_wellness.acwr 存的是另一回事。
+    acwr_ratio              REAL,
+    -- 長期負荷的最佳範圍下／上限，用於判斷「該加量還是減量」。
+    chronic_load_optimal_min REAL,
+    chronic_load_optimal_max REAL,
+    -- 負荷比狀態（如 OPTIMAL＝最佳、LOW＝偏低、HIGH＝偏高）
+    acwr_status             TEXT,
+    -- 最大攝氧量（VO2 Max，ml/kg/min）精確值。整數值對訓練期的緩慢變化
+    -- 缺乏解析度，故存 Garmin 提供的小數點版本。
+    vo2max_precise          REAL,
+    -- VO2Max 的實際量測日（可能早於本列的 date——Garmin 只在有足夠品質的
+    -- 跑步後才更新，未更新的日子沿用舊值）。
+    vo2max_date             TEXT,
+    -- 熱適應（Heat Acclimation）百分比與趨勢（ACCLIMATIZING／DEACCLIMATIZING）。
+    -- 台北夏季對配速預期有實質影響。
+    heat_acclimation_pct    INTEGER,
+    heat_trend              TEXT,
+    -- 高海拔適應（Altitude Acclimation）百分比。平地訓練恆為 0，
+    -- 僅出國移地訓練時有意義。
+    altitude_acclimation_pct INTEGER,
+    -- 體能趨勢（Fitness Trend）數值代碼
+    fitness_trend           INTEGER,
+    -- --- 月負荷組成（Training Load Balance）---
+    -- 有氧低強度／有氧高強度／無氧三者的月累加負荷，判斷訓練是否偏食。
+    monthly_load_aerobic_low  REAL,
+    monthly_load_aerobic_high REAL,
+    monthly_load_anaerobic    REAL,
+    -- 負荷平衡回饋（如 AEROBIC_HIGH_SHORTAGE＝缺乏高強度有氧）
+    training_balance_feedback TEXT,
+    source               TEXT NOT NULL CHECK (source IN ('fit_manual', 'garmin_export', 'garmin_mcp', 'strava')),
+    source_version        TEXT,
+    fetched_at            TEXT NOT NULL,
+    UNIQUE (athlete_id, date, source)
+);
+
+-- 體能表現指標快照。與 training_status 不同，這些端點**不吃日期參數**，
+-- 只回傳「當前值」，故每次同步寫入一筆以 date 為鍵的快照，
+-- 累積起來才形成時間序列（而非逐日重建歷史）。
+CREATE TABLE IF NOT EXISTS performance_metrics (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id          INTEGER NOT NULL REFERENCES athlete_profile(id),
+    date                TEXT NOT NULL,
+    -- --- 賽事完賽預測（Race Predictions，秒）---
+    -- Garmin 依當前體能推估的各距離完賽時間，可作為課表目標配速的
+    -- 獨立校準源（與本專案 VDOT 引擎的推算互為對照）。
+    race_predict_5k_sec         INTEGER,
+    race_predict_10k_sec        INTEGER,
+    race_predict_half_sec       INTEGER,
+    race_predict_marathon_sec   INTEGER,
+    -- --- 乳酸閾值（Lactate Threshold）---
+    -- 乳酸開始快速堆積的臨界點。閾值心率直接決定 tempo（節奏跑）課的
+    -- 心率上限，是 Phase 2 規則引擎的直接輸入。
+    lactate_threshold_hr_bpm        INTEGER,
+    -- 閾值配速（秒/公里），由 API 的 speed（公尺/秒）換算
+    lactate_threshold_pace_sec_per_km INTEGER,
+    -- 功能性閾值功率（FTP, Functional Threshold Power，瓦特）
+    functional_threshold_power      INTEGER,
+    -- --- 耐力分數（Endurance Score）---
+    -- Garmin 綜合長期訓練量與強度的耐力評分。
+    endurance_score             INTEGER,
+    -- 分級（0–6，對應 Novice～Elite 等七級）
+    endurance_classification    INTEGER,
+    -- 耐力分數的來源貢獻分佈（各運動類型佔比 %）。存 JSON：
+    -- contributors 是變長陣列，且 activityTypeId 的集合會隨運動習慣改變。
+    -- 格式：[{"activity_type_id": 13, "group": null, "contribution": 9.84}, ...]
+    endurance_contributors_json TEXT,
+    -- --- 體能年齡（Fitness Age）---
+    fitness_age                 REAL,
+    chronological_age           INTEGER,
+    -- 可達成的最佳體能年齡（Garmin 依可改善項目推算）
+    achievable_fitness_age      REAL,
+    -- 爬坡分數（Hill Score）
+    hill_score                  INTEGER,
     source               TEXT NOT NULL CHECK (source IN ('fit_manual', 'garmin_export', 'garmin_mcp', 'strava')),
     source_version        TEXT,
     fetched_at            TEXT NOT NULL,
@@ -176,6 +357,8 @@ CREATE INDEX IF NOT EXISTS idx_activity_laps_activity ON activity_laps (activity
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity ON activity_records (activity_id, elapsed_sec);
 CREATE INDEX IF NOT EXISTS idx_activities_athlete_date ON activities (athlete_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_daily_wellness_athlete_date ON daily_wellness (athlete_id, date);
+CREATE INDEX IF NOT EXISTS idx_training_status_athlete_date ON training_status (athlete_id, date);
+CREATE INDEX IF NOT EXISTS idx_performance_metrics_athlete_date ON performance_metrics (athlete_id, date);
 CREATE INDEX IF NOT EXISTS idx_training_plan_athlete_date ON training_plan (athlete_id, planned_date);
 CREATE INDEX IF NOT EXISTS idx_athlete_source_identity_athlete ON athlete_source_identity (athlete_id);
 CREATE INDEX IF NOT EXISTS idx_metric_coverage_athlete ON metric_coverage (athlete_id, metric_name);

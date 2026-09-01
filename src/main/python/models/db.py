@@ -21,6 +21,38 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("training_plan", "superseded_by", "INTEGER"),
     # 2026-08-20：個人化恢復閾值（Issue #16），NULL 代表尚未人工設定。
     ("athlete_profile", "high_risk_consecutive_training_days", "INTEGER"),
+    # --- 2026-09-02：Garmin 指標擴充（見 docs/dev/GARMIN_METRICS_AUDIT.md）---
+    # 審計發現大量已抓到卻未落庫的指標。欄位語意與單位見 schema.sql 註解。
+    # 活動：訓練效果、運動負荷、跑步動態、功率、環境、心率區間
+    ("activities", "anaerobic_te", "REAL"),
+    ("activities", "activity_training_load", "REAL"),
+    ("activities", "training_effect_label", "TEXT"),
+    ("activities", "avg_grade_adj_pace_sec_per_km", "INTEGER"),
+    ("activities", "avg_ground_contact_time_ms", "REAL"),
+    ("activities", "avg_vertical_oscillation_cm", "REAL"),
+    ("activities", "avg_vertical_ratio_pct", "REAL"),
+    ("activities", "avg_stride_length_cm", "REAL"),
+    ("activities", "avg_power_watts", "REAL"),
+    ("activities", "max_power_watts", "REAL"),
+    ("activities", "norm_power_watts", "REAL"),
+    ("activities", "min_temperature_c", "REAL"),
+    ("activities", "max_temperature_c", "REAL"),
+    ("activities", "hr_time_in_zone_json", "TEXT"),
+    # 每日身體數據：HRV 基準線、短期負荷、睡眠階段、readiness 快照時點
+    ("daily_wellness", "hrv_baseline_low_upper", "REAL"),
+    ("daily_wellness", "hrv_baseline_balanced_low", "REAL"),
+    ("daily_wellness", "hrv_baseline_balanced_upper", "REAL"),
+    ("daily_wellness", "hrv_status", "TEXT"),
+    ("daily_wellness", "hrv_last_night_5min_high", "REAL"),
+    ("daily_wellness", "acute_load", "REAL"),
+    ("daily_wellness", "rhr_7day_avg_bpm", "INTEGER"),
+    ("daily_wellness", "sleep_deep_sec", "INTEGER"),
+    ("daily_wellness", "sleep_light_sec", "INTEGER"),
+    ("daily_wellness", "sleep_rem_sec", "INTEGER"),
+    ("daily_wellness", "sleep_awake_sec", "INTEGER"),
+    ("daily_wellness", "body_battery_at_wake", "INTEGER"),
+    ("daily_wellness", "readiness_input_context", "TEXT"),
+    ("daily_wellness", "readiness_timestamp_local", "TEXT"),
 ]
 
 
