@@ -11,7 +11,10 @@ from types import SimpleNamespace
 
 from src.main.python.models.db import get_connection
 from src.main.python.mcp.server import (
+    _BEHAVIOR_CONSTRAINTS,
+    _ROLE,
     _serialize,
+    coach,
     generate_training_plan,
     get_active_training_plan,
     get_athlete_meta,
@@ -208,6 +211,68 @@ class TestGenerateTrainingPlanTool(unittest.TestCase):
 
         active = get_active_training_plan(_fake_ctx(conn))
         self.assertEqual(len(active), len(result["training_plan_ids"]))
+
+
+class CoachPromptTest(unittest.TestCase):
+    """行為約束層（教練人設）的內容測試。
+
+    這些斷言的用途是**防止約束被無聲刪除**——每一條都對應 TODO.md Phase 3
+    「必須寫進約束的項目」，若未來重寫 prompt 時漏掉任一條，測試會失敗。
+    測的是「這條約束有被寫進去」，不是「措辭長什麼樣」。
+    """
+
+    def setUp(self):
+        self.text = coach()
+
+    def test_confidence_low_must_be_disclosed(self):
+        self.assertIn("confidence.level", self.text)
+        self.assertIn("low", self.text)
+        self.assertIn("biases", self.text)
+
+    def test_unassessable_dimensions_must_not_be_concluded(self):
+        self.assertIn("not_assessed", self.text)
+        self.assertIn("assessability.blocked", self.text)
+        self.assertIn("workout_type", self.text)
+
+    def test_forbids_inventing_thresholds(self):
+        self.assertIn("不得自行發明閾值", self.text)
+
+    def test_hr_drift_5pct_threshold_explicitly_rejected(self):
+        """心率漂移不可套用 5% 門檻——本專案算的非 Pa:HR。"""
+        self.assertIn("Pa:HR", self.text)
+        self.assertIn("5%", self.text)
+        self.assertIn("6.2%", self.text)
+
+    def test_acwr_ratio_thresholds_rejected(self):
+        self.assertIn("acwrFactorPercent", self.text)
+        self.assertIn("1.3", self.text)
+
+    def test_must_restate_facts_used(self):
+        self.assertIn("事實清單", self.text)
+
+    def test_no_medical_advice(self):
+        self.assertIn("醫療", self.text)
+
+    def test_never_modifies_plan_on_its_own(self):
+        self.assertIn("不主動改課表", self.text)
+        self.assertIn("generate_training_plan", self.text)
+
+    def test_no_speculation_without_data(self):
+        self.assertIn("臆測", self.text)
+
+    def test_style_layer_kept_as_separate_block(self):
+        """風格層擴充點：約束與其他區塊須分開組裝，不可混寫成一段。
+
+        承 TODO.md「組裝方式須預留風格層擴充點」——這裡斷言 coach() 是由
+        獨立常數組裝而成，未來加 _STYLE_LAYER 不需改寫行為約束層。
+        """
+        self.assertIn(_BEHAVIOR_CONSTRAINTS, self.text)
+        self.assertIn(_ROLE, self.text)
+        # 行為約束層可獨立抽換：把它從組裝結果拿掉後，其餘區塊仍完整存在，
+        # 代表約束沒有跟角色/輸出格式混寫在同一段裡。
+        without = self.text.replace(_BEHAVIOR_CONSTRAINTS, "")
+        self.assertIn(_ROLE, without)
+        self.assertNotIn("不得自行發明閾值", without)
 
 
 if __name__ == "__main__":
