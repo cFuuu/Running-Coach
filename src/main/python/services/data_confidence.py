@@ -58,11 +58,6 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
         "此為 Garmin（Firstbeat）黑盒演算法衍生值，公式未公開、無法標出處，"
         "僅供對照參考，不得作為判讀依據",
     ),
-    "acwr_not_a_ratio": (
-        "unusable",
-        "`acwr` 欄位存的是 Garmin `acwrFactorPercent`（0–100 貢獻度分數），"
-        "**不是**古典的 0.8–1.3 急慢性負荷比，不可套用 >1.3 過載這類比值門檻",
-    ),
     "hrv_pct_form_unvalidated": (
         "low",
         "HRV 觸發用的是「當日 vs 自身 7 日均值下降 15%」這個固定百分比形式，"

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import sqlite3
 import unittest
 
@@ -178,13 +179,107 @@ class TestNormalizeWellness(unittest.TestCase):
         self.assertIsNone(row["training_readiness_score"])
 
 
+# 供 TestSyncWritesAndIsIdempotent／TestSyncReportsPlanAndCost／
+# TestDedupByExternalId（與繼承自它的 TestSyncFetchesSplitsAndClassifies）
+# 共用的完整測試 schema。三個測試類別原本各自內嵌一份幾乎相同的 CREATE
+# TABLE 字串，2026-09-02 新增 training_status／performance_metrics 兩表與
+# activities／daily_wellness 各 14 個新欄位後，若繼續各自維護三份會違反
+# CLAUDE.md「絕不複製貼上程式碼區塊」，故抽成模組級常數集中維護。
+# 欄位名稱與型別對齊 schema.sql（不含 CHECK，測試不需要驗證約束合法性）。
+FULL_TEST_SCHEMA_SQL = """
+CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+CREATE TABLE activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id INTEGER NOT NULL, external_id TEXT,
+    activity_type TEXT NOT NULL, title TEXT, started_at TEXT NOT NULL,
+    distance_km REAL, duration_sec INTEGER, moving_time_sec INTEGER,
+    avg_hr_bpm INTEGER, max_hr_bpm INTEGER, aerobic_te REAL,
+    avg_cadence_spm INTEGER, max_cadence_spm INTEGER,
+    avg_pace_sec_per_km INTEGER, best_pace_sec_per_km INTEGER,
+    anaerobic_te REAL, activity_training_load REAL, training_effect_label TEXT,
+    avg_grade_adj_pace_sec_per_km INTEGER, avg_ground_contact_time_ms REAL,
+    avg_vertical_oscillation_cm REAL, avg_vertical_ratio_pct REAL,
+    avg_stride_length_cm REAL, avg_power_watts REAL, max_power_watts REAL,
+    norm_power_watts REAL, min_temperature_c REAL, max_temperature_c REAL,
+    hr_time_in_zone_json TEXT,
+    elevation_gain_m REAL, elevation_loss_m REAL, calories INTEGER,
+    reps INTEGER, sets INTEGER, source TEXT NOT NULL, source_version TEXT,
+    fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
+    raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
+    UNIQUE (athlete_id, started_at, activity_type, distance_km)
+);
+CREATE UNIQUE INDEX idx_activities_external_id ON activities (athlete_id, external_id);
+CREATE TABLE daily_wellness (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
+    resting_hr_bpm INTEGER, hrv_ms REAL, hrv_weekly_avg_ms REAL,
+    spo2_pct REAL, skin_temp_c REAL, respiration_rate REAL,
+    sleep_duration_sec INTEGER, sleep_quality TEXT, sleep_score INTEGER,
+    stress_avg INTEGER, body_battery_max INTEGER, body_battery_min INTEGER,
+    steps INTEGER, training_readiness_score INTEGER,
+    recovery_time_hours REAL, acwr REAL, all_day_stress_avg INTEGER,
+    hrv_baseline_low_upper REAL, hrv_baseline_balanced_low REAL,
+    hrv_baseline_balanced_upper REAL, hrv_status TEXT,
+    hrv_last_night_5min_high REAL, acute_load REAL, rhr_7day_avg_bpm INTEGER,
+    sleep_deep_sec INTEGER, sleep_light_sec INTEGER, sleep_rem_sec INTEGER,
+    sleep_awake_sec INTEGER, body_battery_at_wake INTEGER,
+    readiness_input_context TEXT, readiness_timestamp_local TEXT,
+    source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
+    UNIQUE (athlete_id, date, source)
+);
+CREATE TABLE training_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
+    training_status_code INTEGER, training_status_phrase TEXT,
+    acute_load REAL, chronic_load REAL, acwr_ratio REAL,
+    chronic_load_optimal_min REAL, chronic_load_optimal_max REAL,
+    acwr_status TEXT, vo2max_precise REAL, vo2max_date TEXT,
+    heat_acclimation_pct INTEGER, heat_trend TEXT,
+    altitude_acclimation_pct INTEGER, fitness_trend INTEGER,
+    monthly_load_aerobic_low REAL, monthly_load_aerobic_high REAL,
+    monthly_load_anaerobic REAL, training_balance_feedback TEXT,
+    source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
+    UNIQUE (athlete_id, date, source)
+);
+CREATE TABLE performance_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
+    race_predict_5k_sec INTEGER, race_predict_10k_sec INTEGER,
+    race_predict_half_sec INTEGER, race_predict_marathon_sec INTEGER,
+    lactate_threshold_hr_bpm INTEGER, lactate_threshold_pace_sec_per_km INTEGER,
+    functional_threshold_power INTEGER, endurance_score INTEGER,
+    endurance_classification INTEGER, endurance_contributors_json TEXT,
+    fitness_age REAL, chronological_age INTEGER, achievable_fitness_age REAL,
+    hill_score INTEGER,
+    source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
+    UNIQUE (athlete_id, date, source)
+);
+CREATE TABLE activity_laps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id INTEGER NOT NULL REFERENCES activities(id),
+    lap_index INTEGER NOT NULL, distance_km REAL, duration_sec REAL,
+    pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
+    UNIQUE (activity_id, lap_index)
+);
+CREATE TABLE metric_coverage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
+    source TEXT NOT NULL, earliest_date TEXT, latest_date TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE (athlete_id, metric_name, source)
+);
+INSERT INTO athlete_profile (name) VALUES ('Test');
+"""
+
+
 class FakeApi:
     """假的 API client——回傳固定資料，不發網路請求。"""
 
-    def __init__(self, activities=None, wellness=None, splits=None):
+    def __init__(self, activities=None, wellness=None, splits=None, performance=None):
         self._activities = activities if activities is not None else [REAL_ACTIVITY]
         self._wellness = wellness or {}
         self._splits = splits or {}
+        self._performance = performance if performance is not None else {}
         self.activity_calls = 0
         self.split_calls = []
 
@@ -199,6 +294,9 @@ class FakeApi:
         self.split_calls.append(str(activity_id))
         return list(self._splits.get(str(activity_id), []))
 
+    def fetch_performance_metrics_raw(self, cdate):
+        return dict(self._performance)
+
 
 class TestSyncWritesAndIsIdempotent(unittest.TestCase):
     """同步寫入資料庫並保證冪等。"""
@@ -206,52 +304,7 @@ class TestSyncWritesAndIsIdempotent(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(
-            """
-            CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
-            CREATE TABLE activities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, external_id TEXT,
-                activity_type TEXT NOT NULL, title TEXT, started_at TEXT NOT NULL,
-                distance_km REAL, duration_sec INTEGER, moving_time_sec INTEGER,
-                avg_hr_bpm INTEGER, max_hr_bpm INTEGER, aerobic_te REAL,
-                avg_cadence_spm INTEGER, max_cadence_spm INTEGER,
-                avg_pace_sec_per_km INTEGER, best_pace_sec_per_km INTEGER,
-                elevation_gain_m REAL, elevation_loss_m REAL, calories INTEGER,
-                reps INTEGER, sets INTEGER, source TEXT NOT NULL, source_version TEXT,
-                fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
-                raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
-                UNIQUE (athlete_id, started_at, activity_type, distance_km)
-            );
-            CREATE TABLE daily_wellness (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
-                resting_hr_bpm INTEGER, hrv_ms REAL, hrv_weekly_avg_ms REAL,
-                spo2_pct REAL, skin_temp_c REAL, respiration_rate REAL,
-                sleep_duration_sec INTEGER, sleep_quality TEXT, sleep_score INTEGER,
-                stress_avg INTEGER, body_battery_max INTEGER, body_battery_min INTEGER,
-                steps INTEGER, training_readiness_score INTEGER,
-                recovery_time_hours REAL, acwr REAL, source TEXT NOT NULL,
-                source_version TEXT, fetched_at TEXT NOT NULL, all_day_stress_avg INTEGER,
-                UNIQUE (athlete_id, date, source)
-            );
-            CREATE TABLE activity_laps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                activity_id INTEGER NOT NULL REFERENCES activities(id),
-                lap_index INTEGER NOT NULL, distance_km REAL, duration_sec REAL,
-                pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
-                UNIQUE (activity_id, lap_index)
-            );
-            CREATE TABLE metric_coverage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
-                source TEXT NOT NULL, earliest_date TEXT, latest_date TEXT,
-                updated_at TEXT NOT NULL,
-                UNIQUE (athlete_id, metric_name, source)
-            );
-            INSERT INTO athlete_profile (name) VALUES ('Test');
-            """
-        )
+        self.conn.executescript(FULL_TEST_SCHEMA_SQL)
         self.today = datetime.date(2026, 8, 16)
 
     def tearDown(self):
@@ -490,17 +543,18 @@ class TestResolveSyncDays(unittest.TestCase):
 class TestEstimateSyncCost(unittest.TestCase):
     """★ 同步前的耗時預告——讓使用者在打 API 前知道成本。
 
-    成本結構：活動只打 1 次（吃日期區間），wellness 逐日打 4 個端點
-    （stats／sleep／hrv／training_readiness），每次間隔 1 秒節流。
+    成本結構：活動只打 1 次（吃日期區間），wellness 逐日打 5 個端點
+    （stats／sleep／hrv／training_readiness／training_status，
+    2026-09-02 由 4 → 5，見 Task 1B-9），每次間隔 1 秒節流。
     """
 
-    def test_request_count_is_one_plus_four_per_day(self):
+    def test_request_count_is_one_plus_five_per_day(self):
         est = runner.estimate_sync_cost(7)
-        self.assertEqual(est["request_count"], 1 + 7 * 4)
+        self.assertEqual(est["request_count"], 1 + 7 * 5)
 
     def test_estimated_seconds_follows_throttle_interval(self):
         est = runner.estimate_sync_cost(30)
-        expected_requests = 1 + 30 * 4
+        expected_requests = 1 + 30 * 5
         self.assertEqual(est["request_count"], expected_requests)
         self.assertAlmostEqual(
             est["estimated_seconds"],
@@ -509,14 +563,14 @@ class TestEstimateSyncCost(unittest.TestCase):
         )
 
     def test_ninety_days_stays_within_reasonable_bound(self):
-        """90 天上限的實際成本：361 次請求、約 6 分鐘。"""
+        """90 天上限的實際成本：451 次請求、約 7.5 分鐘。"""
         est = runner.estimate_sync_cost(runner.MAX_AUTO_SYNC_DAYS)
-        self.assertEqual(est["request_count"], 361)
-        self.assertLess(est["estimated_seconds"], 7 * 60)
+        self.assertEqual(est["request_count"], 451)
+        self.assertLess(est["estimated_seconds"], 8 * 60)
 
     def test_human_readable_text_included(self):
         est = runner.estimate_sync_cost(7)
-        self.assertIn("29", est["summary"])
+        self.assertIn("36", est["summary"])
 
 
 class TestSyncReportsPlanAndCost(unittest.TestCase):
@@ -525,52 +579,7 @@ class TestSyncReportsPlanAndCost(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(
-            """
-            CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
-            CREATE TABLE activities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, external_id TEXT,
-                activity_type TEXT NOT NULL, title TEXT, started_at TEXT NOT NULL,
-                distance_km REAL, duration_sec INTEGER, moving_time_sec INTEGER,
-                avg_hr_bpm INTEGER, max_hr_bpm INTEGER, aerobic_te REAL,
-                avg_cadence_spm INTEGER, max_cadence_spm INTEGER,
-                avg_pace_sec_per_km INTEGER, best_pace_sec_per_km INTEGER,
-                elevation_gain_m REAL, elevation_loss_m REAL, calories INTEGER,
-                reps INTEGER, sets INTEGER, source TEXT NOT NULL, source_version TEXT,
-                fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
-                raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
-                UNIQUE (athlete_id, started_at, activity_type, distance_km)
-            );
-            CREATE TABLE daily_wellness (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
-                resting_hr_bpm INTEGER, hrv_ms REAL, hrv_weekly_avg_ms REAL,
-                spo2_pct REAL, skin_temp_c REAL, respiration_rate REAL,
-                sleep_duration_sec INTEGER, sleep_quality TEXT, sleep_score INTEGER,
-                stress_avg INTEGER, body_battery_max INTEGER, body_battery_min INTEGER,
-                steps INTEGER, training_readiness_score INTEGER,
-                recovery_time_hours REAL, acwr REAL, source TEXT NOT NULL,
-                source_version TEXT, fetched_at TEXT NOT NULL, all_day_stress_avg INTEGER,
-                UNIQUE (athlete_id, date, source)
-            );
-            CREATE TABLE activity_laps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                activity_id INTEGER NOT NULL REFERENCES activities(id),
-                lap_index INTEGER NOT NULL, distance_km REAL, duration_sec REAL,
-                pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
-                UNIQUE (activity_id, lap_index)
-            );
-            CREATE TABLE metric_coverage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
-                source TEXT NOT NULL, earliest_date TEXT, latest_date TEXT,
-                updated_at TEXT NOT NULL,
-                UNIQUE (athlete_id, metric_name, source)
-            );
-            INSERT INTO athlete_profile (name) VALUES ('Test');
-            """
-        )
+        self.conn.executescript(FULL_TEST_SCHEMA_SQL)
         self.today = datetime.date(2026, 8, 16)
 
     def tearDown(self):
@@ -594,7 +603,7 @@ class TestSyncReportsPlanAndCost(unittest.TestCase):
 
     def test_result_carries_cost_estimate(self):
         result = runner.sync(self.conn, 1, days=2, client=FakeApi(), today=self.today)
-        self.assertEqual(result["estimate"]["request_count"], 1 + 2 * 4)
+        self.assertEqual(result["estimate"]["request_count"], 1 + 2 * 5)
 
     def test_truncated_flag_when_gap_exceeds_max(self):
         """★ gap 超過上限時須明確標記，讓呼叫端提示改走匯出包。"""
@@ -717,54 +726,7 @@ class TestDedupByExternalId(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(
-            """
-            CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
-            CREATE TABLE activities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, external_id TEXT,
-                activity_type TEXT NOT NULL, title TEXT, started_at TEXT NOT NULL,
-                distance_km REAL, duration_sec INTEGER, moving_time_sec INTEGER,
-                avg_hr_bpm INTEGER, max_hr_bpm INTEGER, aerobic_te REAL,
-                avg_cadence_spm INTEGER, max_cadence_spm INTEGER,
-                avg_pace_sec_per_km INTEGER, best_pace_sec_per_km INTEGER,
-                elevation_gain_m REAL, elevation_loss_m REAL, calories INTEGER,
-                reps INTEGER, sets INTEGER, source TEXT NOT NULL, source_version TEXT,
-                fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
-                raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
-                UNIQUE (athlete_id, started_at, activity_type, distance_km)
-            );
-            CREATE UNIQUE INDEX idx_activities_external_id
-                ON activities (athlete_id, external_id);
-            CREATE TABLE daily_wellness (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
-                resting_hr_bpm INTEGER, hrv_ms REAL, hrv_weekly_avg_ms REAL,
-                spo2_pct REAL, skin_temp_c REAL, respiration_rate REAL,
-                sleep_duration_sec INTEGER, sleep_quality TEXT, sleep_score INTEGER,
-                stress_avg INTEGER, body_battery_max INTEGER, body_battery_min INTEGER,
-                steps INTEGER, training_readiness_score INTEGER,
-                recovery_time_hours REAL, acwr REAL, source TEXT NOT NULL,
-                source_version TEXT, fetched_at TEXT NOT NULL, all_day_stress_avg INTEGER,
-                UNIQUE (athlete_id, date, source)
-            );
-            CREATE TABLE activity_laps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                activity_id INTEGER NOT NULL REFERENCES activities(id),
-                lap_index INTEGER NOT NULL, distance_km REAL, duration_sec REAL,
-                pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
-                UNIQUE (activity_id, lap_index)
-            );
-            CREATE TABLE metric_coverage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
-                source TEXT NOT NULL, earliest_date TEXT, latest_date TEXT,
-                updated_at TEXT NOT NULL,
-                UNIQUE (athlete_id, metric_name, source)
-            );
-            INSERT INTO athlete_profile (name) VALUES ('Test');
-            """
-        )
+        self.conn.executescript(FULL_TEST_SCHEMA_SQL)
         self.today = datetime.date(2026, 8, 16)
 
     def tearDown(self):
@@ -887,7 +849,527 @@ class TestSyncFetchesSplitsAndClassifies(unittest.TestCase):
     def test_cost_estimate_accounts_for_splits(self):
         """耗時預告須把分圈請求算進去，否則低估。"""
         est = runner.estimate_sync_cost(7, expected_activities=5)
-        self.assertEqual(est["request_count"], 1 + 7 * 4 + 5)
+        self.assertEqual(est["request_count"], 1 + 7 * 5 + 5)
+
+
+# ============================================================================
+# 2026-09-02：Task 1B-9 Garmin 指標擴充——以下為新增測試
+# ============================================================================
+
+
+class TestNormalizeActivityNewFields(unittest.TestCase):
+    """★ Task 1B-9：activities 新增 14 欄的正規化。"""
+
+    def _raw(self, **overrides):
+        raw = dict(REAL_ACTIVITY)
+        raw.update(overrides)
+        return raw
+
+    def test_anaerobic_te_and_training_load(self):
+        row = runner.normalize_activity(
+            self._raw(anaerobicTrainingEffect=2.1, activityTrainingLoad=180.5,
+                      trainingEffectLabel="TEMPO")
+        )
+        self.assertEqual(row["anaerobic_te"], 2.1)
+        self.assertEqual(row["activity_training_load"], 180.5)
+        self.assertEqual(row["training_effect_label"], "TEMPO")
+
+    def test_grade_adjusted_pace_from_speed(self):
+        # 4.0 m/s -> 1000/4.0 = 250 s/km
+        row = runner.normalize_activity(self._raw(avgGradeAdjustedSpeed=4.0))
+        self.assertEqual(row["avg_grade_adj_pace_sec_per_km"], 250)
+
+    def test_grade_adjusted_pace_none_when_speed_missing(self):
+        row = runner.normalize_activity(self._raw())
+        self.assertIsNone(row["avg_grade_adj_pace_sec_per_km"])
+
+    def test_running_dynamics_passed_through_unconverted(self):
+        row = runner.normalize_activity(
+            self._raw(
+                avgGroundContactTime=245.0,
+                avgVerticalOscillation=8.9,
+                avgVerticalRatio=7.2,
+                avgStrideLength=118.4,
+            )
+        )
+        self.assertEqual(row["avg_ground_contact_time_ms"], 245.0)
+        self.assertEqual(row["avg_vertical_oscillation_cm"], 8.9)
+        self.assertEqual(row["avg_vertical_ratio_pct"], 7.2)
+        self.assertEqual(row["avg_stride_length_cm"], 118.4)
+
+    def test_power_fields_passed_through_unconverted(self):
+        row = runner.normalize_activity(
+            self._raw(avgPower=250.0, maxPower=410.0, normPower=265.0)
+        )
+        self.assertEqual(row["avg_power_watts"], 250.0)
+        self.assertEqual(row["max_power_watts"], 410.0)
+        self.assertEqual(row["norm_power_watts"], 265.0)
+
+    def test_temperature_stored_raw_without_transformation(self):
+        """⚠️ 手腕體溫污染值，正規化層只照存，不做任何加工／判讀。"""
+        row = runner.normalize_activity(self._raw(minTemperature=27.0, maxTemperature=29.0))
+        self.assertEqual(row["min_temperature_c"], 27.0)
+        self.assertEqual(row["max_temperature_c"], 29.0)
+
+    def test_missing_new_fields_default_to_none(self):
+        row = runner.normalize_activity(self._raw())
+        for key in (
+            "anaerobic_te", "activity_training_load", "training_effect_label",
+            "avg_grade_adj_pace_sec_per_km", "avg_ground_contact_time_ms",
+            "avg_vertical_oscillation_cm", "avg_vertical_ratio_pct",
+            "avg_stride_length_cm", "avg_power_watts", "max_power_watts",
+            "norm_power_watts", "min_temperature_c", "max_temperature_c",
+            "hr_time_in_zone_json",
+        ):
+            self.assertIsNone(row[key], f"{key} 應為 None")
+
+
+class TestBuildHrTimeInZoneJson(unittest.TestCase):
+    """★ hrTimeInZone_1..5：實測欄位值是毫秒，須換算成秒才存 JSON。"""
+
+    def test_converts_milliseconds_to_seconds(self):
+        raw = {
+            "hrTimeInZone_1": 203994.0,
+            "hrTimeInZone_2": 3629313.0,
+            "hrTimeInZone_3": 0.0,
+            "hrTimeInZone_4": 0.0,
+            "hrTimeInZone_5": 0.0,
+        }
+        result = json.loads(runner._build_hr_time_in_zone_json(raw))
+        self.assertEqual(result["1"], 204)  # round(203994/1000)
+        self.assertEqual(result["2"], 3629)  # round(3629313/1000) ≈ 60.5 分鐘
+
+    def test_zone_0_and_6_excluded(self):
+        """Zone 0（暖身/靜止）與 Zone 6（裝置 padding）不列入，只收 1~5。"""
+        raw = {
+            "hrTimeInZone_0": 50000.0,
+            "hrTimeInZone_1": 10000.0,
+            "hrTimeInZone_6": 0.0,
+        }
+        result = json.loads(runner._build_hr_time_in_zone_json(raw))
+        self.assertNotIn("0", result)
+        self.assertNotIn("6", result)
+        self.assertIn("1", result)
+
+    def test_all_zero_returns_none(self):
+        raw = {f"hrTimeInZone_{i}": 0.0 for i in range(1, 6)}
+        self.assertIsNone(runner._build_hr_time_in_zone_json(raw))
+
+    def test_missing_returns_none(self):
+        self.assertIsNone(runner._build_hr_time_in_zone_json({}))
+
+
+class TestSelectReadinessSnapshot(unittest.TestCase):
+    """★ 缺陷 C：從多筆快照中選出起床時的那筆，沒有時要有明確 fallback。"""
+
+    def test_picks_after_wakeup_reset_snapshot(self):
+        snapshots = [
+            {"score": 75, "inputContext": "UPDATE_REALTIME_VARIABLES"},
+            {"score": 60, "inputContext": "AFTER_WAKEUP_RESET"},
+            {"score": 73, "inputContext": "AFTER_POST_EXERCISE_RESET"},
+        ]
+        picked = runner._select_readiness_snapshot(snapshots)
+        self.assertEqual(picked["score"], 60)
+        self.assertEqual(picked["inputContext"], "AFTER_WAKEUP_RESET")
+
+    def test_falls_back_to_first_when_no_wakeup_snapshot(self):
+        """★ 沒有起床快照時不靜默取錯：退回 [0]，但實際 context 仍會存下。"""
+        snapshots = [
+            {"score": 75, "inputContext": "UPDATE_REALTIME_VARIABLES"},
+            {"score": 73, "inputContext": "AFTER_POST_EXERCISE_RESET"},
+        ]
+        picked = runner._select_readiness_snapshot(snapshots)
+        self.assertEqual(picked["score"], 75)
+        self.assertEqual(picked["inputContext"], "UPDATE_REALTIME_VARIABLES")
+
+    def test_empty_list_returns_empty_dict(self):
+        self.assertEqual(runner._select_readiness_snapshot([]), {})
+
+
+class TestNormalizeWellnessNewFields(unittest.TestCase):
+    """★ Task 1B-9：daily_wellness 新增 14 欄，含缺陷 A／C 修正。"""
+
+    def _raw(self, readiness=None, sleep_dto_extra=None, stats_extra=None,
+              hrv_extra=None):
+        sleep_dto = {
+            "sleepTimeSeconds": "21540",
+            "avgSleepStress": 18.0,
+            "deepSleepSeconds": 3000,
+            "lightSleepSeconds": 15900,
+            "remSleepSeconds": 2640,
+            "awakeSleepSeconds": 180,
+        }
+        sleep_dto.update(sleep_dto_extra or {})
+        stats = {
+            "averageStressLevel": 20,
+            "lastSevenDaysAvgRestingHeartRate": 49.0,
+            "bodyBatteryAtWakeTime": 75,
+        }
+        stats.update(stats_extra or {})
+        hrv_summary = {
+            "lastNightAvg": 49,
+            "weeklyAvg": 53,
+            "status": "BALANCED",
+            "lastNight5MinHigh": 95,
+            "baseline": {"lowUpper": 44, "balancedLow": 47, "balancedUpper": 61},
+        }
+        hrv_summary.update(hrv_extra or {})
+        return {
+            "date": "2026-08-31",
+            "stats": stats,
+            "sleep": {"dailySleepDTO": sleep_dto},
+            "hrv": {"hrvSummary": hrv_summary},
+            "training_readiness": (
+                readiness if readiness is not None
+                else [{"score": 60, "recoveryTime": 445, "acwrFactorPercent": 87,
+                       "acuteLoad": 302, "inputContext": "AFTER_WAKEUP_RESET",
+                       "timestampLocal": "2026-08-31T08:14:00"}]
+            ),
+        }
+
+    def test_defect_a_stress_avg_reads_sleep_stress_not_all_day(self):
+        """★ 缺陷 A：stress_avg 須來自 avgSleepStress，不可再跟
+        all_day_stress_avg 寫入同一個 averageStressLevel。"""
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["stress_avg"], 18.0)
+        self.assertEqual(row["all_day_stress_avg"], 20)
+        self.assertNotEqual(row["stress_avg"], row["all_day_stress_avg"])
+
+    def test_defect_c_readiness_snapshot_metadata_stored(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["readiness_input_context"], "AFTER_WAKEUP_RESET")
+        self.assertEqual(row["readiness_timestamp_local"], "2026-08-31T08:14:00")
+        self.assertEqual(row["training_readiness_score"], 60)
+
+    def test_defect_c_fallback_when_no_wakeup_snapshot(self):
+        row = runner.normalize_wellness(
+            self._raw(readiness=[{"score": 75, "acuteLoad": 280,
+                                   "inputContext": "UPDATE_REALTIME_VARIABLES"}])
+        )
+        # 沒有起床快照：退回第一筆，但 context 誠實記錄為非起床時點。
+        self.assertEqual(row["training_readiness_score"], 75)
+        self.assertEqual(row["readiness_input_context"], "UPDATE_REALTIME_VARIABLES")
+
+    def test_hrv_baseline_three_values(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["hrv_baseline_low_upper"], 44)
+        self.assertEqual(row["hrv_baseline_balanced_low"], 47)
+        self.assertEqual(row["hrv_baseline_balanced_upper"], 61)
+        self.assertEqual(row["hrv_status"], "BALANCED")
+        self.assertEqual(row["hrv_last_night_5min_high"], 95)
+
+    def test_acute_load_from_readiness_payload(self):
+        """零額外 API 成本：acuteLoad 已在 readiness payload 內。"""
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["acute_load"], 302)
+
+    def test_rhr_7day_avg_rounded_to_int(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["rhr_7day_avg_bpm"], 49)
+
+    def test_sleep_stage_breakdown(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["sleep_deep_sec"], 3000)
+        self.assertEqual(row["sleep_light_sec"], 15900)
+        self.assertEqual(row["sleep_rem_sec"], 2640)
+        self.assertEqual(row["sleep_awake_sec"], 180)
+
+    def test_body_battery_at_wake(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["body_battery_at_wake"], 75)
+
+
+class TestSelectPrimaryDevice(unittest.TestCase):
+    """★ 結構陷阱：deviceId 為 key 的 dict，須挑 primaryTrainingDevice=True。"""
+
+    def test_picks_primary_device_among_multiple(self):
+        devices = {
+            "1111111": {"primaryTrainingDevice": False, "trainingStatus": 1},
+            "2222222": {"primaryTrainingDevice": True, "trainingStatus": 4},
+        }
+        picked = runner._select_primary_device(devices)
+        self.assertEqual(picked["trainingStatus"], 4)
+
+    def test_falls_back_to_first_when_no_primary_flag(self):
+        devices = {"3453515234": {"trainingStatus": 4}}
+        picked = runner._select_primary_device(devices)
+        self.assertEqual(picked["trainingStatus"], 4)
+
+    def test_empty_or_none_returns_empty_dict(self):
+        self.assertEqual(runner._select_primary_device(None), {})
+        self.assertEqual(runner._select_primary_device({}), {})
+
+
+class TestNormalizeTrainingStatus(unittest.TestCase):
+    """★ 新增：get_training_status() → training_status 表。"""
+
+    def _raw(self):
+        return {
+            "latestTrainingStatusData": {
+                "3453515234": {
+                    "primaryTrainingDevice": True,
+                    "trainingStatus": 4,
+                    "trainingStatusFeedbackPhrase": "MAINTAINING_2",
+                    "fitnessTrend": 2,
+                    "acuteTrainingLoadDTO": {
+                        "dailyTrainingLoadAcute": 302.0,
+                        "dailyTrainingLoadChronic": 275.0,
+                        "dailyAcuteChronicWorkloadRatio": 1.0,
+                        "minTrainingLoadChronic": 220.0,
+                        "maxTrainingLoadChronic": 412.5,
+                        "acwrStatus": "OPTIMAL",
+                    },
+                    "heatAltitudeAcclimation": {
+                        "heatAcclimationPercentage": 73,
+                        "previousHeatAcclimationPercentage": 84,
+                        "heatTrend": "DEACCLIMATIZING",
+                        "altitudeAcclimation": 0,
+                    },
+                }
+            },
+            "mostRecentVO2Max": {
+                "generic": {"vo2MaxPreciseValue": 52.8, "calendarDate": "2026-08-30"}
+            },
+            "mostRecentTrainingLoadBalance": {
+                "metricsTrainingLoadBalanceDTOMap": {
+                    "3453515234": {
+                        "primaryTrainingDevice": True,
+                        "monthlyLoadAerobicLow": 1117.7,
+                        "monthlyLoadAerobicHigh": 0.0,
+                        "monthlyLoadAnaerobic": 0.0,
+                        "trainingBalanceFeedbackPhrase": "AEROBIC_HIGH_SHORTAGE",
+                    }
+                }
+            },
+        }
+
+    def test_maps_true_acwr_and_loads(self):
+        """★ 真 ACWR（急慢性負荷比）與急/慢性負荷，修缺陷 B 的關鍵欄位。"""
+        row = runner.normalize_training_status("2026-08-31", self._raw())
+        self.assertEqual(row["acute_load"], 302.0)
+        self.assertEqual(row["chronic_load"], 275.0)
+        self.assertEqual(row["acwr_ratio"], 1.0)
+        self.assertEqual(row["chronic_load_optimal_min"], 220.0)
+        self.assertEqual(row["chronic_load_optimal_max"], 412.5)
+        self.assertEqual(row["acwr_status"], "OPTIMAL")
+
+    def test_maps_training_status_and_vo2max(self):
+        row = runner.normalize_training_status("2026-08-31", self._raw())
+        self.assertEqual(row["training_status_code"], 4)
+        self.assertEqual(row["training_status_phrase"], "MAINTAINING_2")
+        self.assertEqual(row["vo2max_precise"], 52.8)
+        self.assertEqual(row["vo2max_date"], "2026-08-30")
+
+    def test_maps_heat_acclimation_and_load_balance(self):
+        row = runner.normalize_training_status("2026-08-31", self._raw())
+        self.assertEqual(row["heat_acclimation_pct"], 73)
+        self.assertEqual(row["heat_trend"], "DEACCLIMATIZING")
+        self.assertEqual(row["monthly_load_aerobic_low"], 1117.7)
+        self.assertEqual(row["monthly_load_anaerobic"], 0.0)
+        self.assertEqual(row["training_balance_feedback"], "AEROBIC_HIGH_SHORTAGE")
+
+    def test_selects_primary_device_not_first_key(self):
+        """★ 結構陷阱迴歸：非 primary 的裝置排在字典前面時不可誤取。"""
+        raw = self._raw()
+        raw["latestTrainingStatusData"] = {
+            "9999999": {"primaryTrainingDevice": False, "trainingStatus": 1},
+            "3453515234": raw["latestTrainingStatusData"]["3453515234"],
+        }
+        row = runner.normalize_training_status("2026-08-31", raw)
+        self.assertEqual(row["training_status_code"], 4)
+
+    def test_none_raw_returns_none(self):
+        self.assertIsNone(runner.normalize_training_status("2026-08-31", None))
+
+    def test_empty_raw_returns_none(self):
+        self.assertIsNone(runner.normalize_training_status("2026-08-31", {}))
+
+
+class TestNormalizePerformanceMetrics(unittest.TestCase):
+    """★ 新增：五個效能指標端點 → performance_metrics 表的快照。"""
+
+    def _raw(self, **overrides):
+        raw = {
+            "race_predictions": {
+                "time5K": 1403, "time10K": 2994,
+                "timeHalfMarathon": 6796, "timeMarathon": 11565,
+            },
+            "lactate_threshold": {
+                "heartRate": 179.0, "speed": 3.58,
+                "functionalThresholdPower": 245.0,
+            },
+            "endurance_score": {
+                "overallScore": 5905,
+                "classification": 3,
+                "contributors": [
+                    {"activityTypeId": 13, "group": None, "contribution": 81.77},
+                    {"activityTypeId": 14, "group": None, "contribution": 9.84},
+                ],
+            },
+            "fitness_age": {
+                "fitnessAge": 19.8, "chronologicalAge": 27,
+                "achievableFitnessAge": 18.0,
+            },
+            "hill_score": {"overallScore": 27},
+        }
+        raw.update(overrides)
+        return raw
+
+    def test_maps_race_predictions(self):
+        row = runner.normalize_performance_metrics("2026-09-01", self._raw())
+        self.assertEqual(row["race_predict_5k_sec"], 1403)
+        self.assertEqual(row["race_predict_10k_sec"], 2994)
+        self.assertEqual(row["race_predict_half_sec"], 6796)
+        self.assertEqual(row["race_predict_marathon_sec"], 11565)
+
+    def test_maps_lactate_threshold_and_converts_speed_to_pace(self):
+        row = runner.normalize_performance_metrics("2026-09-01", self._raw())
+        self.assertEqual(row["lactate_threshold_hr_bpm"], 179)
+        # 1000 / 3.58 m/s ≈ 279 s/km
+        self.assertEqual(row["lactate_threshold_pace_sec_per_km"], 279)
+        self.assertEqual(row["functional_threshold_power"], 245)
+
+    def test_lactate_hr_falls_back_to_misspelled_key(self):
+        """⚠️ Garmin 歷史拼字錯誤 hearRate（缺一個 t），見 fetch_lactate_threshold docstring。"""
+        row = runner.normalize_performance_metrics(
+            "2026-09-01",
+            self._raw(lactate_threshold={"hearRate": 179.0, "speed": 3.58}),
+        )
+        self.assertEqual(row["lactate_threshold_hr_bpm"], 179)
+
+    def test_maps_endurance_score_and_contributors_json(self):
+        row = runner.normalize_performance_metrics("2026-09-01", self._raw())
+        self.assertEqual(row["endurance_score"], 5905)
+        self.assertEqual(row["endurance_classification"], 3)
+        contributors = json.loads(row["endurance_contributors_json"])
+        self.assertEqual(
+            contributors,
+            [
+                {"activity_type_id": 13, "group": None, "contribution": 81.77},
+                {"activity_type_id": 14, "group": None, "contribution": 9.84},
+            ],
+        )
+
+    def test_maps_fitness_age_and_hill_score(self):
+        row = runner.normalize_performance_metrics("2026-09-01", self._raw())
+        self.assertEqual(row["fitness_age"], 19.8)
+        self.assertEqual(row["chronological_age"], 27)
+        self.assertEqual(row["achievable_fitness_age"], 18.0)
+        self.assertEqual(row["hill_score"], 27)
+
+    def test_all_sources_missing_returns_none(self):
+        self.assertIsNone(
+            runner.normalize_performance_metrics(
+                "2026-09-01",
+                {
+                    "race_predictions": None, "lactate_threshold": None,
+                    "endurance_score": None, "fitness_age": None, "hill_score": None,
+                },
+            )
+        )
+
+    def test_no_contributors_json_when_absent(self):
+        row = runner.normalize_performance_metrics(
+            "2026-09-01", self._raw(endurance_score={"overallScore": 5905})
+        )
+        self.assertIsNone(row["endurance_contributors_json"])
+
+
+class TestSyncWritesTrainingStatusAndPerformanceMetrics(unittest.TestCase):
+    """★ 整合測試：sync() 須把兩張新表也寫進資料庫。"""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(FULL_TEST_SCHEMA_SQL)
+        self.today = datetime.date(2026, 8, 16)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _training_status_raw(self):
+        return {
+            "latestTrainingStatusData": {
+                "111": {
+                    "primaryTrainingDevice": True,
+                    "trainingStatus": 4,
+                    "trainingStatusFeedbackPhrase": "MAINTAINING_2",
+                    "acuteTrainingLoadDTO": {
+                        "dailyTrainingLoadAcute": 302.0,
+                        "dailyTrainingLoadChronic": 275.0,
+                        "dailyAcuteChronicWorkloadRatio": 1.0,
+                    },
+                }
+            }
+        }
+
+    def test_training_status_written_from_daily_wellness_raw(self):
+        wellness = {
+            "2026-08-16": {
+                "date": "2026-08-16",
+                "stats": None, "sleep": None, "hrv": None, "training_readiness": [],
+                "training_status": self._training_status_raw(),
+            }
+        }
+        result = runner.sync(
+            self.conn, 1, days=1, client=FakeApi(wellness=wellness), today=self.today
+        )
+        self.assertEqual(result["training_status_days_synced"], 1)
+        row = self.conn.execute(
+            "SELECT acwr_ratio, training_status_phrase FROM training_status"
+        ).fetchone()
+        self.assertEqual(row["acwr_ratio"], 1.0)
+        self.assertEqual(row["training_status_phrase"], "MAINTAINING_2")
+
+    def test_training_status_resync_does_not_duplicate(self):
+        wellness = {
+            "2026-08-16": {
+                "date": "2026-08-16",
+                "stats": None, "sleep": None, "hrv": None, "training_readiness": [],
+                "training_status": self._training_status_raw(),
+            }
+        }
+        api = FakeApi(wellness=wellness)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        count = self.conn.execute("SELECT COUNT(*) FROM training_status").fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_performance_metrics_written_once_per_sync(self):
+        performance = {
+            "race_predictions": {"time5K": 1403},
+            "lactate_threshold": {"heartRate": 179.0},
+        }
+        result = runner.sync(
+            self.conn, 1, days=1,
+            client=FakeApi(performance=performance), today=self.today,
+        )
+        self.assertEqual(result["performance_metrics_synced"], 1)
+        row = self.conn.execute(
+            "SELECT race_predict_5k_sec, lactate_threshold_hr_bpm FROM performance_metrics"
+        ).fetchone()
+        self.assertEqual(row["race_predict_5k_sec"], 1403)
+        self.assertEqual(row["lactate_threshold_hr_bpm"], 179)
+
+    def test_performance_metrics_resync_does_not_duplicate(self):
+        performance = {"race_predictions": {"time5K": 1403}}
+        api = FakeApi(performance=performance)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        count = self.conn.execute("SELECT COUNT(*) FROM performance_metrics").fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_no_performance_metrics_row_when_all_endpoints_empty(self):
+        result = runner.sync(self.conn, 1, days=1, client=FakeApi(), today=self.today)
+        self.assertEqual(result["performance_metrics_synced"], 0)
+        count = self.conn.execute("SELECT COUNT(*) FROM performance_metrics").fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_no_training_status_row_when_endpoint_empty(self):
+        result = runner.sync(self.conn, 1, days=1, client=FakeApi(), today=self.today)
+        self.assertEqual(result["training_status_days_synced"], 0)
+        count = self.conn.execute("SELECT COUNT(*) FROM training_status").fetchone()[0]
+        self.assertEqual(count, 0)
 
 
 if __name__ == "__main__":

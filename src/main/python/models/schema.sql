@@ -91,7 +91,12 @@ CREATE TABLE IF NOT EXISTS activities (
     max_power_watts         REAL,
     -- 標準化功率（Normalized Power）：加權後的功率，反映變動強度的生理成本
     norm_power_watts        REAL,
-    -- --- 環境條件（影響配速判讀，台北夏季尤其顯著）---
+    -- --- 環境溫度（Temperature）欄位 ---
+    -- ⚠️ 不可當實際氣溫使用：這是手錶的**手腕體溫**讀數，非環境溫度感測器。
+    -- 依 N-3 查證（2026-09-02），四年份資料中此欄從未低於 21°C，且一月台北
+    -- 的紀錄卻出現 max 29°C——與該月實際氣溫明顯不符，屬手錶貼腕造成的
+    -- 體溫污染值。存原始值可以（作為手錶量測的原始記錄），但**不可用它
+    -- 判讀配速受氣溫影響的程度**，也不可包裝成「當天氣溫」呈現給使用者。
     min_temperature_c       REAL,
     max_temperature_c       REAL,
     -- 心率區間停留時間（hrTimeInZone_1..5，秒）。存 JSON 而非五個欄位：
