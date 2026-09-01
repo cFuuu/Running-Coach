@@ -13,25 +13,29 @@
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
-| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5 全數完成並對真實資料庫實測：activities 520→**530**、wellness 1651→**1667**，資料由 2026-08-16 推進至 **2026-09-01**；連跑三次同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。⚠️ 同步的活動 `workout_type` 為 NULL（API 無分圈，刻意不猜）。剩 1B-6 備援層（Strava）未做 |
+| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7 完成並對真實資料庫實測：activities 520→**530**、wellness 1651→**1667**，資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 已補上斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天），並於同步前預告耗時，解決固定天數在長期未同步時的靜默資料遺漏。⚠️ 同步的活動 `workout_type` 為 NULL（API 無分圈，刻意不猜）。剩 1B-6 備援層（Strava）未做 |
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設（2026-09-01，`@mcp.prompt("coach")`，待重啟 Claude Code 實測）**已完成；其後為對話層其餘能力／N-1 onboarding |
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 301 項全通過。
+**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **415 項**全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
 
-**目前資料庫內容**（`output/running_coach.db`，15.3 MB，不進版控）
+**目前資料庫內容**（`output/running_coach.db`，不進版控，2026-09-01 同步後）
 
 | 資料表 | 筆數 | 涵蓋範圍 |
 |---|---|---|
-| `activities` | 520 | 2019-12 ~ 2026-08（近 7 年）|
-| `daily_wellness` | 1651 | 睡眠/步數/全天壓力近 6 年；HRV/SpO2 約 10 個月 |
+| `activities` | 530 | 2019-12 ~ **2026-08-31**（近 7 年）|
+| `daily_wellness` | 1667 | 睡眠/步數/全天壓力近 6 年；HRV/SpO2 約 10 個月；最新至 **2026-09-01** |
 | `activity_laps` | 2381 | 243 場跑步的每公里分圈 |
 | `activity_records` | 68884 | 逐秒降頻（每 10 秒）|
 | `metric_coverage` | 13 | 各指標實際可用起訖日 |
-| `training_plan` | 0 | 待 Phase 2 產生 |
+| `training_plan` | 246 | Phase 2 已產生（含版本歷史，`is_active` 區分）|
 
-⚠️ **這是一次性歷史快照**（截至 2026-08-16），非即時同步。新資料需重新匯出並重跑匯入（冪等，可安全重複執行）。
+✅ **已可增量同步**（1B 完成）。日常更新直接跑，會自動回推到上次斷點：
+```bash
+"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m src.main.python.services.garmin_sync_runner --db-path output/running_coach.db
+```
+⚠️ 但 API 摘要**不含分圈**，故同步進來的活動無 `workout_type`、也無逐秒資料。要補齊仍需官方匯出包或 FIT 檔（見 1B-8）。
 
 ## Phase 0 — 需求確認（blocking）
 
@@ -343,6 +347,18 @@
 - [x] 真實資料庫實測：dry-run 正確算出 08-28~09-01（5 天）；實跑後筆數維持
       530／1667（冪等成立）；模擬 40 天未同步得 45 天、模擬一年得 90 天且
       正確標記 `gap_truncated`
+
+**1B-8. 補齊同步活動的 `workout_type`（新缺口，1B-7 之後浮現）**
+
+> 現況：530 場活動中，`api_sync` 來源的跑步有 **7 場** `workout_type` 為 NULL；
+> 全部跑步 254 場中共 **29 場** 無分類。這些場次在 `assess_session_quality`
+> 會被列為不可評（依 PLAN.md §1「缺前提時不輸出類型相關判讀」，屬正確行為，
+> 但代表**每次同步都在累積不可評的場次**）。
+
+- [ ] 走 `download_activity(id, ORIGINAL)` 取回 FIT → 餵既有 `fit_import_runner`
+      → 補上分圈、逐秒與自動分類（1B-0 實測已確認格式列舉用 `ORIGINAL`，無 `FIT` 成員）
+- [ ] 決定觸發時機：同步時順帶下載（成本高、每場一次請求），或另設補齊指令
+- [ ] ⚠️ 沿用既有 `workout_type_source='manual'` 保護，不覆蓋人工標註
 
 **1B-6. 備援層（維持原規劃，優先度低於上述）**
 - [ ] 釐清「token 過期（例行重新認證）」vs「結構性失效（Garmin 改版／上 JS challenge，需切 Strava）」
