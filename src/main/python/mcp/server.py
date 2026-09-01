@@ -15,8 +15,14 @@ AI 對話可呼叫的 tools（Phase 3 第一步）。
 athlete_id 慣例沿用 dashboard_queries.resolve_athlete_id()：tool 參數
 athlete_id 為 optional，未提供時預設取資料庫中第一位 athlete（單人自用情境）。
 
-寫入型 tool 只有一個：generate_training_plan。其餘皆為唯讀查詢，
+寫入型 tool 有兩個：generate_training_plan（產生課表）與
+sync_garmin_data（從 Garmin Connect 增量同步資料）。其餘皆為唯讀查詢，
 description 已明確標示副作用。
+
+⚠️ 刻意**不**提供直接查 Garmin API 的查詢型 tool（如 get_hrv_status）：
+資料一律先進資料庫，再由既有的唯讀 tools 查詢。理由見 PLAN.md §1
+「Garmin 即時同步定位為匯入器」——直查會造成雙重真相、繞過事實層的
+信賴度標記，且 Phase 2 規則引擎讀不到那些資料。
 
 除 tools 外另提供一個 prompt：coach（教練的行為約束層／人設，
 見本檔末 Prompt 區塊與 PLAN.md §7.6）。
@@ -38,6 +44,7 @@ from mcp.server.mcpserver import Context
 
 from src.main.python.models.db import get_connection
 from src.main.python.services import dashboard_queries
+from src.main.python.services import garmin_sync_runner
 from src.main.python.services import session_quality
 from src.main.python.services import training_load_queries
 from src.main.python.services import training_plan_generator
@@ -284,6 +291,40 @@ def get_active_training_plan(ctx: Context[AppContext], athlete_id: int | None = 
 
 
 # --- Tools（寫入型，會修改資料庫） ---
+
+
+@mcp.tool()
+def sync_garmin_data(
+    ctx: Context[AppContext],
+    days: int = 7,
+    athlete_id: int | None = None,
+) -> dict:
+    """⚠️ 會寫入資料庫：從 Garmin Connect 抓取最近 N 天的活動與每日身體數據，
+    正規化後寫入資料庫。**冪等**——重複同步同一區間不會產生重複資料
+    （由資料庫 UNIQUE 約束保證），已存在的資料會就地更新。
+
+    需先由使用者在終端機完成一次性認證：
+        python -m src.main.python.services.garmin_auth login
+
+    未認證或 token 過期時回傳 `available=False` 與說明，**不會**自動用帳密
+    重登（Garmin 對登入端點有 rate limit，自動重試會把帳號推向被鎖）。
+    此時應請使用者自行重跑上述指令，不要重複呼叫本工具。
+
+    ⚠️ 若回傳含 `rate_limited=True`，代表已觸發 Garmin 的 IP 層限制：
+    **不可重試**，請告知使用者稍後再試。
+
+    ⚠️ 本工具寫入的活動 `workout_type` 為 NULL——API 摘要不含分圈資料，
+    無從判斷配速結構。這是刻意不猜（見行為約束第 2 條）：這些場次在
+    `assess_session_quality` 等工具中會被列為不可評，屬正確行為。
+
+    days 預設 7，上限 365。athlete_id 省略時預設取資料庫中第一位學員。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return {"available": False, "reason": "資料庫中沒有任何學員資料"}
+    return _serialize(
+        garmin_sync_runner.sync(_conn(ctx), resolved_athlete_id, days=days)
+    )
 
 
 @mcp.tool()
