@@ -13,7 +13,7 @@
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
-| **Phase 1B 即時同步** | 🔵 **進行中** | **1B-0 可行性驗證已於 2026-09-01 實測通過**：`garminconnect 0.3.11` + `curl_cffi` 成功登入 Fu 的帳號，token 已存，抓取活動與 DB 四欄逐項比對全數一致。定位為**匯入器**（寫入 DB），不新增查詢型 tool。實測結論：API 用標準公尺/秒（與匯出包的 CENTIMETER/MILLISECOND 不同，正規化層需自行換算）、取摘要須用 `get_activities_by_date()`。下一步 1B-1 認證模組 |
+| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5 全數完成並對真實資料庫實測：activities 520→**530**、wellness 1651→**1667**，資料由 2026-08-16 推進至 **2026-09-01**；連跑三次同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。⚠️ 同步的活動 `workout_type` 為 NULL（API 無分圈，刻意不猜）。剩 1B-6 備援層（Strava）未做 |
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設（2026-09-01，`@mcp.prompt("coach")`，待重啟 Claude Code 實測）**已完成；其後為對話層其餘能力／N-1 onboarding |
 
@@ -221,22 +221,63 @@
 - [x] ⚠️ Windows 平台 `chmod 0700` 失效一事已在 `status` 輸出明示，
       程式碼**不宣稱**已限縮權限
 
-**1B-2. API client 封裝**
-- [ ] `services/garmin_api_client.py`：只負責認證載入 + 抓 raw JSON，不做正規化
-- [ ] 錯誤處理：token 失效／逾時／429 rate limit／403 各自轉為明確例外
-- [ ] ⚠️ 例外訊息與 log **不得含 token、cookie、email、userProfileId**
-- [ ] rate limit 自我節制（抓取間隔、單次上限），避免觸發 Garmin 風控
+**1B-2. API client 封裝——✅ 已完成（2026-09-01）**
+- [x] [`services/garmin_api_client.py`](../../src/main/python/services/garmin_api_client.py)：
+      只負責認證載入 + 抓 raw JSON，不做正規化（分層比照 `fit_parser`）
+- [x] 錯誤處理：`GarminFetchError`／`GarminRateLimited` 分類，429 單獨成型別
+- [x] ⚠️ 例外訊息只保留型別名稱，**不帶原始訊息**（可能含 token／request 細節）
+- [x] rate limit 自我節制：預設每次呼叫間隔 1 秒、單次區間上限 365 天
+- [x] 各日 wellness 獨立容錯（某日缺資料不影響其他日），但 429 一律往外拋停止整批
 
-**1B-3. 正規化與去重（比照 `garmin_import_runner.py`）**
-- [ ] `services/garmin_sync_runner.py`：正規化 → 去重 → 寫入 DB，CLI 進入點
-- [ ] ⚠️ **不可假設 API 回傳格式等同匯出包 JSON**——匯出包用 `CENTIMETER`／`MILLISECOND`／
-      `CENTIMETERS_PER_MILLISECOND` 等非字面單位，API 很可能不同，需獨立驗證後才決定
-      能否重用 `garmin_export_parser.py` 的換算函式
-- [ ] 去重指紋：時間 + 距離 + 時長（沿用既有慣例），避免與 520 筆既有活動重複
-- [ ] 時區處理：不寫死 +8，沿用 1E 既有做法（由資料自然推導偏移）
-- [ ] 冪等：重複執行同一區間不產生重複列
-- [ ] 沿用 `athlete_source_identity` 歸戶機制（Garmin `userProfileId` → `athlete_id`）
-- [ ] 可選：`download_activity(..., ORIGINAL)` 取 FIT 後餵 `fit_parser.py`，補分圈與逐秒
+**1B-3. 正規化與去重——✅ 已完成（2026-09-01）**
+- [x] [`services/garmin_sync_runner.py`](../../src/main/python/services/garmin_sync_runner.py)：
+      正規化 → 去重 → 寫入 DB，附 CLI 進入點
+- [x] ⚠️ **已實測確認 API 單位與匯出包不同**，故自行換算、**未**重用
+      `garmin_export_parser.py` 的係數：
+
+      | 欄位 | 匯出包 | REST API |
+      |---|---|---|
+      | `distance` | 公分 | **公尺** |
+      | `duration` | 毫秒 | **秒** |
+      | `elevationGain` | 公分 | **公尺** |
+      | `calories` | 千焦耳 | **大卡** |
+      | `maxSpeed` | 公分/毫秒 | **公尺/秒** |
+
+- [x] 去重：**不自行實作指紋比對**——`activities` 已有
+      `UNIQUE (athlete_id, started_at, activity_type, distance_km)`、
+      `daily_wellness` 有 `UNIQUE (athlete_id, date, source)`，
+      沿用 `INSERT ... ON CONFLICT DO UPDATE` 由資料庫保證冪等
+- [x] `source` 沿用 `'garmin_export'`（**非** `garmin_mcp`）：`daily_wellness` 的
+      UNIQUE 含 `source`，改用新值會讓同一天出現兩列，而現有查詢皆未依 source
+      篩選、`readiness.py` 更以日期為 dict key，兩列會非確定性互相覆蓋。
+      來源可追溯性改由 `source_version='api_sync'` 承載
+- [x] wellness 的 upsert 用 `COALESCE`，新資料缺值時不覆寫既有值
+- [x] ⚠️ ON CONFLICT 刻意不更新 `workout_type`／`workout_type_source`，
+      保護人工標註不被同步覆蓋
+- [x] **同步後重算 `metric_coverage`**——實測發現若不做，wellness 已寫到 09-01
+      但 coverage 仍停在 08-16，`get_meta()` 會回報過時的可用範圍
+
+> **⚠️ 已知限制：同步進來的活動 `workout_type` 為 NULL**
+> API 的活動摘要**不含分圈資料**，而 `classify_workout()` 需要分圈才能判斷
+> 配速結構。這是**刻意不猜**——依 PLAN.md §1「`workout_type` 為 unknown/NULL
+> 時不輸出類型相關判讀」，缺前提時正確行為是留空讓下游拒絕判讀。
+> 補齊方式（後續工作）：①用 `download_activity(id, ORIGINAL)` 取 FIT 後走
+> 既有 `fit_import_runner`（可同時補分圈與逐秒，是完整解）②人工標註。
+
+> **🐛 實測抓到的邊界 bug：配速的進位邊界**
+> 活動 23997807612 的真實配速為 **373.5 s/km**，正好落在進位邊界：
+> 用 API 原始浮點秒（3794.447）得 **374**，用四捨五入後的整數秒（3794）得
+> **373**——而 DB 既有值為 373。若不對齊 `garmin_export_parser` 的做法
+> （分子用整數秒），**每次重新同步都會讓配速在 ±1 秒間跳動**，產生假的
+> 資料變動。已修正並加迴歸測試守住。
+
+**1B-4. MCP 整合——✅ 已完成（2026-09-01）**
+- [x] `sync_garmin_data(days: int = 7) -> dict` 已註冊（回傳 dict，與既有慣例一致）
+- [x] 標為寫入型，docstring 明示副作用、冪等性、未認證與 429 的處置
+- [x] ⚠️ docstring 明示同步進來的活動 `workout_type` 為 NULL 屬正確行為
+- [x] 回傳新增筆數與日期區間，**不含任何憑證資訊**
+- [x] MCP server 現有 10 個 tool（8 唯讀 + 2 寫入），已驗證註冊成功
+- [x] ❌ 確認**未**新增任何直接查 Garmin API 的查詢型 tool
 
 **1B-3b. Garmin 黑盒衍生值：照抓照存，但只當對照組**
 
@@ -264,20 +305,17 @@
 - [ ] ⚠️ **不做自動背離偵測**——「兩邊不一致代表什麼」屬判斷層職責，規則層只提供
       兩組數值與各自標記，不代為判定誰對誰錯（呼應 §1「規則層永不自動改寫課表」的同一形狀）
 
-**1B-4. MCP 整合（只加 1 個寫入型 tool）**
-- [ ] `sync_garmin_data(days: int = 7) -> dict`，回傳 dict（**不是 str**，與既有 8 個 tool 慣例一致）
-- [ ] 標記為寫入型，docstring 比照 `generate_training_plan` 明示副作用
-- [ ] 回傳新增／略過筆數與涵蓋日期範圍；**不回傳任何憑證資訊**
-- [ ] ❌ **明確不做**：`get_training_readiness`／`get_hrv_status`／`get_recent_activities`／
-      `get_activity_details` 等查詢型 tool——這 4 個功能既有 tools 已全部涵蓋
-
-**1B-5. 端到端驗證（★ 使用者指定必做）**
-- [ ] 記錄同步前的 DB 筆數基準
-- [ ] 用手錶產生一筆新活動（或選一筆 DB 中沒有的既有活動）
-- [ ] 執行同步 → 確認該筆正確進入 `activities`，欄位值與 Garmin Connect 網頁顯示一致
-- [ ] 再執行一次同步 → 確認**不產生重複列**（冪等性）
-- [ ] 確認既有 MCP tools（`list_running_sessions` 等）查得到這筆新資料
-- [ ] 單元測試用合成假資料，**不含真實個人資料與憑證**
+**1B-5. 端到端驗證——✅ 已完成（2026-09-01，對真實資料庫實測）**
+- [x] 記錄基準：activities **520**、daily_wellness **1651**，兩者皆止於 2026-08-16
+- [x] 執行同步（`--days 20`）→ activities **530**（+10）、wellness **1667**（+16），
+      資料推進至 **2026-09-01**；新增 7 場跑步、2 場重訓、2 場健走
+- [x] **再執行兩次同步 → 筆數維持 530／1667，零重複列**（冪等性成立）
+- [x] 回歸檢查：既有活動 23997807612 的距離／時長／HR／配速**完全未變動**
+- [x] 確認既有唯讀 tools 查得到新資料——`list_running_sessions(30d)` 回 13 場
+      （含 8/30 的 15.11km、8/27 的 5.11km）
+- [x] `metric_coverage` 經修正後正確推進至 2026-09-01
+- [x] 單元測試 **29 項**（合成假資料，無真實憑證、不發網路請求）
+- [x] 同步前已備份資料庫至 scratchpad（未進版控）
 
 **1B-6. 備援層（維持原規劃，優先度低於上述）**
 - [ ] 釐清「token 過期（例行重新認證）」vs「結構性失效（Garmin 改版／上 JS challenge，需切 Strava）」
