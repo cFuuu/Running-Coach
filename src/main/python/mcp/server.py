@@ -296,12 +296,28 @@ def get_active_training_plan(ctx: Context[AppContext], athlete_id: int | None = 
 @mcp.tool()
 def sync_garmin_data(
     ctx: Context[AppContext],
-    days: int = 7,
+    days: int | None = None,
     athlete_id: int | None = None,
+    dry_run: bool = False,
 ) -> dict:
-    """⚠️ 會寫入資料庫：從 Garmin Connect 抓取最近 N 天的活動與每日身體數據，
-    正規化後寫入資料庫。**冪等**——重複同步同一區間不會產生重複資料
-    （由資料庫 UNIQUE 約束保證），已存在的資料會就地更新。
+    """⚠️ 會寫入資料庫：從 Garmin Connect 抓取活動與每日身體數據，正規化後
+    寫入資料庫。**冪等**——重複同步同一區間不會產生重複資料（由資料庫
+    UNIQUE 約束保證），已存在的資料會就地更新。
+
+    **days 省略時會自動回推到上次同步的斷點**（含 3 天重疊以補 Garmin
+    延遲寫入的睡眠／HRV／Training Readiness），上限 90 天。這是預設且
+    建議的用法——固定天數會在長期未同步時漏掉中間的缺口。
+
+    ⚠️ **同步前應先告知使用者預計耗時**：wellness 是逐日各打 4 個 API
+    端點並自我節流，90 天約需 6 分鐘。建議流程是先以 `dry_run=True`
+    取得 `estimate.summary`（例：「45 天／181 次 API 請求／約 3 分 1 秒」），
+    在對話中告知使用者後，再以相同參數實際執行。若使用者已明確要求
+    立即同步，可直接執行並在回覆中轉述 `estimate`。
+
+    回傳值一律含 `days`（實際採用天數）、`days_auto_resolved`（是否為
+    自動回推）、`gap_truncated`、`estimate`。若 `gap_truncated=True`，
+    代表距上次同步已超過 90 天、更早的缺口本次補不到，須告知使用者
+    改下載官方匯出包並在終端機執行 garmin_import_runner。
 
     需先由使用者在終端機完成一次性認證：
         python -m src.main.python.services.garmin_auth login
@@ -317,13 +333,15 @@ def sync_garmin_data(
     無從判斷配速結構。這是刻意不猜（見行為約束第 2 條）：這些場次在
     `assess_session_quality` 等工具中會被列為不可評，屬正確行為。
 
-    days 預設 7，上限 365。athlete_id 省略時預設取資料庫中第一位學員。
+    athlete_id 省略時預設取資料庫中第一位學員。
     """
     resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
     if resolved_athlete_id is None:
         return {"available": False, "reason": "資料庫中沒有任何學員資料"}
     return _serialize(
-        garmin_sync_runner.sync(_conn(ctx), resolved_athlete_id, days=days)
+        garmin_sync_runner.sync(
+            _conn(ctx), resolved_athlete_id, days=days, dry_run=dry_run
+        )
     )
 
 

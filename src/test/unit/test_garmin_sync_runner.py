@@ -379,5 +379,234 @@ class TestSyncWritesAndIsIdempotent(unittest.TestCase):
             runner.sync(self.conn, 1, days=0, client=FakeApi(), today=self.today)
 
 
+class TestResolveSyncDays(unittest.TestCase):
+    """★ 自動補齊：依資料庫現況回推需要同步幾天，避免長期未同步時漏資料。
+
+    設計依據（2026-09-01 與 Fu 議定）：
+    1. 斷點取 activities／daily_wellness **兩者較舊**的最新日期——兩表天生
+       不同步（沒運動的日子沒有活動列），取較新的會讓活動出現永久缺口。
+    2. 往前多抓 `OVERLAP_DAYS` 天：Garmin 的睡眠分數／HRV／Training Readiness
+       常隔日才算出，當天抓到的列欄位不全，需重抓補齊（upsert 用 COALESCE，
+       重抓只補空值不覆寫，故無副作用）。
+    3. 自動模式上限 `MAX_AUTO_SYNC_DAYS`，更早的缺口應走官方匯出包。
+    """
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(
+            """
+            CREATE TABLE activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, activity_type TEXT NOT NULL,
+                started_at TEXT NOT NULL, source TEXT NOT NULL, fetched_at TEXT NOT NULL
+            );
+            CREATE TABLE daily_wellness (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
+                source TEXT NOT NULL, fetched_at TEXT NOT NULL
+            );
+            """
+        )
+        self.today = datetime.date(2026, 9, 1)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _add_activity(self, started_at):
+        self.conn.execute(
+            "INSERT INTO activities (athlete_id, activity_type, started_at, source, "
+            "fetched_at) VALUES (1, 'running', ?, 'garmin_export', 'x')",
+            (started_at,),
+        )
+
+    def _add_wellness(self, date):
+        self.conn.execute(
+            "INSERT INTO daily_wellness (athlete_id, date, source, fetched_at) "
+            "VALUES (1, ?, 'garmin_export', 'x')",
+            (date,),
+        )
+
+    def test_uses_older_of_two_tables_as_breakpoint(self):
+        """★ 斷點取較舊者：活動停在 08-25、wellness 停在 09-01 → 從 08-25 起算。"""
+        self._add_activity("2026-08-25T18:00:00")
+        self._add_wellness("2026-09-01")
+        self.conn.commit()
+        days = runner.resolve_sync_days(self.conn, 1, today=self.today)
+        # 08-25 往前 OVERLAP_DAYS 天為起點，到 09-01 共 8 + overlap 天
+        expected = 8 + runner.OVERLAP_DAYS
+        self.assertEqual(days, expected)
+
+    def test_includes_overlap_days_for_delayed_metrics(self):
+        """★ 即使資料已同步到今天，仍回抓 overlap 天補延遲寫入的指標。"""
+        self._add_activity("2026-09-01T18:00:00")
+        self._add_wellness("2026-09-01")
+        self.conn.commit()
+        days = runner.resolve_sync_days(self.conn, 1, today=self.today)
+        self.assertEqual(days, 1 + runner.OVERLAP_DAYS)
+
+    def test_clamps_to_max_auto_sync_days(self):
+        """★ 長期未同步時夾到上限，不可一次打上千次 API。"""
+        self._add_activity("2020-01-01T18:00:00")
+        self._add_wellness("2020-01-01")
+        self.conn.commit()
+        days = runner.resolve_sync_days(self.conn, 1, today=self.today)
+        self.assertEqual(days, runner.MAX_AUTO_SYNC_DAYS)
+
+    def test_falls_back_to_default_when_no_data(self):
+        """空資料庫（尚未匯入歷史）不應推導出巨大區間。"""
+        days = runner.resolve_sync_days(self.conn, 1, today=self.today)
+        self.assertEqual(days, runner.DEFAULT_SYNC_DAYS)
+
+    def test_handles_only_wellness_present(self):
+        """只有 wellness 有資料時以它為準，不因活動表為空而 fallback。"""
+        self._add_wellness("2026-08-30")
+        self.conn.commit()
+        days = runner.resolve_sync_days(self.conn, 1, today=self.today)
+        self.assertEqual(days, 3 + runner.OVERLAP_DAYS)
+
+    def test_future_dated_row_does_not_produce_zero_or_negative(self):
+        """資料日期超前今天（時區差）時仍須回傳有效天數。"""
+        self._add_activity("2026-09-05T18:00:00")
+        self._add_wellness("2026-09-05")
+        self.conn.commit()
+        days = runner.resolve_sync_days(self.conn, 1, today=self.today)
+        self.assertGreaterEqual(days, 1)
+
+
+class TestEstimateSyncCost(unittest.TestCase):
+    """★ 同步前的耗時預告——讓使用者在打 API 前知道成本。
+
+    成本結構：活動只打 1 次（吃日期區間），wellness 逐日打 4 個端點
+    （stats／sleep／hrv／training_readiness），每次間隔 1 秒節流。
+    """
+
+    def test_request_count_is_one_plus_four_per_day(self):
+        est = runner.estimate_sync_cost(7)
+        self.assertEqual(est["request_count"], 1 + 7 * 4)
+
+    def test_estimated_seconds_follows_throttle_interval(self):
+        est = runner.estimate_sync_cost(30)
+        expected_requests = 1 + 30 * 4
+        self.assertEqual(est["request_count"], expected_requests)
+        self.assertAlmostEqual(
+            est["estimated_seconds"],
+            expected_requests * runner.REQUEST_INTERVAL_SEC,
+            places=3,
+        )
+
+    def test_ninety_days_stays_within_reasonable_bound(self):
+        """90 天上限的實際成本：361 次請求、約 6 分鐘。"""
+        est = runner.estimate_sync_cost(runner.MAX_AUTO_SYNC_DAYS)
+        self.assertEqual(est["request_count"], 361)
+        self.assertLess(est["estimated_seconds"], 7 * 60)
+
+    def test_human_readable_text_included(self):
+        est = runner.estimate_sync_cost(7)
+        self.assertIn("29", est["summary"])
+
+
+class TestSyncReportsPlanAndCost(unittest.TestCase):
+    """sync() 須回報實際採用的天數與預估成本，供 CLI／MCP 告知使用者。"""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(
+            """
+            CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+            CREATE TABLE activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, external_id TEXT,
+                activity_type TEXT NOT NULL, title TEXT, started_at TEXT NOT NULL,
+                distance_km REAL, duration_sec INTEGER, moving_time_sec INTEGER,
+                avg_hr_bpm INTEGER, max_hr_bpm INTEGER, aerobic_te REAL,
+                avg_cadence_spm INTEGER, max_cadence_spm INTEGER,
+                avg_pace_sec_per_km INTEGER, best_pace_sec_per_km INTEGER,
+                elevation_gain_m REAL, elevation_loss_m REAL, calories INTEGER,
+                reps INTEGER, sets INTEGER, source TEXT NOT NULL, source_version TEXT,
+                fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
+                raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
+                UNIQUE (athlete_id, started_at, activity_type, distance_km)
+            );
+            CREATE TABLE daily_wellness (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
+                resting_hr_bpm INTEGER, hrv_ms REAL, hrv_weekly_avg_ms REAL,
+                spo2_pct REAL, skin_temp_c REAL, respiration_rate REAL,
+                sleep_duration_sec INTEGER, sleep_quality TEXT, sleep_score INTEGER,
+                stress_avg INTEGER, body_battery_max INTEGER, body_battery_min INTEGER,
+                steps INTEGER, training_readiness_score INTEGER,
+                recovery_time_hours REAL, acwr REAL, source TEXT NOT NULL,
+                source_version TEXT, fetched_at TEXT NOT NULL, all_day_stress_avg INTEGER,
+                UNIQUE (athlete_id, date, source)
+            );
+            CREATE TABLE metric_coverage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
+                source TEXT NOT NULL, earliest_date TEXT, latest_date TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE (athlete_id, metric_name, source)
+            );
+            INSERT INTO athlete_profile (name) VALUES ('Test');
+            """
+        )
+        self.today = datetime.date(2026, 8, 16)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_days_omitted_triggers_auto_resolution(self):
+        """★ 不給 days 時自動算 gap，而非沿用固定 7 天。"""
+        self.conn.execute(
+            "INSERT INTO daily_wellness (athlete_id, date, source, fetched_at) "
+            "VALUES (1, '2026-08-10', 'garmin_export', 'x')"
+        )
+        self.conn.commit()
+        result = runner.sync(self.conn, 1, client=FakeApi(), today=self.today)
+        self.assertTrue(result["days_auto_resolved"])
+        self.assertEqual(result["days"], 7 + runner.OVERLAP_DAYS)
+
+    def test_explicit_days_overrides_auto(self):
+        result = runner.sync(self.conn, 1, days=3, client=FakeApi(), today=self.today)
+        self.assertFalse(result["days_auto_resolved"])
+        self.assertEqual(result["days"], 3)
+
+    def test_result_carries_cost_estimate(self):
+        result = runner.sync(self.conn, 1, days=2, client=FakeApi(), today=self.today)
+        self.assertEqual(result["estimate"]["request_count"], 1 + 2 * 4)
+
+    def test_truncated_flag_when_gap_exceeds_max(self):
+        """★ gap 超過上限時須明確標記，讓呼叫端提示改走匯出包。"""
+        self.conn.execute(
+            "INSERT INTO daily_wellness (athlete_id, date, source, fetched_at) "
+            "VALUES (1, '2020-01-01', 'garmin_export', 'x')"
+        )
+        self.conn.commit()
+        result = runner.sync(self.conn, 1, client=FakeApi(), today=self.today)
+        self.assertTrue(result["gap_truncated"])
+        self.assertEqual(result["days"], runner.MAX_AUTO_SYNC_DAYS)
+
+    def test_no_truncation_flag_within_limit(self):
+        self.conn.execute(
+            "INSERT INTO daily_wellness (athlete_id, date, source, fetched_at) "
+            "VALUES (1, '2026-08-14', 'garmin_export', 'x')"
+        )
+        self.conn.commit()
+        result = runner.sync(self.conn, 1, client=FakeApi(), today=self.today)
+        self.assertFalse(result["gap_truncated"])
+
+    def test_dry_run_does_not_touch_api_or_db(self):
+        """★ dry-run：只回報計畫與成本，不打 API、不寫入。"""
+        api = FakeApi()
+        result = runner.sync(self.conn, 1, days=5, client=api, today=self.today, dry_run=True)
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["days"], 5)
+        self.assertEqual(api.activity_calls, 0)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0], 0
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
