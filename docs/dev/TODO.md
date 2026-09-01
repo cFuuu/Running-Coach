@@ -193,6 +193,32 @@
 - [ ] 沿用 `athlete_source_identity` 歸戶機制（Garmin `userProfileId` → `athlete_id`）
 - [ ] 可選：`download_activity(..., ORIGINAL)` 取 FIT 後餵 `fit_parser.py`，補分圈與逐秒
 
+**1B-3b. Garmin 黑盒衍生值：照抓照存，但只當對照組**
+
+> **決策依據**：[PLAN.md §1](PLAN.md#1-決策記錄decisions-log)「Garmin 衍生值為對照組／校準來源，
+> 不進事實層」（2026-08-25 grill）。Training Readiness／Body Battery／HRV status／
+> `recovery_time_hours` 等為 Firstbeat 黑盒演算法產物，公式未公開、無法標出處。
+>
+> ⚠️ **`unusable` 標記的意思是「不得作為判讀依據」，不是「不得存在」。** 這些資料
+> **要抓、要存**，只是取用時必須帶 `garmin_blackbox` 標記，不可當結論的依據。
+
+- [ ] 同步時一併抓取並寫入 `daily_wellness`（既有 schema 已有欄位，不需改 schema）：
+      `get_training_readiness(cdate)`／`get_body_battery(start, end)`／
+      `get_hrv_data_range(start, end)` 的 status 欄位／`recovery_time_hours`
+- [ ] ⚠️ 取用時一律走既有 `data_confidence.KNOWN_BIASES['garmin_blackbox']`（`unusable`），
+      **不得另開一條無標記的路直送 AI**
+- [ ] 明確區分三種**允許**的用途（皆為對照，非判讀）：
+  - **校準自建門檻**：TSB 個人 P10、HRV 7 日均值等自訂門檻，用 Garmin 長序列對照，
+    找出兩邊分歧的日子作為檢查自建模型的線索
+  - **補資料最薄處**：Garmin 恢復指標覆蓋 1086 天（2023-08 起），為自建 HRV 序列
+    292 天的 **3.7 倍**，可作偏移對照，判斷該 292 天是否落在異常期
+  - **背離本身即訊號**：自建說 normal 而 Garmin 說 low 時，此分歧值得對話層點出
+    （可能源自重訓計法差異——自建把重訓併入同一累加池，Garmin 基於 EPOC 計法不同）
+- [ ] ❌ **禁止**：把 Garmin 分數當結論依據（「你今天 readiness 32，建議休息」）、
+      混進自建公式當輸入、或用它取代自建判斷
+- [ ] ⚠️ **不做自動背離偵測**——「兩邊不一致代表什麼」屬判斷層職責，規則層只提供
+      兩組數值與各自標記，不代為判定誰對誰錯（呼應 §1「規則層永不自動改寫課表」的同一形狀）
+
 **1B-4. MCP 整合（只加 1 個寫入型 tool）**
 - [ ] `sync_garmin_data(days: int = 7) -> dict`，回傳 dict（**不是 str**，與既有 8 個 tool 慣例一致）
 - [ ] 標記為寫入型，docstring 比照 `generate_training_plan` 明示副作用
