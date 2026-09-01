@@ -13,21 +13,21 @@
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
-| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7 完成並對真實資料庫實測：activities 520→**530**、wellness 1651→**1667**，資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 已補上斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天），並於同步前預告耗時，解決固定天數在長期未同步時的靜默資料遺漏。⚠️ 同步的活動 `workout_type` 為 NULL（API 無分圈，刻意不猜）。剩 1B-6 備援層（Strava）未做 |
+| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7、1B-8 完成並對真實資料庫實測：資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天）並預告耗時，解決固定天數的靜默資料遺漏。**1B-8 補抓分圈**——`get_activity_splits` 可取得完整逐圈明細（不需下載 FIT），同步進來的活動已能套用既有分類器補上 `workout_type`；同時修正 `external_id` 去重（原 UNIQUE 因浮點距離精度差擋不住跨來源重複）。⚠️ 逐秒資料仍需 FIT，故心率漂移／配速穩定度對同步活動仍不可評。剩 1B-6 備援層（Strava）未做 |
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設（2026-09-01，`@mcp.prompt("coach")`，待重啟 Claude Code 實測）**已完成；其後為對話層其餘能力／N-1 onboarding |
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **415 項**全通過。
+**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **432 項**全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
 
 **目前資料庫內容**（`output/running_coach.db`，不進版控，2026-09-01 同步後）
 
 | 資料表 | 筆數 | 涵蓋範圍 |
 |---|---|---|
-| `activities` | 530 | 2019-12 ~ **2026-08-31**（近 7 年）|
+| `activities` | 528 | 2019-12 ~ **2026-08-31**（近 7 年）|
 | `daily_wellness` | 1667 | 睡眠/步數/全天壓力近 6 年；HRV/SpO2 約 10 個月；最新至 **2026-09-01** |
-| `activity_laps` | 2381 | 243 場跑步的每公里分圈 |
-| `activity_records` | 68884 | 逐秒降頻（每 10 秒）|
+| `activity_laps` | 2438 | **248 場**跑步的每公里分圈（1B-8 後含 API 同步場次）|
+| `activity_records` | 68884 | 逐秒降頻（每 10 秒）——**僅 FIT 來源**，API 同步無此資料 |
 | `metric_coverage` | 13 | 各指標實際可用起訖日 |
 | `training_plan` | 246 | Phase 2 已產生（含版本歷史，`is_active` 區分）|
 
@@ -35,7 +35,9 @@
 ```bash
 "C:/Users/cFu/anaconda3/envs/rc/python.exe" -m src.main.python.services.garmin_sync_runner --db-path output/running_coach.db
 ```
-⚠️ 但 API 摘要**不含分圈**，故同步進來的活動無 `workout_type`、也無逐秒資料。要補齊仍需官方匯出包或 FIT 檔（見 1B-8）。
+同步會一併抓逐圈明細並套用既有分類器補 `workout_type`（1B-8）。
+⚠️ 但**逐秒資料仍需 FIT**，故同步進來的活動在 `assess_session_quality` 中
+心率漂移與配速穩定度兩維度不可評（強度符合度可評）。
 
 ## Phase 0 — 需求確認（blocking）
 
@@ -348,17 +350,77 @@
       530／1667（冪等成立）；模擬 40 天未同步得 45 天、模擬一年得 90 天且
       正確標記 `gap_truncated`
 
-**1B-8. 補齊同步活動的 `workout_type`（新缺口，1B-7 之後浮現）**
+**1B-8. 補抓分圈補齊分類＋修正跨來源重複列——✅ 已完成（2026-09-01）**
 
-> 現況：530 場活動中，`api_sync` 來源的跑步有 **7 場** `workout_type` 為 NULL；
-> 全部跑步 254 場中共 **29 場** 無分類。這些場次在 `assess_session_quality`
-> 會被列為不可評（依 PLAN.md §1「缺前提時不輸出類型相關判讀」，屬正確行為，
-> 但代表**每次同步都在累積不可評的場次**）。
+> 起因：同步進來的活動 `workout_type` 全為 NULL，導致近兩週訓練在
+> `assess_session_quality` 全部不可評——1B-7 讓資料不再遺漏，卻也讓這個
+> 缺口穩定累積。查證時另發現一個資料重複的 bug，兩者一併處理。
 
-- [ ] 走 `download_activity(id, ORIGINAL)` 取回 FIT → 餵既有 `fit_import_runner`
-      → 補上分圈、逐秒與自動分類（1B-0 實測已確認格式列舉用 `ORIGINAL`，無 `FIT` 成員）
-- [ ] 決定觸發時機：同步時順帶下載（成本高、每場一次請求），或另設補齊指令
-- [ ] ⚠️ 沿用既有 `workout_type_source='manual'` 保護，不覆蓋人工標註
+**🔑 關鍵發現：分圈明細拿得到，先前「需下載 FIT」的判斷不正確**
+
+- 活動摘要端點（`get_activities_by_date`）確實沒有逐圈資料，但它有的
+  `splitSummaries` 是**按 `RWD_RUN`／`RWD_WALK`／`RWD_STAND` 類型彙總**的
+  總和與平均（`noOfSplits` 只說該類型有幾段），`fastestSplit_1000` 之類
+  也只是單一極值——都不構成逐圈序列。摘要的 `lapCount` 告知圈數存在
+- **`get_activity_splits(id)` 直接回傳完整 `lapDTOs`**。實測 2026-08-30
+  那場 `lapCount=16`，本端點回 16 圈齊全（距離／時長／avgHR／maxHR），
+  餵既有 `classify_workout()` 得 `lsd`（正確：15.1km 為近期均值 1.5 倍以上）
+- 成本與下載 FIT 相同（皆每場 1 次請求），但**不需下載檔案、不需解析 FIT**
+
+- [x] `garmin_api_client.fetch_activity_splits()`：取逐圈明細
+- [x] `garmin_sync_runner.normalize_laps()` + `_sync_splits()`：正規化 → 寫入
+      `activity_laps` → 套用分類器
+- [x] **重用** `fit_import_runner.store_laps()`／`update_workout_type()`
+      （兩者改為公開函式）——兩條匯入路徑必須用**同一套分類標準**，
+      否則同一個 `workout_type` 欄位會混入兩種語意
+- [x] 只處理 `DEFAULT_CLASSIFIABLE_SPORTS`（重訓/健走不分類）；已有分圈者
+      跳過不重抓（省 API，也讓重複同步真正冪等）；單場失敗不中斷整批，
+      但 429 往外拋中止
+- [x] `estimate_sync_cost()` 加計分圈請求數，耗時預告不再低估
+
+> **⚠️ 明確不採「以心率區間推算課種」**
+> 摘要帶有 `hrTimeInZone_1..5`、`hasIntensityIntervals`、`trainingEffectLabel`，
+> 看似可用，但**心率區間分布把時間軸攤平了**——10×400m 間歇與穩定節奏跑的
+> 區間分布可以幾乎相同（間歇的休息段把平均拉回來），且心率有滯後。用它反推
+> 配速結構正是分類器設計要避開的錯誤。這些欄位適合當**分類結果的交叉驗證**
+> （分類器說 interval 但 `hasIntensityIntervals=False` 就值得懷疑），
+> 不適合當主要依據；另建一套也會讓同一欄位混入兩種語意。
+
+**🐛 同時修正：跨來源重複列（實測發現）**
+
+- 原 UNIQUE 為 `(athlete_id, started_at, activity_type, distance_km)`，但
+  API 回傳完整浮點距離（10.1585703125）、匯出包存四捨五入值（10.1586），
+  **兩者不相等，UNIQUE 擋不住**，同一場活動寫成兩列。實測有 2 組
+  （8/13、8/16），正落在 API 與匯出包的來源重疊區
+- 後果：`list_running_sessions` 把同一場跑步列兩次，一次有 `workout_type`
+  一次是 NULL——AI 教練看到的場次數量是錯的
+- [x] 改以 **`external_id`**（Garmin activityId）為去重鍵。實測 530 筆活動
+      `external_id` 全部非 NULL，且兩組重複列的 `external_id` 相同
+- [x] `schema.sql` 新增 `idx_activities_external_id` 唯一索引，原 UNIQUE 保留
+      為次要防線並註明其不足
+- [x] [`models/migrate_dedup_external_id.py`](../../src/main/python/models/migrate_dedup_external_id.py)：
+      一次性 migration，預設 dry-run、`--apply` 前自動備份、單一 transaction、
+      建索引前重驗；保留有分類的那列（匯出包來源，資料較完整）
+
+**實測結果**
+
+| 項目 | 變化 |
+|---|---|
+| 活動總數 | 530 → **528**（刪 2 筆重複，皆無附帶 laps/records，零損失）|
+| `activity_laps` | 2381 → **2438**（+57 圈）|
+| 跑步缺分類 | 27 → **22**（剩下為更早期無 FIT 的舊資料）|
+| 近兩週訓練 | 全 NULL → **全部有分類**（8/18 tempo、8/22 easy、8/26 tempo、8/27 easy、8/30 lsd）|
+
+- [x] 實際呼叫 `assess_session_quality(1042)` 驗證：8/30 那場評出強度符合度
+      `within`（66.2% HRR 落在 lsd 預期 55–75%），並正確帶出兩項 low 信賴度標記
+- [x] 單元測試 **+17 項**，全套 **432 項**通過
+
+> **⚠️ 仍未解決：逐秒資料**
+> `activity_records` 仍需 FIT，本路線不提供，故同步進來的活動**心率漂移與
+> 配速穩定度兩個維度仍不可評**（實測 1042 的 `not_assessed` 確認）。
+> 若日後要補，走 `download_activity(id, ORIGINAL)` → `fit_import_runner`
+> （1B-0 已確認格式列舉用 `ORIGINAL`，無 `FIT` 成員）。優先度不高——
+> 心率漂移目前本就無可用閾值（見 N-3 第一批），補了也只是多一個不判讀的數值。
 
 **1B-6. 備援層（維持原規劃，優先度低於上述）**
 - [ ] 釐清「token 過期（例行重新認證）」vs「結構性失效（Garmin 改版／上 JS challenge，需切 Strava）」
