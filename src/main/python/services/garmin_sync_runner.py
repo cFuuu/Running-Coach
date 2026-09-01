@@ -1,11 +1,40 @@
 """Garmin Connect 增量同步：抓取 → 正規化 → 去重寫入 SQLite。
 
 用法：
+    # 自動補齊到上次同步的斷點（預設行為）
     python -m src.main.python.services.garmin_sync_runner \
-        --db-path output/running_coach.db --days 7
+        --db-path output/running_coach.db
+
+    # 只看計畫與預估耗時，不打 API
+    python -m src.main.python.services.garmin_sync_runner \
+        --db-path output/running_coach.db --dry-run
 
 需先完成一次性認證（見 `garmin_auth`）：
     python -m src.main.python.services.garmin_auth login
+
+## 自動補齊機制（`--days` 省略時的預設行為）
+
+長期未同步時，固定回溯 N 天會漏掉中間的缺口。故 `days` 省略時改由
+`resolve_sync_days()` 依資料庫現況回推：
+
+    斷點 = min(activities 最新日, daily_wellness 最新日)
+    天數 = (今天 − 斷點) + 1 + OVERLAP_DAYS，夾到 MAX_AUTO_SYNC_DAYS
+
+三個設計要點：
+
+1. **斷點取兩表較舊者**。兩表天生不同步——沒運動的日子沒有活動列，
+   wellness 卻天天都有。以較新的 wellness 日期為斷點，會讓當天稍晚
+   才上傳的活動永遠落在下次區間之外，形成永久缺口。
+2. **往前多抓 `OVERLAP_DAYS` 天**。Garmin 的睡眠分數／HRV／Training
+   Readiness 常隔日才算出，當天抓到的列欄位不全，需重抓補齊。
+   upsert 用 COALESCE 只補空值不覆寫，重抓無副作用。
+3. **夾到 `MAX_AUTO_SYNC_DAYS`（90 天）**。wellness 是逐日各打 4 個
+   端點，天數與請求數成正比；超過此範圍應走官方匯出包。夾擠發生時
+   結果會帶 `gap_truncated=True`，呼叫端須據此提示使用者。
+
+⚠️ 同步前應先以 `dry_run=True` 取得 `estimate` 並告知使用者預計耗時
+——這是與 Fu 議定的行為（2026-09-01）。CLI 已內建詢問確認；MCP tool
+無互動能力，改以回傳值中的 `estimate` 讓 AI 在對話中轉述。
 
 ## 為何不重用 `garmin_export_parser` 的換算函式
 
@@ -69,6 +98,7 @@ from pathlib import Path
 
 from src.main.python.models.db import get_connection
 from src.main.python.services.garmin_api_client import (
+    DEFAULT_REQUEST_INTERVAL_SEC,
     GarminApiClient,
     GarminFetchError,
     GarminRateLimited,
@@ -81,6 +111,31 @@ SYNC_SOURCE = "garmin_export"
 SYNC_SOURCE_VERSION = "api_sync"
 
 _SECONDS_PER_MINUTE = 60
+
+# --- 自動補齊參數（見模組 docstring「自動補齊機制」）---
+
+# 資料庫查無任何資料時的保底天數（尚未匯入歷史的全新資料庫）。
+DEFAULT_SYNC_DAYS = 7
+
+# 斷點往前多抓的重疊天數。Garmin 的睡眠分數／HRV／Training Readiness
+# 常隔日才算出，當天抓到的列欄位不全，須重抓補齊。upsert 用 COALESCE
+# 只補空值不覆寫，故重抓無副作用，唯一代價是多幾次 API 呼叫。
+OVERLAP_DAYS = 3
+
+# 自動模式單次回溯上限。90 天可涵蓋一個完整馬拉松訓練週期（12–16 週），
+# 成本為 361 次請求／約 6 分鐘（見 estimate_sync_cost）。更早的缺口應走
+# 官方匯出包——一次拿完整歷史，且含分圈與 workout_type，品質優於 API 摘要。
+# ⚠️ 不可貿然調高：wellness 是逐日各打 4 個端點，天數與請求數成正比，
+# garmin_api_client 的硬上限 365 天等於 1461 次請求／約 24 分鐘連續請求，
+# 已超出正常使用者行為的樣子，有觸發 Cloudflare 風控的風險。
+MAX_AUTO_SYNC_DAYS = 90
+
+# 每日身體數據的端點數（stats／sleep／hrv／training_readiness），
+# 與 garmin_api_client.fetch_daily_wellness_raw() 的來源數一致。
+_WELLNESS_ENDPOINTS_PER_DAY = 4
+
+# 節流間隔沿用 client 的預設值，讓耗時預估與實際行為一致。
+REQUEST_INTERVAL_SEC = DEFAULT_REQUEST_INTERVAL_SEC
 
 # 需要維護 metric_coverage 的 daily_wellness 欄位。名稱與既有資料一致
 # （匯入器寫入的 metric_name 即為欄位名），故沿用同一組字串，
@@ -391,31 +446,133 @@ def _refresh_metric_coverage(conn: sqlite3.Connection, athlete_id: int) -> int:
     return count
 
 
+def _latest_date(conn: sqlite3.Connection, athlete_id: int) -> datetime.date | None:
+    """取 activities／daily_wellness 兩表最新日期中**較舊**的那個。
+
+    ⚠️ 取較舊者而非較新者是刻意的：兩表天生不同步——沒運動的日子沒有
+    活動列，wellness 卻天天都有。若以較新的 wellness 日期為斷點，當天
+    稍晚才上傳的活動會永遠落在下次同步區間之外，形成永久缺口。
+
+    兩表皆空時回傳 None（全新資料庫，尚未匯入歷史）。
+    """
+    row = conn.execute(
+        "SELECT MAX(started_at) AS latest FROM activities WHERE athlete_id = ?",
+        (athlete_id,),
+    ).fetchone()
+    # started_at 是 ISO 時間戳（含 T 與時分秒），取日期部分即可
+    activity_latest = row["latest"][:10] if row and row["latest"] else None
+
+    row = conn.execute(
+        "SELECT MAX(date) AS latest FROM daily_wellness WHERE athlete_id = ?",
+        (athlete_id,),
+    ).fetchone()
+    wellness_latest = row["latest"] if row and row["latest"] else None
+
+    candidates = [d for d in (activity_latest, wellness_latest) if d]
+    if not candidates:
+        return None
+    return datetime.date.fromisoformat(min(candidates))
+
+
+def resolve_sync_days(
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    today: datetime.date | None = None,
+) -> int:
+    """依資料庫現況回推需要同步幾天，避免長期未同步造成資料遺漏。
+
+    演算法：
+        斷點 = min(活動最新日, wellness 最新日)   ← 較舊者，理由見 _latest_date
+        天數 = (今天 − 斷點) + 1 + OVERLAP_DAYS
+        天數 = min(天數, MAX_AUTO_SYNC_DAYS)      ← 保護 API
+
+    查無資料時回傳 `DEFAULT_SYNC_DAYS`——全新資料庫不該推導出巨大區間，
+    歷史資料本就該走官方匯出包（`garmin_import_runner`）。
+    """
+    end_date = today or datetime.date.today()
+    breakpoint_date = _latest_date(conn, athlete_id)
+    if breakpoint_date is None:
+        return DEFAULT_SYNC_DAYS
+
+    # 資料日期可能超前今天（時區差），此時 gap 視為 0，仍要抓 overlap。
+    gap = max((end_date - breakpoint_date).days, 0)
+    return min(gap + 1 + OVERLAP_DAYS, MAX_AUTO_SYNC_DAYS)
+
+
+def estimate_sync_cost(days: int) -> dict:
+    """預估同步的 API 請求數與耗時，供呼叫端在真的打 API 前告知使用者。
+
+    成本結構：活動只打 1 次（`get_activities_by_date` 吃日期區間），
+    wellness 則**逐日**各打 4 個端點，故總數 = 1 + days × 4。
+    每次呼叫之間有 `REQUEST_INTERVAL_SEC` 的節流間隔。
+
+    預估值只計節流時間，未計網路往返，實際耗時會略長於此。
+    """
+    request_count = 1 + days * _WELLNESS_ENDPOINTS_PER_DAY
+    estimated_seconds = request_count * REQUEST_INTERVAL_SEC
+    minutes = int(estimated_seconds // _SECONDS_PER_MINUTE)
+    seconds = int(estimated_seconds % _SECONDS_PER_MINUTE)
+    duration_text = f"約 {minutes} 分 {seconds} 秒" if minutes else f"約 {seconds} 秒"
+    return {
+        "request_count": request_count,
+        "estimated_seconds": estimated_seconds,
+        "summary": f"{days} 天／{request_count} 次 API 請求／{duration_text}",
+    }
+
+
 def sync(
     conn: sqlite3.Connection,
     athlete_id: int,
-    days: int,
+    days: int | None = None,
     client: GarminApiClient | None = None,
     today: datetime.date | None = None,
+    dry_run: bool = False,
 ) -> dict:
     """同步最近 `days` 天的活動與每日身體數據。
+
+    `days` 省略時**自動依資料庫現況回推**（見 `resolve_sync_days`），
+    這是預設行為——避免長期未同步時只補固定天數而漏掉中間的缺口。
+    明確給值則照給的走，不受自動推導與 `MAX_AUTO_SYNC_DAYS` 影響。
+
+    `dry_run=True` 只回報計畫與成本估算，不打 API、不寫入資料庫。
 
     冪等：重複執行同一區間不會產生重複列（由資料庫 UNIQUE 約束保證）。
 
     Returns:
-        含 `available`／筆數／日期區間的結果 dict。認證或抓取失敗時
-        `available=False` 並附 `reason`，不拋例外——供 MCP tool 直接回傳。
+        含 `available`／筆數／日期區間的結果 dict，並一律附上 `days`、
+        `days_auto_resolved`、`gap_truncated`、`estimate` 供呼叫端告知
+        使用者預計耗時。認證或抓取失敗時 `available=False` 並附 `reason`，
+        不拋例外——供 MCP tool 直接回傳。
     """
+    days_auto_resolved = days is None
+    if days_auto_resolved:
+        days = resolve_sync_days(conn, athlete_id, today=today)
+
     if days < 1:
         raise ValueError(f"days 必須 >= 1（收到 {days}）")
 
     end_date = today or datetime.date.today()
     start_date = end_date - datetime.timedelta(days=days - 1)
 
+    # 自動模式碰到上限代表更早的缺口補不到，須讓呼叫端提示改走匯出包。
+    gap_truncated = days_auto_resolved and days == MAX_AUTO_SYNC_DAYS
+    estimate = estimate_sync_cost(days)
+    plan = {
+        "days": days,
+        "days_auto_resolved": days_auto_resolved,
+        "gap_truncated": gap_truncated,
+        "estimate": estimate,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+    }
+
+    if dry_run:
+        return {**plan, "available": True, "dry_run": True}
+
     try:
         api = client or GarminApiClient()
     except (GarminAuthRequired, GarminAuthError) as e:
-        return {"available": False, "reason": str(e)}
+        return {**plan, "available": False, "dry_run": False, "reason": str(e)}
 
     try:
         raw_activities = api.fetch_activities(start_date, end_date)
@@ -430,9 +587,10 @@ def sync(
             if normalized is not None:
                 wellness_rows.append(normalized)
     except GarminRateLimited as e:
-        return {"available": False, "reason": str(e), "rate_limited": True}
+        return {**plan, "available": False, "dry_run": False,
+                "reason": str(e), "rate_limited": True}
     except GarminFetchError as e:
-        return {"available": False, "reason": str(e)}
+        return {**plan, "available": False, "dry_run": False, "reason": str(e)}
 
     n_act = _upsert_activities(conn, athlete_id, activity_rows)
     n_well = _upsert_wellness(conn, athlete_id, wellness_rows)
@@ -440,9 +598,9 @@ def sync(
     conn.commit()
 
     return {
+        **plan,
         "available": True,
-        "start_date": start_date.isoformat(),
-        "end_date": end_date.isoformat(),
+        "dry_run": False,
         "activities_synced": n_act,
         "wellness_days_synced": n_well,
         "activities_skipped": len(raw_activities) - n_act,
@@ -458,8 +616,24 @@ def main() -> int:
         )
     )
     ap.add_argument("--db-path", required=True, help="SQLite 資料庫路徑")
-    ap.add_argument("--days", type=int, default=7, help="回溯天數（預設 7）")
+    ap.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help=f"回溯天數。省略時自動依資料庫現況回推（上限 {MAX_AUTO_SYNC_DAYS} 天）",
+    )
     ap.add_argument("--athlete-id", type=int, default=None, help="學員 ID（預設第一位）")
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只顯示同步計畫與預估耗時，不打 API、不寫入資料庫",
+    )
+    ap.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="略過耗時確認直接同步（供排程等非互動情境使用）",
+    )
     args = ap.parse_args()
 
     if not Path(args.db_path).exists():
@@ -476,6 +650,18 @@ def main() -> int:
                 return 1
             athlete_id = row["id"]
 
+        # 先跑一次 dry-run 取得計畫，把預計耗時告知使用者後再真的打 API。
+        plan = sync(conn, athlete_id, args.days, today=None, dry_run=True)
+        _print_plan(plan)
+
+        if args.dry_run:
+            print("[i] --dry-run：未打 API、未寫入資料庫。")
+            return 0
+
+        if not args.yes and not _confirm():
+            print("[i] 已取消，未打 API、未寫入資料庫。")
+            return 0
+
         result = sync(conn, athlete_id, args.days)
     finally:
         conn.close()
@@ -490,6 +676,28 @@ def main() -> int:
     print(f"     每日身體數據 {result['wellness_days_synced']} 天")
     print("[i] 重複執行同一區間不會產生重複列（由資料庫 UNIQUE 約束保證）。")
     return 0
+
+
+def _print_plan(plan: dict) -> None:
+    """把同步計畫與預估成本印給使用者看。"""
+    mode = "自動回推" if plan["days_auto_resolved"] else "手動指定"
+    print(f"[i] 同步計畫（{mode}）：{plan['start_date']} ~ {plan['end_date']}")
+    print(f"    預估成本：{plan['estimate']['summary']}")
+    if plan["gap_truncated"]:
+        print(
+            f"[!] 距上次同步已超過 {MAX_AUTO_SYNC_DAYS} 天，本次只補最近 "
+            f"{MAX_AUTO_SYNC_DAYS} 天。更早的缺口請下載官方匯出包後走 "
+            "garmin_import_runner——一次拿完整歷史，且含分圈與 workout_type。"
+        )
+
+
+def _confirm() -> bool:
+    """詢問是否繼續。非互動環境（無 stdin）視為同意，避免排程卡住。"""
+    try:
+        answer = input("    是否開始同步？[Y/n] ").strip().lower()
+    except EOFError:
+        return True
+    return answer in ("", "y", "yes")
 
 
 if __name__ == "__main__":
