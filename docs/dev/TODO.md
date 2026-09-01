@@ -13,7 +13,7 @@
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
-| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7、1B-8 完成並對真實資料庫實測：資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天）並預告耗時，解決固定天數的靜默資料遺漏。**1B-8 補抓分圈**——`get_activity_splits` 可取得完整逐圈明細（不需下載 FIT），同步進來的活動已能套用既有分類器補上 `workout_type`；同時修正 `external_id` 去重（原 UNIQUE 因浮點距離精度差擋不住跨來源重複）。⚠️ 逐秒資料仍需 FIT，故心率漂移／配速穩定度對同步活動仍不可評。剩 1B-6 備援層（Strava）未做 |
+| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7、1B-8 完成並對真實資料庫實測：資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天）並預告耗時，解決固定天數的靜默資料遺漏。**1B-8 補抓分圈**——`get_activity_splits` 可取得完整逐圈明細（不需下載 FIT），同步進來的活動已能套用既有分類器補上 `workout_type`；同時修正 `external_id` 去重（原 UNIQUE 因浮點距離精度差擋不住跨來源重複）。⚠️ 逐秒資料仍需 FIT，故心率漂移／配速穩定度對同步活動仍不可評。剩 1B-6 備援層（Strava）未做。**1B-9 指標擴充進行中（2026-09-02）**——審計發現大量指標被 ETL 丟棄，schema 與 migration 已完成，正規化層待接（含三個現存資料正確性缺陷待修）|
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設（2026-09-01，`@mcp.prompt("coach")`，待重啟 Claude Code 實測）**已完成；其後為對話層其餘能力／N-1 onboarding |
 
@@ -421,6 +421,78 @@
 > 若日後要補，走 `download_activity(id, ORIGINAL)` → `fit_import_runner`
 > （1B-0 已確認格式列舉用 `ORIGINAL`，無 `FIT` 成員）。優先度不高——
 > 心率漂移目前本就無可用閾值（見 N-3 第一批），補了也只是多一個不判讀的數值。
+
+**1B-9. Garmin 指標擴充（審計已完成，實作進行中——2026-09-02）**
+
+> 起因：ETL 過程中大量 Garmin 指標被過濾或丟棄。完整審計見
+> [GARMIN_METRICS_AUDIT.md](GARMIN_METRICS_AUDIT.md)。
+> **決策（2026-09-02）**：方案 A′——P0+P1 全部入庫，分析邏輯後續分階段加入。
+> 理由：入庫與分析的時程本來就不同，`get_training_status` 等端點只回傳當日值、
+> 無歷史回溯，今天不抓就永遠沒有；而跑姿類指標雖需數月才累積出可判讀的個人
+> 基準，資料本身已躺在 `raw_data_json` 裡，順手一起接的邊際成本趨近於零。
+
+**🔑 三個層次的落差（依成本效益排序）**
+
+1. **已抓到但丟棄**（零 API 成本）：`acuteLoad`、HRV baseline 三值、跑步動態
+   全套已在現有回傳裡，正規化層直接沒接
+2. **端點從未呼叫**：`get_training_status` 一支同時帶回真 ACWR（急慢性負荷比）、
+   急慢性負荷、最佳範圍、VO2Max 精確值、熱適應。每日僅 +1 次請求
+3. **三個現存資料正確性缺陷**（見下方，其中缺陷 A 會產生「有值但語意錯誤」
+   的欄位，比缺值更危險）
+
+**🐛 三個現存缺陷（一律修）**
+
+- **缺陷 A**：`stress_avg`（睡眠期間壓力）與 `all_day_stress_avg`（全天壓力）
+  被寫入同一個值（皆為 `averageStressLevel`），違反 schema 註解明訂的
+  「兩者範疇不同不可互相取代」。實測 2026-08-31：`avgSleepStress`=18、
+  `averageStressLevel`=20，DB 兩欄皆為 20。20 筆 api_sync 列全數受影響
+- **缺陷 B**：`acwr` 欄位存的是 `acwrFactorPercent`（0–100 貢獻度分數），
+  非急慢性負荷比。真值 `dailyAcuteChronicWorkloadRatio` 在 `get_training_status`
+- **缺陷 C**：`readiness_list[0]` 為未驗證假設。該端點每日回多筆快照（實測 2–4 筆），
+  分數在一天內劇烈變動（2026-08-31：起床 60 分、睡前 75 分）。
+  **決策：取起床那筆（`AFTER_WAKEUP_RESET`）**——課表決策要問的是
+  「今天能不能練」而非「恢復得如何」
+
+- [x] `schema.sql`：`activities` +14 欄、`daily_wellness` +14 欄、新增
+      `training_status` 與 `performance_metrics` 兩表（commit `c0aefb8`）
+- [x] `db.py`：`_COLUMN_MIGRATIONS` 補 28 欄，已於真實資料庫副本驗證
+      （四表結構正確，528 筆活動與 1667 筆 wellness 完好）
+
+**☁️ 可在雲端完成（不需 token、不碰真實 DB）**
+
+- [ ] `garmin_api_client.py`：新增 `fetch_training_status()`、
+      `fetch_race_predictions()`、`fetch_lactate_threshold()`、
+      `fetch_endurance_score()`、`fetch_fitness_age()`、`fetch_hill_score()`；
+      `fetch_daily_wellness_raw()` 納入 training_status
+- [ ] `garmin_sync_runner.py`：`normalize_activity()` 補 14 欄、
+      `normalize_wellness()` 補 14 欄、新增 `normalize_training_status()`
+      與 `normalize_performance_metrics()`、兩張新表的 upsert
+- [ ] 修正缺陷 A、C
+- [ ] `data_confidence.py`：缺陷 B——撤下 `acwr_not_a_ratio` 或改指向新欄位
+- [ ] `_WELLNESS_ENDPOINTS_PER_DAY` 4 → 5（否則耗時預告低估，違反與使用者
+      議定的預告行為）；`_WELLNESS_METRIC_COLUMNS` 補新欄位
+- [ ] 單元測試（全部用 fixture，不打 API）
+- [ ] ⚠️ 修正 `schema.sql` 中 `min_temperature_c`／`max_temperature_c` 的註解
+      ——現寫「影響配速判讀」會誤導。依 N-3 查證，該欄位是**手腕體溫污染值**
+      （四年間從未低於 21°C，一月台北記錄 max 29°C），不可當氣溫用
+
+**💻 必須在本機完成（需 token 或真實資料）**
+
+- [ ] 打真實 API 驗證正規化結果——**這是本任務真正的品質關卡**：
+  - [ ] `avgGradeAdjustedSpeed` 換算後配速是否合理（單位錯誤讀程式碼看不出來）
+  - [ ] `training_status` 的 deviceId 挑選是否真的挑到主力錶（payload 以
+        deviceId 字串為 key，須挑 `primaryTrainingDevice=True`）
+  - [ ] `AFTER_WAKEUP_RESET` 是否每天都抓得到（可能有些日子沒有此 context，
+        需確認 fallback 行為）
+  - [ ] 新端點在不同日期的空值行為（如 `get_max_metrics` 實測常回 `[]`）
+- [ ] 對 `output/running_coach.db` 實際執行一次同步，確認端到端正常
+- [ ] 從既有 `raw_data_json` 回填 271 筆跑步活動的跑姿／功率／溫度欄位
+      （資料已在，不需重打 API）
+- [ ] 回填後確認 `metric_coverage` 正確反映各新指標的可用區間
+
+> **⚠️ 為何本機驗證不可省**：這批變更的主要風險是**單位換算**與**巢狀結構
+> 解析**，兩者讀程式碼都看不出對錯。缺陷 A 與 B 正是這樣產生的——兩者都
+> 通過了 review 才進版控。雲端寫完不等於做完。
 
 **1B-6. 備援層（維持原規劃，優先度低於上述）**
 - [ ] 釐清「token 過期（例行重新認證）」vs「結構性失效（Garmin 改版／上 JS challenge，需切 Strava）」
