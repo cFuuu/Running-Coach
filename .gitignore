@@ -49,6 +49,15 @@ output/
 # Personal data dumps (Garmin exports, race data, etc.) — never commit real user data
 input/
 
+# Credentials & tokens — see CLAUDE.md §🔐. NEVER commit these.
+.env
+.env.*
+!.env.example
+.garminconnect/
+*.token
+session.json
+*.session.json
+
 # Temporary files
 tmp/
 temp/
