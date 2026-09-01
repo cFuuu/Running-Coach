@@ -17,4 +17,10 @@ fitparse>=1.2.0
 # 鎖 <3：v1→v2 曾有重大改版（FastMCP 移除，改用 MCPServer），避免未來 v3 無預警破壞相容性
 mcp[cli]>=2.0.0,<3
 
+# Garmin Connect API 存取（Phase 1B 增量同步匯入器）
+# curl_cffi 為其依賴會自動帶入，用於在 TLS 層模擬官方 Android app 指紋——
+# Garmin 自 2026-03 起以 Cloudflare TLS 指紋辨識封鎖一般 HTTP client。
+# ⚠️ 不要加入 garth：已於 2026-03-28 deprecated，且 0.3.11 起已完全移除該依賴。
+garminconnect>=0.3.11
+
 # 註：資料庫用 Python 內建的 sqlite3，測試用內建的 unittest，皆無需額外安裝。

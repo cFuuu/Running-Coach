@@ -13,7 +13,7 @@
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
-| **Phase 1B 即時同步** | 🔵 **可以開始** | **2026-09-01 前提改變**：原記「Garmin 已封鎖自動化登入」已過時。`garth` 雖已 deprecated，但 `garminconnect` 0.3.11 改用 `curl_cffi` 模擬 Android app TLS 指紋重寫登入，純 HTTP 路線復活（已 probe 驗證 API 介面）。定位為**匯入器**（寫入 DB），不新增查詢型 tool。★ 先做 1B-0 可行性驗證，未過則整個 1B 停止 |
+| **Phase 1B 即時同步** | 🔵 **進行中** | **1B-0 可行性驗證已於 2026-09-01 實測通過**：`garminconnect 0.3.11` + `curl_cffi` 成功登入 Fu 的帳號，token 已存，抓取活動與 DB 四欄逐項比對全數一致。定位為**匯入器**（寫入 DB），不新增查詢型 tool。實測結論：API 用標準公尺/秒（與匯出包的 CENTIMETER/MILLISECOND 不同，正規化層需自行換算）、取摘要須用 `get_activities_by_date()`。下一步 1B-1 認證模組 |
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設（2026-09-01，`@mcp.prompt("coach")`，待重啟 Claude Code 實測）**已完成；其後為對話層其餘能力／N-1 onboarding |
 
@@ -141,13 +141,45 @@
 > 依賴 `curl_cffi>=0.15.0`（最新 0.16.2）、`requests>=2.33.0`、`ua-generator>=1.0`，
 > **已完全移除 garth**。故 `requirements.txt` **不應**加入 `garth`。
 
-**1B-0. 可行性驗證（★ 阻塞後續全部，先做這個）**
-- [ ] 在 conda `rc` 安裝 `garminconnect>=0.3.11`（`curl_cffi` 為其依賴，會自動帶入）
-- [ ] 實際登入 Fu 的 Garmin 帳號成功，確認 2026 的 Cloudflare 封鎖對此帳號不生效
-- [ ] 確認 MFA（若帳號已開 2FA）互動流程可完成
-- [ ] 抓一場**已在 DB 內**的活動，與 DB 現值逐欄比對（配速／距離／avgHR／maxHR）
-      ——這是抓單位錯誤的唯一可靠方法，Phase 1A 就是這樣抓到 `CENTIMETER`／`MILLISECOND` 的坑
-- [ ] ⚠️ **驗證失敗則整個 1B 停止**，退回 Strava 備援或維持手動匯出
+**1B-0. 可行性驗證——✅ 已完成（2026-09-01，實測通過）**
+- [x] 在 conda `rc` 安裝 `garminconnect 0.3.11` + `curl_cffi 0.16.2`（已裝）
+- [x] 實際登入 Fu 的 Garmin 帳號成功——**2026 的 Cloudflare 封鎖對本帳號不生效**
+- [x] token 正確存入 `~/.garminconnect/garmin_tokens.json`，後續可純 token 認證
+- [x] 抓一場**已在 DB 內**的活動與 DB 現值逐欄比對——**四欄全數一致**
+- [x] 黑盒衍生值皆可取得：`get_training_readiness`／`get_hrv_data`／`get_sleep_data`
+
+> **✅ 比對結果（活動 23997807612，2026-08-16）**
+> | 欄位 | DB | API | 判定 |
+> |---|---|---|---|
+> | `distance_km` | 10.1586 | 10.15857 | ✅ 一致 |
+> | `duration_sec` | 3794 | 3794.447 | ✅ 一致 |
+> | `avg_hr_bpm` | 150 | 150.0 | ✅ 一致 |
+> | `max_hr_bpm` | 161 | 161.0 | ✅ 一致 |
+>
+> 差異僅在小數位（DB 存四捨五入值），**無 100/1000 倍的單位落差**。
+
+> **🔑 三項影響實作的實測結論（1B-2／1B-3 必讀）**
+>
+> **① API 單位是標準公尺／秒，與匯出包不同** ——`distance=10158.57`（公尺）
+> 對應 10.16km。匯出包用的是 `CENTIMETER`／`MILLISECOND`／
+> `CENTIMETERS_PER_MILLISECOND`。故 1B-3 正規化層**不可重用**
+> `garmin_export_parser.py` 的換算係數，但要寫的換算比匯出包更單純。
+>
+> **② 取活動摘要要用 `get_activities_by_date()`，不是 `get_activity()`**
+> ——實測 `get_activity(id)` 只回 13 欄且 `distance`／`duration`／`averageHR`
+> 全為 `None`；`get_activities_by_date(day, day)` 回 **111 欄**且填滿。
+>
+> **③ 增量同步的資料確實存在** ——DB 最新為 2026-08-16，API 可見
+> 2026-08-27（5.1km）與 2026-08-30（15.1km）兩場跑步。此二筆即為
+> 1B-5 端到端驗證的現成素材。
+
+> **⚠️ 實測佐證：`CLAUDE.md` §🔐 第 2 條「執行階段嚴禁帳密登入」是必要的**
+> 首次以帳密登入時，`garminconnect` 會依序嘗試多種策略
+> （`mobile+cffi` → TLS `WRONG_VERSION_NUMBER` 失敗 → `mobile+requests`
+> → **429 IP rate limited**  → 再換策略才成功），等於**一次登入連打數次 SSO**。
+> 改為只讀既有 token 後重跑，**零登入請求、零錯誤**。
+> 這條原本是推論，現已有實測依據——執行階段若允許帳密自動重登，
+> 失敗重試會快速累積 429，把帳號推向被鎖。
 
 > **已驗證的 API 介面（2026-09-01 實際 probe 0.3.11，非文件推測）**
 > - `Garmin(email, password, prompt_mfa=<callable>, return_on_mfa=False, verify_login=True, retry_attempts=3)`
@@ -168,13 +200,26 @@
 >   格式列舉為 `ORIGINAL/TCX/GPX/KML/CSV`——**無 `FIT` 成員，要用 `ORIGINAL`**。
 >   這條路可直接餵給既有 `fit_parser.py`，取得分圈與逐秒資料
 
-**1B-1. 認證（一次性 CLI，與執行階段解耦）**
-- [ ] `services/garmin_auth.py`：互動式登入 CLI，`getpass` 取密碼（不回顯）、支援 MFA
-- [ ] 成功後 token 存 `~/.garminconnect/`（**專案目錄外**）
-- [ ] ⚠️ 執行階段（匯入器／MCP）**只讀 token，嚴禁帳密登入**——token 失效時拋出
-      「請重跑一次性認證指令」的明確錯誤，**不可自動用帳密重登**
-      （Garmin 對 `/sso/signin` 有 rate limit，自動重試會把帳號推向被鎖）
-- [ ] 遵守 `CLAUDE.md` §🔐 全部六條準則
+**1B-1. 認證（一次性 CLI，與執行階段解耦）——✅ 已完成（2026-09-01）**
+- [x] [`services/garmin_auth.py`](../../src/main/python/services/garmin_auth.py)：
+      `login`／`status`／`logout` 三個子指令，`getpass` 取密碼（不回顯）、支援 MFA
+- [x] token 存 `~/.garminconnect/`（**專案目錄外**）；路徑不 hardcode，
+      支援 `--tokenstore` 參數與 `GARMINTOKENS` 環境變數
+- [x] ⚠️ `load_client()` 為執行階段唯一入口，**只讀 token**：`Garmin()` 以零參數
+      建構、token 失效時拋 `GarminAuthRequired` 要求人工重跑，**不自動用帳密重登**
+- [x] 原始例外訊息不外流（可能含 request 細節／token），只保留例外類型名稱
+- [x] email 遮蔽（`s***@example.com`），不印 token／cookie／userProfileId
+- [x] 單元測試 10 項（合成假資料，無真實憑證、不發網路請求），全數通過
+- [x] `status` 已對真實 token 實測：✅ 已認證、token 可用
+
+**1D. 憑證與機密管理——✅ 已完成（2026-09-01）**
+- [x] `.gitignore` 補上 `.env`、`.env.*`（`!.env.example` 例外）、`.garminconnect/`、
+      `*.token`、`session.json`、`*.session.json`——已用 `git check-ignore` 逐項驗證
+- [x] `.env.example` 範本（只放 key 不放 value，已驗證**不**被 ignore、可進版控）
+- [x] 「每位使用者自帶憑證」設計：token 路徑可由環境變數覆寫，無任何硬編碼憑證
+- [x] setup 說明：寫在 `garmin_auth.py` 模組 docstring 與 `.env.example` 註解
+- [x] ⚠️ Windows 平台 `chmod 0700` 失效一事已在 `status` 輸出明示，
+      程式碼**不宣稱**已限縮權限
 
 **1B-2. API client 封裝**
 - [ ] `services/garmin_api_client.py`：只負責認證載入 + 抓 raw JSON，不做正規化
@@ -241,16 +286,7 @@
 - [ ] ⚠️ 殘留風險：`curl_cffi` 只能過 TLS 指紋檢查，若 Garmin 日後加上 JS challenge／Turnstile
       則此路線失效，屆時才需重新評估 headless 瀏覽器方案
 
-**1D. 憑證與機密管理——🔵 隨 1B 一起做（不再延後）**
-- [ ] `.gitignore` 補上 `.env`、`.env.*`（除 `.env.example`）、`.garminconnect/`、
-      `*.token`、`session.json`、`*.session.json`
-- [ ] `.env.example` 範本（只放 key 不放 value，**進版控**供他人 setup 參考）
-- [ ] 為未來可能公開專案預留「每位使用者自帶自己憑證」的設計——不可硬編碼任何 token
-- [ ] setup 說明文件：怎麼填憑證、token 存哪、過期怎麼辦、2FA 注意事項
-- [ ] ⚠️ Windows 平台：`os.chmod(path, 0o700)` 幾乎是 no-op（只影響唯讀位元、不設 ACL）。
-      token 目錄的保護實際依賴「放在使用者 profile 內」的預設隔離；
-      **不得在文件或註解宣稱 `0700` 在此平台有效**
-- [ ] commit 前自檢：`git status` 確認無 `.env`／token 檔被 track
+> **1D 憑證與機密管理**已完成，內容併入上方 1B-1 段落（兩者是同一批工作）。
 
 ---
 
