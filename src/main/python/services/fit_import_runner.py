@@ -127,7 +127,12 @@ def _recent_averages(
     return row["avg_km"], avg_pace
 
 
-def _store_laps(conn: sqlite3.Connection, activity_id: int, laps: list[dict]) -> int:
+def store_laps(conn: sqlite3.Connection, activity_id: int, laps: list[dict]) -> int:
+    """寫入分圈（先清空該活動既有分圈，故可安全重複執行）。
+
+    ⚠️ 公開函式：`garmin_sync_runner` 亦呼叫本函式寫入 API 抓回的分圈，
+    兩條匯入路徑共用同一份寫入邏輯（勿複製貼上另一份）。
+    """
     conn.execute("DELETE FROM activity_laps WHERE activity_id = ?", (activity_id,))
     for lap in laps:
         conn.execute(
@@ -171,11 +176,14 @@ def _store_records(conn: sqlite3.Connection, activity_id: int, records: list[dic
     return len(records)
 
 
-def _update_workout_type(conn: sqlite3.Connection, activity_id: int, laps: list[dict]) -> str:
+def update_workout_type(conn: sqlite3.Connection, activity_id: int, laps: list[dict]) -> str:
     """推測訓練類型並寫回，但不覆蓋使用者手動設定的值。
 
     呼叫端須先確認該活動的運動類型在 classifiable_sports 內才呼叫本函式——
     這裡不重複判斷，避免把「是否該分類」這個決定散落在兩個地方。
+
+    ⚠️ 公開函式：`garmin_sync_runner` 亦呼叫本函式對 API 抓回的分圈分類，
+    確保兩條匯入路徑用**同一套分類標準**（否則同一欄位會混入兩種語意）。
     """
     current = conn.execute(
         "SELECT distance_km, workout_type_source FROM activities WHERE id = ?", (activity_id,)
@@ -280,11 +288,11 @@ def import_fit_files(
 
                 laps = parsed["laps"]
                 records = fit_parser.downsample_records(parsed["records"], sample_every_sec)
-                stats["laps_written"] += _store_laps(conn, activity_id, laps)
+                stats["laps_written"] += store_laps(conn, activity_id, laps)
                 stats["records_written"] += _store_records(conn, activity_id, records)
 
                 if sport in classifiable_sports:
-                    wtype = _update_workout_type(conn, activity_id, laps)
+                    wtype = update_workout_type(conn, activity_id, laps)
                     stats["workout_types"][wtype] = stats["workout_types"].get(wtype, 0) + 1
 
                 stats["imported"] += 1

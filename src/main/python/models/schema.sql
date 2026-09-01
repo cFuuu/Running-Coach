@@ -76,8 +76,19 @@ CREATE TABLE IF NOT EXISTS activities (
     -- NULL distance_km bypasses this UNIQUE constraint (SQL: NULL != NULL) — fine today since
     -- every known activity_type populates distance_km (0 for strength), but a future GPS-less
     -- type with a NULL distance would silently skip dedup.
+    --
+    -- ⚠️ 這條約束不足以擋掉跨來源的重複：API 回傳完整浮點距離
+    -- （10.1585703125），官方匯出包存四捨五入值（10.1586），distance_km
+    -- 不相等就撞不到，同一場活動會寫成兩列（2026-09-01 實測發生兩例）。
+    -- 真正的去重鍵是下方的 external_id 唯一索引，本約束保留為次要防線
+    -- （匯出包早期資料可能無 external_id 時仍有作用）。
     UNIQUE (athlete_id, started_at, activity_type, distance_km)
 );
+
+-- Garmin 的 activityId 是跨來源穩定的唯一鍵，為活動去重的主要依據。
+-- 允許 NULL（手動建立、或未來其他來源無此 id 的活動不受此約束限制）。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_activities_external_id
+    ON activities (athlete_id, external_id);
 
 CREATE TABLE IF NOT EXISTS daily_wellness (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,

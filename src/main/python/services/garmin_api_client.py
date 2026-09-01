@@ -130,6 +130,26 @@ class GarminApiClient:
         )
         return list(result or [])
 
+    def fetch_activity_splits(self, activity_id: str | int) -> list[dict]:
+        """取得單場活動的**逐圈明細**（每公里分圈的距離／時長／心率）。
+
+        ⚠️ 分圈明細**不在**活動摘要裡：`get_activities_by_date` 只回
+        `splitSummaries`——那是按 `RWD_RUN`／`RWD_WALK`／`RWD_STAND` 類型
+        彙總的總和與平均（`noOfSplits` 只說該類型有幾段），**沒有逐圈序列**；
+        `fastestSplit_1000` 之類也只是單一極值。摘要的 `lapCount` 告知圈數
+        存在，明細需另打本端點。
+
+        實測（2026-09-01，活動 24171213902）：摘要 `lapCount=16`，本端點回
+        `{'activityId', 'lapDTOs', 'eventDTOs'}`，`lapDTOs` 為 16 圈完整明細，
+        每圈含 `distance`（公尺）／`duration`（秒）／`averageHR`／`maxHR`。
+
+        查無分圈時回傳空 list。
+        """
+        result = self._call("get_activity_splits", str(activity_id))
+        if not result:
+            return []
+        return list(result.get("lapDTOs") or [])
+
     # --- 每日身體數據 ---
     #
     # ⚠️ Training Readiness／Body Battery／HRV status 皆為 Garmin（Firstbeat）

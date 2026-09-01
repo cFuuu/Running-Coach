@@ -66,20 +66,31 @@
 皆未依 source 篩選，`readiness.py` 更以日期為 dict key，兩列會非確定性地
 互相覆蓋。來源可追溯性改由 `source_version` 欄位承載。
 
-## ⚠️ 已知限制：同步進來的活動沒有 `workout_type`
+## 分圈與 `workout_type`（`fetch_splits=True` 時自動補齊）
 
-API 的活動摘要**不含分圈資料**，而 `workout_type` 的自動分類
-（`workout_classifier.classify_workout()`）需要分圈才能判斷配速結構。
-故本模組寫入的活動 `workout_type` 為 `NULL`，**這是刻意不猜**：
+活動摘要端點（`get_activities_by_date`）**不含逐圈明細**——它只有
+`splitSummaries`（按跑/走/站類型彙總的總和與平均，無逐圈序列）。故本模組
+會對每場跑步另打 `get_activity_splits` 取回逐圈明細，寫入 `activity_laps`
+後餵給既有的 `workout_classifier.classify_workout()`。
 
-依 PLAN.md §1「`workout_type` 為 unknown/NULL 時不輸出類型相關判讀」，
-分類器缺前提時的正確行為是留空、讓下游拒絕判讀，而不是塞一個猜測值。
-拿 easy 的標準去評一場其實是間歇的課，會產出完全錯誤的結論。
+**刻意重用 `fit_import_runner.store_laps()` 與 `update_workout_type()`**，
+不另寫一套：兩條匯入路徑必須用同一套分類標準，否則同一個 `workout_type`
+欄位會混入兩種語意不同的值。
 
-補齊方式（擇一，皆屬後續工作，非本模組職責）：
-1. 用 `download_activity(id, ORIGINAL)` 取回 FIT 後走既有 `fit_import_runner`
-   ——可同時補上分圈與逐秒資料，是完整解
-2. 人工標註（`workout_type_source='manual'`，本模組的 upsert 已保證不覆蓋）
+⚠️ **不採用「以心率區間推算課種」的替代方案**。摘要確實帶
+`hrTimeInZone_1..5`、`hasIntensityIntervals`、`trainingEffectLabel`，
+但心率區間分布把時間軸攤平了——10×400m 間歇與穩定節奏跑的區間分布可以
+幾乎相同（間歇的休息段把平均拉回來），且心率有滯後。用它反推配速結構
+正是分類器設計要避開的錯誤。這些欄位適合當**分類結果的交叉驗證**
+（例如分類器說 interval 但 `hasIntensityIntervals=False` 就值得懷疑），
+不適合當主要分類依據。
+
+仍為 `NULL` 的情況：該場抓不到分圈、或非 `DEFAULT_CLASSIFIABLE_SPORTS`
+（重訓/健走不分類——用跑步的配速門檻分類它們會產生誤導標籤）。此時依
+PLAN.md §1「缺前提時留空讓下游拒絕判讀」，屬正確行為。
+
+⚠️ 逐秒資料（`activity_records`）仍需 FIT，本模組不提供——故心率漂移與
+配速穩定度兩個維度對同步進來的活動仍不可評。
 
 ## Garmin 黑盒衍生值
 
@@ -104,6 +115,11 @@ from src.main.python.services.garmin_api_client import (
     GarminRateLimited,
 )
 from src.main.python.services.garmin_auth import GarminAuthError, GarminAuthRequired
+from src.main.python.services.fit_import_runner import (
+    DEFAULT_CLASSIFIABLE_SPORTS,
+    store_laps,
+    update_workout_type,
+)
 
 # 寫入時採用的 source 值。沿用 garmin_export 的理由見模組 docstring。
 SYNC_SOURCE = "garmin_export"
@@ -232,6 +248,35 @@ def normalize_activity(raw: dict) -> dict | None:
     }
 
 
+def normalize_laps(lap_dtos: list[dict]) -> list[dict]:
+    """把 API 的 `lapDTOs` 轉成 `activity_laps` 表的欄位。
+
+    ⚠️ 與活動摘要同樣是公尺／秒（非匯出包的公分／毫秒）。
+    欄位名稱刻意對齊 `fit_parser.parse_fit()` 的分圈輸出，讓兩條路徑
+    都能餵進同一個 `classify_workout()` 與 `store_laps()`。
+    """
+    rows = []
+    for dto in lap_dtos:
+        distance_km = (dto.get("distance") or 0) / 1000
+        duration_sec = dto.get("duration")
+        pace = (
+            round(duration_sec / distance_km)
+            if duration_sec and distance_km > 0
+            else None
+        )
+        rows.append(
+            {
+                "lap_index": dto.get("lapIndex"),
+                "distance_km": distance_km,
+                "duration_sec": duration_sec,
+                "pace_sec_per_km": pace,
+                "avg_hr_bpm": _round_or_none(dto.get("averageHR")),
+                "max_hr_bpm": _round_or_none(dto.get("maxHR")),
+            }
+        )
+    return rows
+
+
 def normalize_wellness(raw: dict) -> dict | None:
     """把單日各來源的原始回傳彙整成 `daily_wellness` 表的欄位。
 
@@ -292,10 +337,49 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
 
     ⚠️ ON CONFLICT 刻意**不更新** `workout_type` / `workout_type_source`
     ——分類結果（尤其人工標註的 manual）不可被同步覆蓋。
+
+    ⚠️ 去重以 **`external_id`**（Garmin activityId）為準，不用
+    `(started_at, activity_type, distance_km)`：API 回傳完整浮點距離
+    （10.1585703125），匯出包存四捨五入值（10.1586），兩者不相等會讓
+    同一場活動寫成兩列——2026-09-01 實測確實發生（8/13、8/16 兩場，
+    正落在 API 與匯出包的來源重疊區）。`external_id` 為穩定唯一鍵，
+    實測 530 筆活動全部非 NULL。
     """
     now = _utc_now_iso()
     count = 0
     for row in rows:
+        # 先以 external_id 找既有列——它可能是匯出包寫入的（距離精度不同，
+        # 光靠 UNIQUE(started_at, ..., distance_km) 撞不到）。
+        existing = None
+        if row["external_id"]:
+            existing = conn.execute(
+                "SELECT id FROM activities WHERE athlete_id = ? AND external_id = ?",
+                (athlete_id, row["external_id"]),
+            ).fetchone()
+
+        if existing:
+            conn.execute(
+                """
+                UPDATE activities SET
+                    title=?, duration_sec=?, moving_time_sec=?, avg_hr_bpm=?, max_hr_bpm=?,
+                    aerobic_te=?, avg_cadence_spm=?, max_cadence_spm=?,
+                    avg_pace_sec_per_km=?, best_pace_sec_per_km=?, elevation_gain_m=?,
+                    elevation_loss_m=?, calories=?, raw_data_json=?, fetched_at=?,
+                    source_version=?
+                WHERE id = ?
+                """,
+                (
+                    row["title"], row["duration_sec"], row["moving_time_sec"],
+                    row["avg_hr_bpm"], row["max_hr_bpm"], row["aerobic_te"],
+                    row["avg_cadence_spm"], row["max_cadence_spm"],
+                    row["avg_pace_sec_per_km"], row["best_pace_sec_per_km"],
+                    row["elevation_gain_m"], row["elevation_loss_m"], row["calories"],
+                    row["raw_data_json"], now, SYNC_SOURCE_VERSION, existing["id"],
+                ),
+            )
+            count += 1
+            continue
+
         conn.execute(
             """
             INSERT INTO activities (
@@ -499,16 +583,18 @@ def resolve_sync_days(
     return min(gap + 1 + OVERLAP_DAYS, MAX_AUTO_SYNC_DAYS)
 
 
-def estimate_sync_cost(days: int) -> dict:
+def estimate_sync_cost(days: int, expected_activities: int = 0) -> dict:
     """預估同步的 API 請求數與耗時，供呼叫端在真的打 API 前告知使用者。
 
     成本結構：活動只打 1 次（`get_activities_by_date` 吃日期區間），
-    wellness 則**逐日**各打 4 個端點，故總數 = 1 + days × 4。
+    wellness 則**逐日**各打 4 個端點，故基本總數 = 1 + days × 4。
+    另若要補抓分圈，**每場跑步各多 1 次**（`get_activity_splits`）——
+    `expected_activities` 即該筆數，未知時傳 0（僅低估分圈部分）。
     每次呼叫之間有 `REQUEST_INTERVAL_SEC` 的節流間隔。
 
     預估值只計節流時間，未計網路往返，實際耗時會略長於此。
     """
-    request_count = 1 + days * _WELLNESS_ENDPOINTS_PER_DAY
+    request_count = 1 + days * _WELLNESS_ENDPOINTS_PER_DAY + expected_activities
     estimated_seconds = request_count * REQUEST_INTERVAL_SEC
     minutes = int(estimated_seconds // _SECONDS_PER_MINUTE)
     seconds = int(estimated_seconds % _SECONDS_PER_MINUTE)
@@ -527,6 +613,7 @@ def sync(
     client: GarminApiClient | None = None,
     today: datetime.date | None = None,
     dry_run: bool = False,
+    fetch_splits: bool = True,
 ) -> dict:
     """同步最近 `days` 天的活動與每日身體數據。
 
@@ -594,6 +681,18 @@ def sync(
 
     n_act = _upsert_activities(conn, athlete_id, activity_rows)
     n_well = _upsert_wellness(conn, athlete_id, wellness_rows)
+
+    n_laps = 0
+    n_classified = 0
+    if fetch_splits:
+        try:
+            n_laps, n_classified = _sync_splits(conn, athlete_id, api, activity_rows)
+        except GarminRateLimited as e:
+            # 分圈抓到一半觸發 429：已寫入的活動保留，但中止並回報。
+            conn.commit()
+            return {**plan, "available": False, "dry_run": False,
+                    "reason": str(e), "rate_limited": True}
+
     n_cov = _refresh_metric_coverage(conn, athlete_id)
     conn.commit()
 
@@ -605,7 +704,67 @@ def sync(
         "wellness_days_synced": n_well,
         "activities_skipped": len(raw_activities) - n_act,
         "metrics_coverage_updated": n_cov,
+        "laps_synced": n_laps,
+        "activities_classified": n_classified,
     }
+
+
+def _sync_splits(
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    api: GarminApiClient,
+    activity_rows: list[dict],
+) -> tuple[int, int]:
+    """為可分類的活動補抓逐圈明細，寫入 `activity_laps` 並套用分類器。
+
+    ⚠️ 只處理 `DEFAULT_CLASSIFIABLE_SPORTS`（預設只有 running）——用跑步的
+    配速門檻分類重訓會產生誤導標籤（比照 `fit_import_runner` 的既有決定）。
+
+    ⚠️ **已有分圈的活動跳過不重抓**：省 API，也讓重複同步真正冪等。
+
+    單場失敗（逾時、該場無分圈）只跳過該場，不中斷整批；但 429 往外拋
+    ——限制以 IP 累積，繼續打只會延長封鎖。
+
+    Returns:
+        (寫入的分圈數, 完成分類的活動數)
+    """
+    n_laps = 0
+    n_classified = 0
+    for row in activity_rows:
+        if row["activity_type"] not in DEFAULT_CLASSIFIABLE_SPORTS:
+            continue
+        if not row["external_id"]:
+            continue
+
+        existing = conn.execute(
+            "SELECT id FROM activities WHERE athlete_id = ? AND external_id = ?",
+            (athlete_id, row["external_id"]),
+        ).fetchone()
+        if not existing:
+            continue
+        activity_id = existing["id"]
+
+        has_laps = conn.execute(
+            "SELECT 1 FROM activity_laps WHERE activity_id = ? LIMIT 1", (activity_id,)
+        ).fetchone()
+        if has_laps:
+            continue
+
+        try:
+            lap_dtos = api.fetch_activity_splits(row["external_id"])
+        except GarminRateLimited:
+            raise
+        except GarminFetchError:
+            continue
+
+        laps = normalize_laps(lap_dtos)
+        if not laps:
+            continue
+
+        n_laps += store_laps(conn, activity_id, laps)
+        update_workout_type(conn, activity_id, laps)
+        n_classified += 1
+    return n_laps, n_classified
 
 
 def main() -> int:
@@ -674,6 +833,11 @@ def main() -> int:
     print(f"     活動 {result['activities_synced']} 筆"
           f"（略過 {result['activities_skipped']} 筆無法正規化）")
     print(f"     每日身體數據 {result['wellness_days_synced']} 天")
+    if result.get("laps_synced"):
+        print(
+            f"     分圈 {result['laps_synced']} 圈，"
+            f"新完成分類 {result['activities_classified']} 場"
+        )
     print("[i] 重複執行同一區間不會產生重複列（由資料庫 UNIQUE 約束保證）。")
     return 0
 

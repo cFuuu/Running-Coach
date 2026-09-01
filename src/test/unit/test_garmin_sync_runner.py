@@ -181,10 +181,12 @@ class TestNormalizeWellness(unittest.TestCase):
 class FakeApi:
     """假的 API client——回傳固定資料，不發網路請求。"""
 
-    def __init__(self, activities=None, wellness=None):
+    def __init__(self, activities=None, wellness=None, splits=None):
         self._activities = activities if activities is not None else [REAL_ACTIVITY]
         self._wellness = wellness or {}
+        self._splits = splits or {}
         self.activity_calls = 0
+        self.split_calls = []
 
     def fetch_activities(self, start_date, end_date):
         self.activity_calls += 1
@@ -192,6 +194,10 @@ class FakeApi:
 
     def fetch_daily_wellness_raw(self, cdate):
         return self._wellness.get(cdate.isoformat(), {"date": cdate.isoformat()})
+
+    def fetch_activity_splits(self, activity_id):
+        self.split_calls.append(str(activity_id))
+        return list(self._splits.get(str(activity_id), []))
 
 
 class TestSyncWritesAndIsIdempotent(unittest.TestCase):
@@ -228,6 +234,13 @@ class TestSyncWritesAndIsIdempotent(unittest.TestCase):
                 recovery_time_hours REAL, acwr REAL, source TEXT NOT NULL,
                 source_version TEXT, fetched_at TEXT NOT NULL, all_day_stress_avg INTEGER,
                 UNIQUE (athlete_id, date, source)
+            );
+            CREATE TABLE activity_laps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                activity_id INTEGER NOT NULL REFERENCES activities(id),
+                lap_index INTEGER NOT NULL, distance_km REAL, duration_sec REAL,
+                pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
+                UNIQUE (activity_id, lap_index)
             );
             CREATE TABLE metric_coverage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -541,6 +554,13 @@ class TestSyncReportsPlanAndCost(unittest.TestCase):
                 source_version TEXT, fetched_at TEXT NOT NULL, all_day_stress_avg INTEGER,
                 UNIQUE (athlete_id, date, source)
             );
+            CREATE TABLE activity_laps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                activity_id INTEGER NOT NULL REFERENCES activities(id),
+                lap_index INTEGER NOT NULL, distance_km REAL, duration_sec REAL,
+                pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
+                UNIQUE (activity_id, lap_index)
+            );
             CREATE TABLE metric_coverage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
@@ -606,6 +626,268 @@ class TestSyncReportsPlanAndCost(unittest.TestCase):
         self.assertEqual(
             self.conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0], 0
         )
+
+
+# 取自 2026-09-01 對真實帳號 get_activity_splits(24171213902) 的回傳，
+# 保留測試需要的欄位。該場為 15.1km、16 圈整齊每公里分圈。
+REAL_LAP_DTOS = [
+    {"lapIndex": i, "distance": 1000.0, "duration": d, "averageHR": hr, "maxHR": hr + 8}
+    for i, (d, hr) in enumerate(
+        [
+            (378.066, 130.0), (389.0, 141.0), (372.0, 146.0), (372.0, 147.0),
+            (378.0, 148.0), (382.0, 150.0), (373.0, 151.0), (367.0, 153.0),
+            (372.0, 154.0), (376.0, 155.0), (373.0, 151.0), (365.0, 149.0),
+            (372.0, 155.0), (371.0, 155.0), (368.0, 159.0),
+        ],
+        start=1,
+    )
+] + [{"lapIndex": 16, "distance": 112.0, "duration": 40.2, "averageHR": 157.0, "maxHR": 160.0}]
+
+
+class TestNormalizeLaps(unittest.TestCase):
+    """★ 逐圈明細正規化——API 的 lapDTOs 轉為 activity_laps 的欄位。
+
+    ⚠️ 分圈明細**不在**活動摘要端點內：`get_activities_by_date` 只回
+    `splitSummaries`（按跑/走/站類型彙總，給總和與平均，無逐圈序列），
+    需另打 `get_activity_splits`。實測 2026-08-30 那場 `lapCount=16`，
+    摘要僅告知圈數存在，明細要另一個端點才拿得到。
+    """
+
+    def test_converts_metres_and_seconds(self):
+        rows = runner.normalize_laps(REAL_LAP_DTOS)
+        self.assertEqual(len(rows), 16)
+        self.assertAlmostEqual(rows[0]["distance_km"], 1.0)
+        self.assertAlmostEqual(rows[0]["duration_sec"], 378.066, places=3)
+
+    def test_pace_computed_per_lap(self):
+        rows = runner.normalize_laps(REAL_LAP_DTOS)
+        self.assertEqual(rows[0]["pace_sec_per_km"], 378)
+
+    def test_lap_index_preserved(self):
+        rows = runner.normalize_laps(REAL_LAP_DTOS)
+        self.assertEqual([r["lap_index"] for r in rows][:3], [1, 2, 3])
+
+    def test_hr_rounded_to_int(self):
+        rows = runner.normalize_laps(REAL_LAP_DTOS)
+        self.assertEqual(rows[0]["avg_hr_bpm"], 130)
+        self.assertEqual(rows[0]["max_hr_bpm"], 138)
+
+    def test_zero_distance_lap_has_no_pace(self):
+        rows = runner.normalize_laps(
+            [{"lapIndex": 1, "distance": 0.0, "duration": 30.0, "averageHR": 120.0}]
+        )
+        self.assertIsNone(rows[0]["pace_sec_per_km"])
+
+    def test_empty_input(self):
+        self.assertEqual(runner.normalize_laps([]), [])
+
+    def test_real_laps_classify_as_lsd(self):
+        """★ 端到端：真實分圈餵進既有分類器應得 lsd（15.1km 為近期均值 1.5 倍以上）。
+
+        這是本功能的目的——讓同步進來的活動走**與歷史 243 場相同**的分類標準，
+        而非另建一套依心率區間推算的分類器（那會在同一欄位混入兩種語意）。
+        """
+        from src.main.python.services.workout_classifier import classify_workout
+
+        laps = runner.normalize_laps(REAL_LAP_DTOS)
+        self.assertEqual(
+            classify_workout(
+                laps,
+                total_distance_km=15.11,
+                recent_avg_distance_km=10.0,
+                recent_avg_pace_sec_per_km=365,
+            ),
+            "lsd",
+        )
+
+
+class TestDedupByExternalId(unittest.TestCase):
+    """★ 迴歸：同一場活動不得因浮點距離精度差異而寫成兩列。
+
+    實測發現的 bug（2026-09-01）：UNIQUE 約束用
+    `(athlete_id, started_at, activity_type, distance_km)`，但 API 回傳完整
+    浮點數（10.1585703125），匯出包存四捨五入值（10.1586）——distance_km
+    不相等，UNIQUE 擋不住，同一場跑步出現兩列。實測有 2 組（8/13、8/16），
+    正落在 API 與匯出包的來源重疊區。
+
+    修法：改以 `external_id`（Garmin activityId，穩定唯一鍵）為去重依據。
+    實測 530 筆活動 external_id 全部非 NULL，且兩組重複列的 external_id 相同。
+    """
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(
+            """
+            CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+            CREATE TABLE activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, external_id TEXT,
+                activity_type TEXT NOT NULL, title TEXT, started_at TEXT NOT NULL,
+                distance_km REAL, duration_sec INTEGER, moving_time_sec INTEGER,
+                avg_hr_bpm INTEGER, max_hr_bpm INTEGER, aerobic_te REAL,
+                avg_cadence_spm INTEGER, max_cadence_spm INTEGER,
+                avg_pace_sec_per_km INTEGER, best_pace_sec_per_km INTEGER,
+                elevation_gain_m REAL, elevation_loss_m REAL, calories INTEGER,
+                reps INTEGER, sets INTEGER, source TEXT NOT NULL, source_version TEXT,
+                fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
+                raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
+                UNIQUE (athlete_id, started_at, activity_type, distance_km)
+            );
+            CREATE UNIQUE INDEX idx_activities_external_id
+                ON activities (athlete_id, external_id);
+            CREATE TABLE daily_wellness (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
+                resting_hr_bpm INTEGER, hrv_ms REAL, hrv_weekly_avg_ms REAL,
+                spo2_pct REAL, skin_temp_c REAL, respiration_rate REAL,
+                sleep_duration_sec INTEGER, sleep_quality TEXT, sleep_score INTEGER,
+                stress_avg INTEGER, body_battery_max INTEGER, body_battery_min INTEGER,
+                steps INTEGER, training_readiness_score INTEGER,
+                recovery_time_hours REAL, acwr REAL, source TEXT NOT NULL,
+                source_version TEXT, fetched_at TEXT NOT NULL, all_day_stress_avg INTEGER,
+                UNIQUE (athlete_id, date, source)
+            );
+            CREATE TABLE activity_laps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                activity_id INTEGER NOT NULL REFERENCES activities(id),
+                lap_index INTEGER NOT NULL, distance_km REAL, duration_sec REAL,
+                pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
+                UNIQUE (activity_id, lap_index)
+            );
+            CREATE TABLE metric_coverage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
+                source TEXT NOT NULL, earliest_date TEXT, latest_date TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE (athlete_id, metric_name, source)
+            );
+            INSERT INTO athlete_profile (name) VALUES ('Test');
+            """
+        )
+        self.today = datetime.date(2026, 8, 16)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_rounded_existing_row_is_updated_not_duplicated(self):
+        """★ 匯出包已存四捨五入距離，API 帶完整浮點數來時應更新同一列。"""
+        self.conn.execute(
+            """INSERT INTO activities (athlete_id, external_id, activity_type, started_at,
+               distance_km, source, fetched_at, workout_type, workout_type_source)
+               VALUES (1, '23997807612', 'running', '2026-08-16T18:43:31', 10.1586,
+                       'garmin_export', 'x', 'easy', 'auto')"""
+        )
+        self.conn.commit()
+        runner.sync(self.conn, 1, days=1, client=FakeApi(), today=self.today)
+        rows = self.conn.execute("SELECT * FROM activities").fetchall()
+        self.assertEqual(len(rows), 1, "同一 external_id 不得產生第二列")
+        # 既有的人工/自動分類不得被同步覆蓋
+        self.assertEqual(rows[0]["workout_type"], "easy")
+
+    def test_manual_workout_type_survives_dedup_update(self):
+        self.conn.execute(
+            """INSERT INTO activities (athlete_id, external_id, activity_type, started_at,
+               distance_km, source, fetched_at, workout_type, workout_type_source)
+               VALUES (1, '23997807612', 'running', '2026-08-16T18:43:31', 10.1586,
+                       'garmin_export', 'x', 'interval', 'manual')"""
+        )
+        self.conn.commit()
+        runner.sync(self.conn, 1, days=1, client=FakeApi(), today=self.today)
+        row = self.conn.execute("SELECT workout_type, workout_type_source FROM activities").fetchone()
+        self.assertEqual(row["workout_type"], "interval")
+        self.assertEqual(row["workout_type_source"], "manual")
+
+
+class TestSyncFetchesSplitsAndClassifies(unittest.TestCase):
+    """★ 同步時補抓分圈並套用既有分類器。"""
+
+    def setUp(self):
+        TestDedupByExternalId.setUp(self)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_laps_written_for_running_activity(self):
+        api = FakeApi(splits={"23997807612": REAL_LAP_DTOS})
+        result = runner.sync(
+            self.conn, 1, days=1, client=api, today=self.today, fetch_splits=True
+        )
+        self.assertEqual(result["laps_synced"], 16)
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM activity_laps").fetchone()[0], 16
+        )
+
+    def test_workout_type_classified_from_fetched_laps(self):
+        """★ 這是整個功能的目的：同步進來的活動不再是 workout_type NULL。"""
+        api = FakeApi(splits={"23997807612": REAL_LAP_DTOS})
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=True)
+        row = self.conn.execute(
+            "SELECT workout_type, workout_type_source FROM activities"
+        ).fetchone()
+        self.assertIsNotNone(row["workout_type"])
+        self.assertEqual(row["workout_type_source"], "auto")
+
+    def test_splits_not_fetched_when_disabled(self):
+        api = FakeApi(splits={"23997807612": REAL_LAP_DTOS})
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=False)
+        self.assertEqual(api.split_calls, [])
+        self.assertEqual(
+            self.conn.execute("SELECT COUNT(*) FROM activity_laps").fetchone()[0], 0
+        )
+
+    def test_only_running_activities_get_splits(self):
+        """重訓/健走不抓分圈——配速結構對它們無意義（比照 fit_import_runner 慣例）。"""
+        strength = {
+            "activityId": 999,
+            "startTimeLocal": "2026-08-16 07:00:00",
+            "activityType": {"typeKey": "strength_training"},
+            "distance": 0.0,
+            "duration": 3600.0,
+        }
+        api = FakeApi(activities=[strength], splits={"999": REAL_LAP_DTOS})
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=True)
+        self.assertEqual(api.split_calls, [])
+
+    def test_split_fetch_failure_does_not_abort_sync(self):
+        """單場分圈抓不到不應讓整批同步失敗——活動摘要仍要寫入。"""
+
+        class FailingSplits(FakeApi):
+            def fetch_activity_splits(self, activity_id):
+                raise runner.GarminFetchError("抓取失敗（Timeout）")
+
+        result = runner.sync(
+            self.conn, 1, days=1, client=FailingSplits(), today=self.today, fetch_splits=True
+        )
+        self.assertTrue(result["available"])
+        self.assertEqual(result["activities_synced"], 1)
+        self.assertEqual(result["laps_synced"], 0)
+
+    def test_rate_limit_during_splits_aborts(self):
+        """★ 429 一律中止整批——不可繼續打，限制以 IP 累積。"""
+
+        class RateLimited(FakeApi):
+            def fetch_activity_splits(self, activity_id):
+                raise runner.GarminRateLimited("觸發 Garmin rate limit")
+
+        result = runner.sync(
+            self.conn, 1, days=1, client=RateLimited(), today=self.today, fetch_splits=True
+        )
+        self.assertFalse(result["available"])
+        self.assertTrue(result["rate_limited"])
+
+    def test_existing_laps_not_refetched(self):
+        """★ 已有分圈的活動不重抓——省 API，也是冪等的一部分。"""
+        api = FakeApi(splits={"23997807612": REAL_LAP_DTOS})
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=True)
+        first_calls = len(api.split_calls)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=True)
+        self.assertEqual(len(api.split_calls), first_calls, "第二次不應重抓分圈")
+
+    def test_cost_estimate_accounts_for_splits(self):
+        """耗時預告須把分圈請求算進去，否則低估。"""
+        est = runner.estimate_sync_cost(7, expected_activities=5)
+        self.assertEqual(est["request_count"], 1 + 7 * 4 + 5)
 
 
 if __name__ == "__main__":
