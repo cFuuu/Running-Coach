@@ -18,7 +18,14 @@ Issue #13（compute_daily_loads）只算「今天身體承受了多少負荷」�
 疲勞累積邏輯；Issue #14（compute_training_load_series）接手這段每日負荷序列，
 用 Banister impulse-response 模型的標準做法——指數加權移動平均（EWMA）分別對
 每日負荷做急性（ATL，7 天時間常數）與慢性（CTL，42 天時間常數）平滑，
-TSB（形態分數）= CTL − ATL。兩個時間常數沿用運動科學界廣泛驗證的標準值。
+TSB（形態分數）= CTL − ATL。
+
+⚠️ 7/42 這組時間常數是**產業慣例值，非經驗證的普世常數**：Hellard et al.
+（J Sports Sci，見 docs/research/physiological-thresholds.md）實測個體 τa 落在
+13–65 天、τf 落在 5–38 天，所有參數 CV > 30%，且 τa/τf 相關係數達 0.99
+（模型 ill-conditioned、參數無法個別辨識），原文明言「proposing a single set
+of parameters might be dubious」。沿用 7/42 是為了可比性與實作簡單，不是因為
+它對本學員最準——下游解讀不應把 ATL/CTL/TSB 當精確量。
 """
 
 from __future__ import annotations

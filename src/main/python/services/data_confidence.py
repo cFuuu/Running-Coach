@@ -63,6 +63,20 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
         "`acwr` 欄位存的是 Garmin `acwrFactorPercent`（0–100 貢獻度分數），"
         "**不是**古典的 0.8–1.3 急慢性負荷比，不可套用 >1.3 過載這類比值門檻",
     ),
+    "hrv_pct_form_unvalidated": (
+        "low",
+        "HRV 觸發用的是「當日 vs 自身 7 日均值下降 15%」這個固定百分比形式，"
+        "而文獻標準做法是 LnrMSSD（取自然對數）+ 4 週基線的個人化 SWC "
+        "（mean − 0.5×SD）、基線每週更新，且比較的是 7 日滾動平均對基線分布。"
+        "本專案的形式與比較層級皆與文獻不符，15% 這個數字亦無文獻依據",
+    ),
+    "tsb_percentile_engineering": (
+        "low",
+        "TSB 門檻取自該學員自身歷史 TSB 分布的第 10 百分位，為工程實務決策、"
+        "無文獻背書。它免疫於負荷單位的尺度問題（舊值 -30 取自 TrainingPeaks "
+        "的 TSS 尺度，與本專案自建的「秒 × %HRR」相差約 30 倍），但『第 10 "
+        "百分位就是異常』本身是我們選的，不是測出來的",
+    ),
     "strength_hr_missing": (
         "low",
         "該重訓活動無心率資料，強度以固定保守值 50% HRR 估算，"

@@ -9,7 +9,7 @@ from pathlib import Path
 from src.main.python.models.db import get_connection
 from src.main.python.services.readiness import (
     DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS,
-    TSB_LOW_THRESHOLD,
+    MIN_TSB_SAMPLES_FOR_PERCENTILE,
     assess_readiness,
     suggest_recovery_threshold,
 )
@@ -33,6 +33,20 @@ def _load_series(
         }
         for i, load in enumerate(loads)
     ]
+
+
+def _tsb_series_with_low_day(
+    low_tsb: float = -100.0, load: float = 0.0
+) -> list[dict]:
+    """建立樣本數足夠讓百分位法生效的序列，最後一天為明顯偏低的 TSB。
+
+    TSB 門檻改為取個人分布的 P10（見 readiness.TSB_LOW_PERCENTILE），
+    因此測試不能再只給一兩天——樣本不足時該維度會被跳過而非觸發。
+    """
+    n = MIN_TSB_SAMPLES_FOR_PERCENTILE + 10
+    overrides = {i: 0.0 for i in range(n - 1)}
+    overrides[n - 1] = low_tsb
+    return _load_series([load] * n, tsb_overrides=overrides)
 
 
 def _wellness(entries: dict[int, dict]) -> list[dict]:
@@ -81,11 +95,11 @@ class TestAssessReadinessConsecutiveTraining(unittest.TestCase):
 
 
 class TestAssessReadinessTsb(unittest.TestCase):
-    def test_tsb_below_threshold_triggers_low(self):
-        series = _load_series([0.0], tsb_overrides={0: TSB_LOW_THRESHOLD - 5})
+    def test_tsb_below_personal_percentile_triggers_low(self):
+        series = _tsb_series_with_low_day()
         result = assess_readiness(series, [])
-        self.assertEqual(result[0]["readiness"], "low")
-        self.assertTrue(any(t["dimension"] == "tsb" for t in result[0]["triggers"]))
+        self.assertEqual(result[-1]["readiness"], "low")
+        self.assertTrue(any(t["dimension"] == "tsb" for t in result[-1]["triggers"]))
 
     def test_stable_normal_tsb_does_not_trigger(self):
         series = _load_series([100.0] * 3, tsb_overrides={0: -5, 1: -8, 2: -6})
@@ -93,20 +107,37 @@ class TestAssessReadinessTsb(unittest.TestCase):
         self.assertTrue(all(r["readiness"] == "normal" for r in result))
         self.assertTrue(all(r["triggers"] == [] for r in result))
 
+    def test_insufficient_samples_skips_tsb_instead_of_guessing(self):
+        """樣本不足以建立個人分布時不做 TSB 判斷，而非退回一個猜的絕對值。"""
+        series = _load_series([0.0] * 5, tsb_overrides={0: -9999.0})
+        result = assess_readiness(series, [])
+        self.assertTrue(all(not r["triggers"] for r in result))
+
+    def test_threshold_is_scale_free(self):
+        """同一形狀的分布放大 1000 倍，觸發結果不應改變——這正是舊的絕對值
+        門檻 (-30) 做不到的事（負荷單位換尺度就整組失效）。
+        """
+        small = assess_readiness(_tsb_series_with_low_day(-100.0), [])
+        large = assess_readiness(_tsb_series_with_low_day(-100_000.0), [])
+        self.assertEqual(
+            [bool(r["triggers"]) for r in small],
+            [bool(r["triggers"]) for r in large],
+        )
+
 
 class TestAssessReadinessTriggerConfidence(unittest.TestCase):
     """每個觸發都要帶信賴度標記（PLAN.md §7.3 三欄位契約）。"""
 
     def _tsb_trigger(self, max_hr_source):
-        series = _load_series([0.0], tsb_overrides={0: TSB_LOW_THRESHOLD - 5})
+        series = _tsb_series_with_low_day()
         result = assess_readiness(series, [], max_hr_source=max_hr_source)
-        return next(t for t in result[0]["triggers"] if t["dimension"] == "tsb")
+        return next(t for t in result[-1]["triggers"] if t["dimension"] == "tsb")
 
     def test_every_trigger_carries_confidence(self):
-        series = _load_series([0.0], tsb_overrides={0: TSB_LOW_THRESHOLD - 5})
+        series = _tsb_series_with_low_day()
         result = assess_readiness(series, [])
-        self.assertTrue(result[0]["triggers"])
-        for trigger in result[0]["triggers"]:
+        self.assertTrue(result[-1]["triggers"])
+        for trigger in result[-1]["triggers"]:
             with self.subTest(dimension=trigger["dimension"]):
                 self.assertIn("confidence", trigger)
                 self.assertIn(trigger["confidence"]["level"], ("high", "low"))
@@ -115,8 +146,12 @@ class TestAssessReadinessTriggerConfidence(unittest.TestCase):
         """負荷以 %HRR 推算——HRmax 非實測則整條 ATL/CTL/TSB 同步偏移。"""
         self.assertEqual(self._tsb_trigger("watch_display")["confidence"]["level"], "low")
 
-    def test_tsb_confidence_is_high_when_hrmax_measured(self):
-        self.assertEqual(self._tsb_trigger("measured")["confidence"]["level"], "high")
+    def test_tsb_stays_low_confidence_even_when_hrmax_measured(self):
+        """即使 HRmax 實測，P10 門檻本身仍是無文獻背書的工程決策。"""
+        trigger = self._tsb_trigger("measured")
+        self.assertEqual(trigger["confidence"]["level"], "low")
+        codes = {b["code"] for b in trigger["confidence"]["biases"]}
+        self.assertIn("tsb_percentile_engineering", codes)
 
     def test_omitted_hrmax_source_is_conservatively_degraded(self):
         """省略參數不等於實測——保守視為未實測。"""
@@ -137,11 +172,26 @@ class TestAssessReadinessTriggerConfidence(unittest.TestCase):
 
 class TestAssessReadinessHrv(unittest.TestCase):
     def test_significant_hrv_drop_triggers_low(self):
-        series = _load_series([0.0])
-        wellness = _wellness({0: {"hrv_ms": 40.0, "hrv_weekly_avg_ms": 60.0}})  # -33%
+        series = _load_series([0.0] * 3)
+        # 需要 7 天內至少 3 個有效測量點，否則 7 日均值不可靠（Plews et al.）。
+        wellness = _wellness(
+            {
+                0: {"hrv_ms": 60.0, "hrv_weekly_avg_ms": 60.0},
+                1: {"hrv_ms": 60.0, "hrv_weekly_avg_ms": 60.0},
+                2: {"hrv_ms": 40.0, "hrv_weekly_avg_ms": 60.0},  # -33%
+            }
+        )
         result = assess_readiness(series, wellness)
-        self.assertEqual(result[0]["readiness"], "low")
-        self.assertTrue(any(t["dimension"] == "hrv" for t in result[0]["triggers"]))
+        self.assertEqual(result[2]["readiness"], "low")
+        self.assertTrue(any(t["dimension"] == "hrv" for t in result[2]["triggers"]))
+
+    def test_hrv_skipped_when_too_few_measurements_that_week(self):
+        """7 日均值由太少的點算出時不硬算——文獻要求每週至少 3 個測量點。"""
+        series = _load_series([0.0])
+        wellness = _wellness({0: {"hrv_ms": 40.0, "hrv_weekly_avg_ms": 60.0}})
+        result = assess_readiness(series, wellness)
+        self.assertEqual(result[0]["readiness"], "normal")
+        self.assertEqual(result[0]["triggers"], [])
 
     def test_minor_hrv_dip_does_not_trigger(self):
         series = _load_series([0.0])
@@ -174,12 +224,14 @@ class TestAssessReadinessGeneral(unittest.TestCase):
         self.assertEqual([r["date"] for r in result], [d["date"] for d in series])
 
     def test_multiple_triggers_all_reported(self):
-        loads = [100.0] * DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS
-        series = _load_series(
-            loads, tsb_overrides={DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS - 1: TSB_LOW_THRESHOLD - 1}
-        )
+        series = _tsb_series_with_low_day(load=100.0)  # 非零負荷才會累積連續訓練天數
+        last = len(series) - 1
         wellness = _wellness(
-            {DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS - 1: {"hrv_ms": 40.0, "hrv_weekly_avg_ms": 60.0}}
+            {
+                last - 2: {"hrv_ms": 60.0, "hrv_weekly_avg_ms": 60.0},
+                last - 1: {"hrv_ms": 60.0, "hrv_weekly_avg_ms": 60.0},
+                last: {"hrv_ms": 40.0, "hrv_weekly_avg_ms": 60.0},
+            }
         )
         result = assess_readiness(series, wellness)
         last = result[-1]

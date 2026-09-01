@@ -133,16 +133,41 @@ def downsample_records(records: list[dict], every_sec: int) -> list[dict]:
     return kept
 
 
+# 心率漂移的最短時長（秒）。短於此不計算——指標本身假設前後半的外部負荷
+# 相同、且身體已進入穩態，短時間活動兩者皆不成立。
+# 🔴 45 分鐘為工程實務決策，文獻未給明確下限，見
+# docs/research/physiological-thresholds.md 主題一。
+MIN_DRIFT_DURATION_SEC = 45 * 60
+
+
 def compute_hr_drift(records: list[dict]) -> dict:
     """以逐秒心率計算前後半段的心率漂移。
 
     定義：依 elapsed_sec 中點切成前後兩半，各取平均心率，
     drift_pct = (後半 - 前半) / 前半 * 100。
     只回傳數值不做解讀——解讀留給之後的 AI coach 層。
+
+    ⚠️ 這**不是** Friel/TrainingPeaks 的 Pa:HR decoupling：那個指標的分母是
+    配速（效率比值），本函式算的是純心率差，沒有把配速納入，因此後半跑快
+    造成的心率上升會被記成「漂移」。廣為流傳的「5% 為異常」門檻是定義在
+    Pa:HR 上的教練經驗法則（非同儕審查），**不可套用到本函式的輸出**——
+    實測本專案 243 場跑步的中位漂移即為 6.2%、60.9% 超過 5%，套用該門檻
+    會對六成場次誤報。詳見 docs/research/physiological-thresholds.md 主題一。
     """
     hr_points = [r for r in records if r.get("hr_bpm")]
     if len(hr_points) < 2:
         return {"available": False, "reason": "此活動無足夠心率資料可計算漂移"}
+
+    duration_sec = hr_points[-1]["elapsed_sec"] - hr_points[0]["elapsed_sec"]
+    if duration_sec < MIN_DRIFT_DURATION_SEC:
+        return {
+            "available": False,
+            "reason": (
+                f"活動時長 {duration_sec / 60:.0f} 分鐘，短於 "
+                f"{MIN_DRIFT_DURATION_SEC // 60} 分鐘下限——心率漂移假設"
+                "前後半外部負荷相同且已進入穩態，短時間活動不滿足此前提"
+            ),
+        }
 
     mid = (hr_points[0]["elapsed_sec"] + hr_points[-1]["elapsed_sec"]) / 2
     first = [r["hr_bpm"] for r in hr_points if r["elapsed_sec"] <= mid]

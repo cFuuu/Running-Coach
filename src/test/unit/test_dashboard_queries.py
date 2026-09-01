@@ -287,12 +287,32 @@ class TestSessionDetail(DashboardQueryTestCase):
         self.assertEqual(len(records["points"]), 4)
 
     def test_hr_drift_is_computed_from_records(self):
-        """前半心率 100、後半 110 → 漂移 +10.0%。"""
-        drift = self._detail("測試晨跑")["hr_drift"]
+        """前半心率 100、後半 110 → 漂移 +10.0%。
+
+        共用 fixture 的逐秒資料只有 40 秒（其點數與取樣間隔另有測試斷言，
+        不動它），而心率漂移現在要求活動長於 45 分鐘，故這裡就地補上一場
+        夠長的活動來驗證計算本身。
+        """
+        session_id = self._detail("測試晨跑")["id"]
+        self.conn.execute("DELETE FROM activity_records WHERE activity_id = ?", (session_id,))
+        for elapsed in range(0, 3601, 10):
+            self.conn.execute(
+                "INSERT INTO activity_records "
+                "(activity_id, elapsed_sec, distance_km, hr_bpm, pace_sec_per_km) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, elapsed, elapsed / 300, 100 if elapsed <= 1800 else 110, 300),
+            )
+        drift = queries.get_session_detail(self.conn, session_id)["hr_drift"]
         self.assertTrue(drift["available"])
         self.assertEqual(drift["first_half_avg_hr"], 100.0)
         self.assertEqual(drift["second_half_avg_hr"], 110.0)
         self.assertEqual(drift["drift_pct"], 10.0)
+
+    def test_short_activity_reports_drift_unavailable(self):
+        """共用 fixture 的 40 秒活動短於下限，應明確標為不可計算並附理由。"""
+        drift = self._detail("測試晨跑")["hr_drift"]
+        self.assertFalse(drift["available"])
+        self.assertIn("下限", drift["reason"])
 
     def test_hr_drift_unavailable_without_records(self):
         drift = self._detail("測試手動分圈跑")["hr_drift"]
