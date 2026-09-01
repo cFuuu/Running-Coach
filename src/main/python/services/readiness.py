@@ -43,14 +43,42 @@ from . import data_confidence
 # 的保守下界。
 DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS = 6
 
-# TSB 低於此值視為「急性疲勞明顯高於慢性負荷」的觸發門檻。運動科學界常見
-# 經驗：TSB 落在 -10 ~ -30 之間屬正常訓練期的疲勞累積，超過 -30 常伴隨
-# 過度訓練風險升高，取 -30 作為觸發門檻。
-TSB_LOW_THRESHOLD = -30.0
+# TSB 觸發門檻：取該學員自己歷史 TSB 分布的百分位數（預設 P10）。
+#
+# 🔴 工程實務決策，無文獻背書——但這是刻意的選擇，理由見
+# docs/research/physiological-thresholds.md 主題三：
+# 舊值 TSB < -30 取自 TrainingPeaks 慣例，而該慣例定義在 **TSS 尺度**上
+# （TSS=100 為一小時 threshold 全力，CTL 典型 50–150）。本專案的負荷單位是
+# 自建的「秒 × %HRR」，同一小時 threshold 約為 3060，尺度相差約 30 倍。
+# 直接沿用 -30 在數學上就是錯的：實測 CTL 範圍 0–756、TSB 範圍 -669~+370，
+# -30 幾乎貼著 0，導致 296 天中 157 天（53%）觸發，一個永遠說 low 的
+# readiness 沒有任何資訊量。
+#
+# 改用個人分布百分位的好處：完全免疫尺度問題、自動個人化、觸發率可控
+# （設 P10 即約 10% 的天數觸發，符合「異常應該罕見」的直覺）。
+# 誠實地說 -30 同樣無文獻背書，此法至少觸發率可控且可解釋。
+#
+# 不採 ACWR 式比值（TSB/CTL）的理由：TSB/CTL = 1 − ATL/CTL 是 ACWR 的單調
+# 變換，會繼承完全相同的數學耦合缺陷；ACWR 已遭 Impellizzeri et al. 系統性
+# 駁斥（sweet spot 圖表被要求撤稿）。
+TSB_LOW_PERCENTILE = 10.0
+
+# 樣本數不足此值時不以百分位法判斷 TSB（分布本身不可靠），該維度標為資料不足。
+MIN_TSB_SAMPLES_FOR_PERCENTILE = 60
 
 # 當日 HRV 相對 7 日均值的下降幅度超過此比例，視為自律神經恢復不足的訊號。
-# 取 15% 作為常見訓練監控實務中的保守分界。
+#
+# 🔴 無文獻依據的工程決策。docs/research/physiological-thresholds.md 主題四
+# 指出文獻標準做法是 LnrMSSD（先取自然對數）+ 4 週基線的個人化 SWC
+# （mean − 0.5×SD）、基線每週更新，而非固定百分比；且文獻比的是
+# 「7 日滾動平均 vs 基線分布」，本專案比的是「當日 vs 7 日均值」，層級不同。
+# 換成 SWC 屬第二步（見 TODO），本輪先補資料充足度檢查。
 HRV_DROP_PCT_THRESHOLD = 0.15
+
+# 過去 7 天內的有效 HRV 測量點少於此數時，7 日均值不可靠，該日 HRV 維度
+# 標為資料不足而非硬算。🟢 文獻依據：Plews et al. 指出 HRV 監控需每週
+# 至少 3 個測量點才具效度。
+MIN_HRV_POINTS_PER_WEEK = 3
 
 # suggest_recovery_threshold() 用同一套 HRV 下降門檻判斷「該次連續訓練是否
 # 觀察到恢復訊號惡化」，與 _evaluate_hrv() 的判斷基準一致，避免兩套標準漂移。
@@ -89,34 +117,72 @@ def _evaluate_consecutive_training(
     }
 
 
-def _evaluate_tsb(tsb: float, hrmax_bias_codes: list[str]) -> dict[str, Any] | None:
-    if tsb >= TSB_LOW_THRESHOLD:
+def _tsb_threshold(tsb_values: list[float]) -> float | None:
+    """由該學員自己的 TSB 分布算出觸發門檻（P10）。
+
+    樣本不足時回傳 None——此時不做 TSB 判斷，而非退回一個猜的絕對值。
+    """
+    if len(tsb_values) < MIN_TSB_SAMPLES_FOR_PERCENTILE:
+        return None
+    ordered = sorted(tsb_values)
+    # 線性內插取百分位（不引入 numpy 依賴）。
+    pos = (len(ordered) - 1) * TSB_LOW_PERCENTILE / 100.0
+    low = int(pos)
+    high = min(low + 1, len(ordered) - 1)
+    return ordered[low] + (ordered[high] - ordered[low]) * (pos - low)
+
+
+def _evaluate_tsb(
+    tsb: float, threshold: float | None, hrmax_bias_codes: list[str]
+) -> dict[str, Any] | None:
+    if threshold is None or tsb >= threshold:
         return None
     return {
         "dimension": "tsb",
-        "detail": f"TSB 為 {tsb:.1f}，低於門檻 {TSB_LOW_THRESHOLD:.1f}（急性疲勞明顯高於慢性負荷）",
+        "detail": (
+            f"TSB 為 {tsb:.1f}，低於個人分布門檻 {threshold:.1f}"
+            f"（該學員歷史 TSB 的第 {TSB_LOW_PERCENTILE:.0f} 百分位）"
+        ),
         # TSB 由 ATL/CTL 遞推而來，而每日負荷是用 %HRR 算的強度——
         # HRmax 若非實測，整條負荷序列都帶著同一個系統性偏移。
         "confidence": {
-            "level": data_confidence.combine_level(hrmax_bias_codes),
-            "biases": [data_confidence.describe_bias(c) for c in hrmax_bias_codes],
+            "level": data_confidence.combine_level(
+                [*hrmax_bias_codes, "tsb_percentile_engineering"]
+            ),
+            "biases": [
+                data_confidence.describe_bias(c)
+                for c in (*hrmax_bias_codes, "tsb_percentile_engineering")
+            ],
         },
     }
 
 
-def _evaluate_hrv(hrv_ms: float | None, hrv_weekly_avg_ms: float | None) -> dict[str, Any] | None:
+def _evaluate_hrv(
+    hrv_ms: float | None,
+    hrv_weekly_avg_ms: float | None,
+    recent_point_count: int,
+) -> dict[str, Any] | None:
     if not hrv_ms or not hrv_weekly_avg_ms:
         # 缺資料：無法判斷，跳過（不視為觸發，也不視為正常）。
+        return None
+    if recent_point_count < MIN_HRV_POINTS_PER_WEEK:
+        # 7 日均值由太少的點算出，本身不可靠——不硬算，跳過該維度。
+        # 文獻要求每週至少 3 個測量點（Plews et al.）。
         return None
     drop_pct = (hrv_weekly_avg_ms - hrv_ms) / hrv_weekly_avg_ms
     if drop_pct < HRV_DROP_PCT_THRESHOLD:
         return None
     return {
         "dimension": "hrv",
-        # 這裡比的是「當日 vs 自己的 7 日均值」，屬短期變化，7 日均值不需要
-        # 長歷史即可成立，故標 high；長期個人基準（「你的正常 HRV 是多少」）
-        # 才受 292 天樣本期不足所限，那屬另一種用法，見 PLAN.md §7.4。
-        "confidence": {"level": "high", "biases": []},
+        # ⚠️ 此處刻意標 low，不標 high。先前的理由是「7 日均值不需長歷史」，
+        # 但那與文獻不符：HRV 監控的標準做法是 LnrMSSD + 4 週基線的個人化
+        # SWC，比的是「7 日滾動平均 vs 基線分布」，而本專案比的是「當日 vs
+        # 7 日均值」——層級不同，等於把滾動平均本要消除的雜訊當成訊號源。
+        # 詳見 docs/research/physiological-thresholds.md 主題四。
+        "confidence": {
+            "level": "low",
+            "biases": [data_confidence.describe_bias("hrv_pct_form_unvalidated")],
+        },
         "detail": (
             f"當日 HRV {hrv_ms:.1f}ms 較 7 日均值 {hrv_weekly_avg_ms:.1f}ms "
             f"下降 {drop_pct * 100:.1f}%，超過門檻 {HRV_DROP_PCT_THRESHOLD * 100:.0f}%"
@@ -189,6 +255,15 @@ def assess_readiness(
     daily_loads_by_date = {day["date"]: day["load"] for day in training_load_series}
     wellness_by_date = {day["date"]: day for day in daily_wellness}
 
+    # TSB 門檻由該學員自己的完整 TSB 分布決定（含暖機期，樣本越多分布越穩），
+    # 而非寫死的絕對值——理由見 TSB_LOW_PERCENTILE 的說明。
+    tsb_threshold = _tsb_threshold([day["tsb"] for day in training_load_series])
+
+    # 每天各自數「過去 7 天內有幾個有效 HRV 測量點」，供充足度檢查使用。
+    hrv_dates = {
+        day["date"] for day in daily_wellness if day.get("hrv_ms") is not None
+    }
+
     results: list[dict[str, Any]] = []
     for day in training_load_series:
         date = day["date"]
@@ -200,8 +275,16 @@ def assess_readiness(
         triggers = []
         for trigger in (
             _evaluate_consecutive_training(consecutive_days, threshold),
-            _evaluate_tsb(day["tsb"], hrmax_bias_codes),
-            _evaluate_hrv(wellness.get("hrv_ms"), wellness.get("hrv_weekly_avg_ms")),
+            _evaluate_tsb(day["tsb"], tsb_threshold, hrmax_bias_codes),
+            _evaluate_hrv(
+                wellness.get("hrv_ms"),
+                wellness.get("hrv_weekly_avg_ms"),
+                sum(
+                    1
+                    for offset in range(7)
+                    if date - datetime.timedelta(days=offset) in hrv_dates
+                ),
+            ),
         ):
             if trigger is not None:
                 triggers.append(trigger)
