@@ -77,6 +77,23 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
         "的 TSS 尺度，與本專案自建的「秒 × %HRR」相差約 30 倍），但『第 10 "
         "百分位就是異常』本身是我們選的，不是測出來的",
     ),
+    "intensity_range_custom": (
+        "low",
+        "各課種的 %HRR 預期區間為本專案自訂，非直接引用單一文獻。"
+        "Daniels 的區間定義在配速上，改用心率是為了讓受地形/天候/號誌"
+        "影響的日常訓練也能判讀，但區間邊界本身未經本學員資料校正",
+    ),
+    "pace_fade_threshold_custom": (
+        "low",
+        "「前後半配速差 5% 以上算節奏不穩」為工程實務決策，無文獻依據——"
+        "文獻中不存在「配速偏差多少算沒執行」的定義",
+    ),
+    "hr_drift_no_threshold": (
+        "low",
+        "心率漂移只呈現數值、不給好壞判定：本專案算的是純前後半心率差"
+        "（分母無配速），與 Friel/TrainingPeaks 的 Pa:HR decoupling 不是"
+        "同一個量，後者的 5% 門檻不適用；實測本專案中位漂移即為 6.2%",
+    ),
     "strength_hr_missing": (
         "low",
         "該重訓活動無心率資料，強度以固定保守值 50% HRR 估算，"

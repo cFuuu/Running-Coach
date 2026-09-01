@@ -35,6 +35,7 @@ from mcp.server.mcpserver import Context
 
 from src.main.python.models.db import get_connection
 from src.main.python.services import dashboard_queries
+from src.main.python.services import session_quality
 from src.main.python.services import training_load_queries
 from src.main.python.services import training_plan_generator
 from src.main.python.services import training_plan_store
@@ -159,6 +160,74 @@ def get_wellness_trend(
     此為 Garmin 黑盒衍生值，僅供對照參考，不應作為判讀依據。
     """
     return _serialize(dashboard_queries.get_wellness_trend(_conn(ctx), athlete_id, range_key))
+
+
+@mcp.tool()
+def assess_session_quality(
+    ctx: Context[AppContext],
+    session_id: int,
+    athlete_id: int | None = None,
+) -> dict | None:
+    """評估單場訓練的執行品質，回傳三個生理維度的判讀：強度符合度
+    （實際心率強度是否落在該課種應有區間）、配速穩定度（前後半配速差異）、
+    心率漂移。查無此活動時回傳 None。
+
+    ⚠️ **本工具刻意不輸出總分或等第**。三個維度分開呈現，權衡與結論屬於你
+    （判斷層）的職責——把它們合成單一分數等於把判斷偷渡進事實層。
+
+    ⚠️ **每個維度都帶 `confidence` 標記，回答時必須一併考量**：
+    - `level: low` 代表該數字有已知偏誤，`biases` 裡寫明錯在哪、可能錯多少。
+      據此下結論時要說明不確定性，不可當精確值使用。
+    - `hr_drift` 刻意沒有 `verdict`：本專案算的是純前後半心率差（分母無配速），
+      與 Friel/TrainingPeaks 的 Pa:HR decoupling 不是同一個量，其 5% 門檻
+      **不適用**（實測本專案中位漂移即為 6.2%）。只描述數值與趨勢，不要判定好壞。
+
+    ⚠️ **`not_assessed` 列出的維度不得下結論**，其中的 reason 說明為何不可評
+    （最常見是課種為 unknown——那是分類器失敗，該場可能是任何課種）。
+    此時應明說「這項無法評估」，而非自行猜測後照評。
+
+    本工具只分析實際練的內容，**不與計畫課表對照、不計算遵從度**。
+    """
+    conn = _conn(ctx)
+    resolved = dashboard_queries.resolve_athlete_id(conn, athlete_id)
+    if resolved is None:
+        return None
+    detail = dashboard_queries.get_session_detail(conn, session_id, resolved)
+    if detail is None:
+        return None
+
+    activity = conn.execute(
+        "SELECT workout_type, avg_hr_bpm FROM activities WHERE id = ?", (session_id,)
+    ).fetchone()
+    records = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT elapsed_sec, pace_sec_per_km, hr_bpm FROM activity_records "
+            "WHERE activity_id = ? ORDER BY elapsed_sec",
+            (session_id,),
+        )
+    ]
+    max_hr_bpm, resting_hr_bpm = training_load_queries.get_hr_params(conn, resolved)
+    source_row = conn.execute(
+        "SELECT max_hr_source FROM athlete_profile WHERE id = ?", (resolved,)
+    ).fetchone()
+
+    result = session_quality.assess_session(
+        dict(activity),
+        records,
+        detail.get("hr_drift"),
+        max_hr_bpm,
+        resting_hr_bpm,
+        source_row["max_hr_source"] if source_row else None,
+    )
+    result["session"] = {
+        "id": detail["id"],
+        "date": detail["date"],
+        "title": detail["title"],
+        "workout_type": detail["workout_type"],
+        "distance_km": detail["summary"]["distance_km"],
+    }
+    return _serialize(result)
 
 
 @mcp.tool()
