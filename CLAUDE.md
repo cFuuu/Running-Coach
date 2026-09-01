@@ -1,7 +1,7 @@
 # CLAUDE.md - Running Coach
 
-> **文件版本**：1.1
-> **最後更新**：2026-08-19
+> **文件版本**：1.2
+> **最後更新**：2026-09-01
 > **專案**：Running Coach
 > **簡介**：AI 跑步教練 App
 
@@ -10,6 +10,48 @@
 ## ❌ 額外禁止事項（全域未涵蓋部分）
 - **絕不** hardcode 應可設定的值 → 用設定檔／環境變數
 - **絕不**複製貼上程式碼區塊 → 抽成共用工具/函式
+
+## 🔐 憑證與資安（Garmin 帳號存取，不可妥協）
+
+> 本專案會存取 Fu 本人的 Garmin Connect 帳號。帳密外洩是本專案唯一的
+> **災難級**風險（帳號含多年健康資料，且 Garmin 帳號常與其他服務共用密碼），
+> 而它 100% 可預防。以下每一條都是硬性要求，不是建議。
+
+### 1. 帳密永不進版控、永不進程式碼
+- 帳號密碼**只**能存在於本機 `.env`（已列入 `.gitignore`），或由使用者於
+  互動式 CLI 當場輸入（用 `getpass`，不回顯）。
+- 程式碼、設定檔、測試 fixture、文件範例中**一律不得出現真實帳密**。
+- `.env.example` 只放 key 不放 value，且必須進版控供他人 setup 參考。
+
+### 2. 認證與執行解耦（防重複觸發 Garmin 反爬蟲）
+- **認證階段**：獨立的一次性 CLI，互動式登入（含 MFA），成功後把 OAuth
+  token 存到**專案目錄外**的 `~/.garminconnect/`。
+- **執行階段**：匯入器與 MCP server **只**允許讀 token，**嚴禁**執行帳密登入。
+  token 失效時應拋出「請重跑一次性認證指令」的明確錯誤，而非自動用帳密重登。
+- 理由：Garmin 的 Cloudflare 會對 `/sso/signin` 做 rate limit，自動重登會
+  把帳號推向被鎖。
+
+### 3. 憑證絕不進入 log、例外訊息、或 LLM context
+- 不得 `print`／`log` 整個 config dict、request headers、cookie jar
+  ——token 會藏在 header 裡。
+- 例外處理時不可 dump request/response 原文。
+- MCP tool 的回傳值與錯誤訊息只能有運動與生理指標，**不得含 token、cookie、
+  email、userProfileId**。
+- 這條同時涵蓋與 AI 的對話：不要把 `.env` 內容或 token 檔案讀出來貼進對話。
+
+### 4. `.gitignore` 必須涵蓋
+`.env`、`.env.*`（除 `.env.example`）、`.garminconnect/`、`*.token`、
+`session.json`、`*.session.json`。**新增任何憑證類檔案前先確認 gitignore 有蓋到。**
+
+### 5. Windows 平台注意
+`os.chmod(path, 0o700)` 在 Windows 上**幾乎是 no-op**（只影響唯讀位元，
+不設 ACL）。本專案主力環境是 Windows，故 token 目錄的保護實際依賴
+「放在使用者 profile 內」的預設隔離；若要真正限縮權限需用 `icacls`。
+**不要在文件或註解裡宣稱 `0700` 在此平台有效。**
+
+### 6. commit 前自檢
+`git status` 確認沒有 `.env`／token 檔被 track。涉及憑證的變更，
+commit 前額外掃一次 diff。
 
 ## 🐙 本專案 GitHub 設定
 **狀態**：已連接 — `origin` 指向 [cFuuu/Running-Coach](https://github.com/cFuuu/Running-Coach)。
@@ -72,7 +114,7 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 | Phase 1A/1C 歷史資料匯入＋統一資料模型 | ✅ 完成 |
 | Phase 1E FIT 解析 | ✅ 完成 |
 | Phase 1.5 本機 Dashboard | 🔵 進行中（Phase 6 行事曆檢視未開始）|
-| Phase 1B 即時同步 | ⏸️ 延後（Garmin 已封鎖自動化登入）|
+| Phase 1B 即時同步 | 🔵 可以開始（2026-09-01：`garminconnect`+`curl_cffi` 純 HTTP 路線復活，定位為匯入器）|
 | Phase 2 訓練科學規則引擎 | ⏸️ 未開始，設計已於 2026-08-18 grill 定案 |
 | Phase 3 AI Coach（★ 專案主目標）| ⏸️ 未開始 |
 

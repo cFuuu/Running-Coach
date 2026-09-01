@@ -13,7 +13,7 @@
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
-| Phase 1B 即時同步 | ⏸️ 延後 | Garmin 已封鎖自動化登入，待評估 MCP／Strava |
+| **Phase 1B 即時同步** | 🔵 **可以開始** | **2026-09-01 前提改變**：原記「Garmin 已封鎖自動化登入」已過時。`garth` 雖已 deprecated，但 `garminconnect` 0.3.11 改用 `curl_cffi` 模擬 Android app TLS 指紋重寫登入，純 HTTP 路線復活（已 probe 驗證 API 介面）。定位為**匯入器**（寫入 DB），不新增查詢型 tool。★ 先做 1B-0 可行性驗證，未過則整個 1B 停止 |
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設（2026-09-01，`@mcp.prompt("coach")`，待重啟 Claude Code 實測）**已完成；其後為對話層其餘能力／N-1 onboarding |
 
@@ -76,6 +76,11 @@
 > **實測驗證（2026-08-17）**：對 Fu 的真實匯出包完整跑過一次（`python -m src.main.python.services.garmin_import_runner`），寫入 520 筆活動、1580 筆每日 wellness、11 個指標的 `metric_coverage`。與 `output/athlete_profile.md` 已記錄的已知成績逐項比對：2025-11-23 10K 算出配速 5:12/km、avgHR 148、maxHR 159、距離 10.1089km，與手動記錄完全一致；`metric_coverage` 算出的各指標日期範圍也與先前手動盤點的結果吻合（活動 7 年、HRV 約 10 個月、Training Readiness 約 3 年）。單元測試（15 項，合成假資料，不含真實個人資料）與這次真實資料驗證分開進行，兩者都通過。
 
 > **GarminDB 評估結論（2026-08-17，草案）**：GarminDB 的 `--download` 走 Garmin Connect SSO 登入，會撞上與 garth 完全相同的封鎖——Garmin 自 2026 年 3 月起在 Cloudflare 層永久封鎖自動化 SSO 登入（`/sso/signin`、`/mobile/api/login`），瀏覽器登入不受影響。這不是「要不要接受風險」的問題，是現在整條自動化下載路徑本來就是壞的，跟已經決定不做 1B 是同一個坑。GarminDB 的 `--import` 可以純離線處理已下載的 FIT 檔進 SQLite，但**不會處理 Garmin 官方匯出包裡的 JSON**（見下方盤點），只認 FIT。
+>
+> ⚠️ **後續修正（2026-09-01）**：上段「永久封鎖」的判斷**已不成立**。該封鎖為 Cloudflare 的
+> **TLS 指紋辨識**（非 JS challenge），`python-garminconnect` 已於事後改用 `curl_cffi`
+> 模擬官方 Android app 的 TLS 指紋重寫登入流程，純 HTTP 路線因此復活。詳見下方 1B 段落。
+> 此處保留原文作為當時判斷的紀錄，**結論以 1B 為準**。
 
 > **匯出包內容盤點（2026-08-17，拿到實際檔案後）**：`input/garmin_export/` 解壓後主結構是 `DI_CONNECT/`，跟本專案相關的是 `DI-Connect-Fitness`（520 筆活動摘要 JSON，每筆 97 個欄位，含 avgHR/maxHR/power/cadence 等）、`DI-Connect-Wellness`（`healthStatusData.json` 逐日一筆，**直接含 HRV、RHR、SpO2、皮膚溫度、呼吸率**；另有 `sleepData`、`bioMetrics`、`heartRateZones` 等）、`DI-Connect-Metrics`（`TrainingReadinessDTO` 含每日 Training Readiness 分數、HRV 週均、睡眠分數、恢復時間、ACWR；`RunRacePredictions` 含 Garmin 自算的 5K/10K/半馬/全馬預測時間；還有 `EnduranceScore`、`MetricsAcuteTrainingLoad`）。另外 `DI-Connect-Uploaded-Files` 兩個 zip 裡有約 **20,778 個 FIT/GPX 檔**（遠多於 520 筆活動，代表包含逐時/逐日的原始監測 FIT，不只是單次跑步）。
 >
@@ -122,17 +127,104 @@
 
 ---
 
-**1B. 持續同步（三層備援）——延後**
-- [ ] 主力：評估/整合 [etweisberg/garmin-connect-mcp](https://github.com/etweisberg/garmin-connect-mcp)（現成 27+ 工具，Playwright 真瀏覽器繞過 Cloudflare）或參考其設計自建
-- [ ] 釐清並實作「session 過期（例行重新登入）」vs「結構性失效（需切換 Strava）」的判斷邏輯，避免小問題觸發整條備援鏈
-- [ ] 備援：Strava API（帳號已開自動同步）——註冊 Strava API App、取得 client credentials、實作 OAuth token 管理與 refresh
-- [ ] 設計來源切換後的資料去重邏輯（時間+距離+時長指紋比對，避免 Strava 補的資料跟 MCP 回補的歷史重複）
-- [ ] 單位／時區正規化層（三種來源格式不一致）
+**1B. 持續同步（Garmin 增量匯入器）——🔵 可以開始（2026-09-01 前提已改變）**
 
-**1D. 憑證與機密管理——延後（進 1B 時才需要）**
-- [ ] 本地機密儲存策略（`.env` 不進 git，或用 Windows Credential Manager）
-- [ ] 為未來可能公開專案預留「每位使用者自帶自己憑證」的設計——不可硬編碼任何 token，需有清楚的 setup 說明
-- [ ] `.gitignore` 與 `.env.example` 範本
+> **定位：這是「匯入器」，不是查詢工具。** 目標是讓 `output/running_coach.db`
+> 能增量更新到今天，資料進 DB 後，既有 8 個 MCP tools 自動就查得到最新資料。
+> **不新增任何直接查 Garmin API 的查詢型 tool**（理由見 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log)
+> 「Garmin 即時同步定位為匯入器」——會造成雙重真相、繞過信賴度標記、Phase 2 讀不到）。
+>
+> **前提變更（2026-09-01 實測查證）**：原記「Garmin 已封鎖自動化登入」**已過時**。
+> `garth` 確實於 2026-03-28 deprecated（新登入完全失效），但 `python-garminconnect`
+> 已改用 `curl_cffi` 模擬官方 Android app 的 TLS 指紋重寫登入，純 HTTP 路線復活。
+> 已驗證：PyPI `garminconnect` 最新為 **0.3.11**（requires-python ≥3.12，符合 conda `rc` 環境），
+> 依賴 `curl_cffi>=0.15.0`（最新 0.16.2）、`requests>=2.33.0`、`ua-generator>=1.0`，
+> **已完全移除 garth**。故 `requirements.txt` **不應**加入 `garth`。
+
+**1B-0. 可行性驗證（★ 阻塞後續全部，先做這個）**
+- [ ] 在 conda `rc` 安裝 `garminconnect>=0.3.11`（`curl_cffi` 為其依賴，會自動帶入）
+- [ ] 實際登入 Fu 的 Garmin 帳號成功，確認 2026 的 Cloudflare 封鎖對此帳號不生效
+- [ ] 確認 MFA（若帳號已開 2FA）互動流程可完成
+- [ ] 抓一場**已在 DB 內**的活動，與 DB 現值逐欄比對（配速／距離／avgHR／maxHR）
+      ——這是抓單位錯誤的唯一可靠方法，Phase 1A 就是這樣抓到 `CENTIMETER`／`MILLISECOND` 的坑
+- [ ] ⚠️ **驗證失敗則整個 1B 停止**，退回 Strava 備援或維持手動匯出
+
+> **已驗證的 API 介面（2026-09-01 實際 probe 0.3.11，非文件推測）**
+> - `Garmin(email, password, prompt_mfa=<callable>, return_on_mfa=False, verify_login=True, retry_attempts=3)`
+> - `client.login(tokenstore: str | None = None) -> tuple[str | None, str | None]`
+>   ——回傳 `(needs_mfa, None)` 表示需要 MFA，`(None, None)` 表示登入成功
+> - `client.resume_login(client_state: dict, mfa_code: str)`——MFA 二階段完成用
+> - `client.logout(tokenstore=None)`——清除本機 token（不會撤銷已發出的 token）
+> - token 預設存 `~/.garminconnect/garmin_tokens.json`，環境變數 `GARMINTOKENS` 可覆寫；
+>   **會自動 refresh**，refresh token 未過期前不需重新輸入帳密
+> - ⚠️ **`client.garth.dump()` 不存在**——0.3.11 已無 garth，`Garmin` 物件無 `garth` 屬性。
+>   token 持久化由 `login(tokenstore)` 自行處理，不需（也不能）手動 dump
+> - 取資料：`get_activities(start, limit)`／`get_activities_by_date(startdate, enddate, activitytype)`／
+>   `get_activity(id)`／`get_activity_splits(id)`／`get_activity_hr_in_timezones(id)`／
+>   `get_hrv_data(cdate)`／`get_hrv_data_range(start, end)`／`get_sleep_daily(start, end)`／
+>   `get_rhr_daily(start, end)`／`get_all_day_stress(cdate)`／`get_training_readiness(cdate)`／
+>   `get_body_battery(startdate, enddate)`／`get_max_metrics(cdate)`／`get_stats(cdate)`
+> - `download_activity(id, dl_fmt=ActivityDownloadFormat.ORIGINAL)` 可取原始檔（zip 內含 FIT），
+>   格式列舉為 `ORIGINAL/TCX/GPX/KML/CSV`——**無 `FIT` 成員，要用 `ORIGINAL`**。
+>   這條路可直接餵給既有 `fit_parser.py`，取得分圈與逐秒資料
+
+**1B-1. 認證（一次性 CLI，與執行階段解耦）**
+- [ ] `services/garmin_auth.py`：互動式登入 CLI，`getpass` 取密碼（不回顯）、支援 MFA
+- [ ] 成功後 token 存 `~/.garminconnect/`（**專案目錄外**）
+- [ ] ⚠️ 執行階段（匯入器／MCP）**只讀 token，嚴禁帳密登入**——token 失效時拋出
+      「請重跑一次性認證指令」的明確錯誤，**不可自動用帳密重登**
+      （Garmin 對 `/sso/signin` 有 rate limit，自動重試會把帳號推向被鎖）
+- [ ] 遵守 `CLAUDE.md` §🔐 全部六條準則
+
+**1B-2. API client 封裝**
+- [ ] `services/garmin_api_client.py`：只負責認證載入 + 抓 raw JSON，不做正規化
+- [ ] 錯誤處理：token 失效／逾時／429 rate limit／403 各自轉為明確例外
+- [ ] ⚠️ 例外訊息與 log **不得含 token、cookie、email、userProfileId**
+- [ ] rate limit 自我節制（抓取間隔、單次上限），避免觸發 Garmin 風控
+
+**1B-3. 正規化與去重（比照 `garmin_import_runner.py`）**
+- [ ] `services/garmin_sync_runner.py`：正規化 → 去重 → 寫入 DB，CLI 進入點
+- [ ] ⚠️ **不可假設 API 回傳格式等同匯出包 JSON**——匯出包用 `CENTIMETER`／`MILLISECOND`／
+      `CENTIMETERS_PER_MILLISECOND` 等非字面單位，API 很可能不同，需獨立驗證後才決定
+      能否重用 `garmin_export_parser.py` 的換算函式
+- [ ] 去重指紋：時間 + 距離 + 時長（沿用既有慣例），避免與 520 筆既有活動重複
+- [ ] 時區處理：不寫死 +8，沿用 1E 既有做法（由資料自然推導偏移）
+- [ ] 冪等：重複執行同一區間不產生重複列
+- [ ] 沿用 `athlete_source_identity` 歸戶機制（Garmin `userProfileId` → `athlete_id`）
+- [ ] 可選：`download_activity(..., ORIGINAL)` 取 FIT 後餵 `fit_parser.py`，補分圈與逐秒
+
+**1B-4. MCP 整合（只加 1 個寫入型 tool）**
+- [ ] `sync_garmin_data(days: int = 7) -> dict`，回傳 dict（**不是 str**，與既有 8 個 tool 慣例一致）
+- [ ] 標記為寫入型，docstring 比照 `generate_training_plan` 明示副作用
+- [ ] 回傳新增／略過筆數與涵蓋日期範圍；**不回傳任何憑證資訊**
+- [ ] ❌ **明確不做**：`get_training_readiness`／`get_hrv_status`／`get_recent_activities`／
+      `get_activity_details` 等查詢型 tool——這 4 個功能既有 tools 已全部涵蓋
+
+**1B-5. 端到端驗證（★ 使用者指定必做）**
+- [ ] 記錄同步前的 DB 筆數基準
+- [ ] 用手錶產生一筆新活動（或選一筆 DB 中沒有的既有活動）
+- [ ] 執行同步 → 確認該筆正確進入 `activities`，欄位值與 Garmin Connect 網頁顯示一致
+- [ ] 再執行一次同步 → 確認**不產生重複列**（冪等性）
+- [ ] 確認既有 MCP tools（`list_running_sessions` 等）查得到這筆新資料
+- [ ] 單元測試用合成假資料，**不含真實個人資料與憑證**
+
+**1B-6. 備援層（維持原規劃，優先度低於上述）**
+- [ ] 釐清「token 過期（例行重新認證）」vs「結構性失效（Garmin 改版／上 JS challenge，需切 Strava）」
+      的判斷邏輯，避免小問題觸發整條備援鏈
+- [ ] 備援：Strava API（帳號已開自動同步）——註冊 API App、client credentials、OAuth refresh
+- [ ] ⚠️ 殘留風險：`curl_cffi` 只能過 TLS 指紋檢查，若 Garmin 日後加上 JS challenge／Turnstile
+      則此路線失效，屆時才需重新評估 headless 瀏覽器方案
+
+**1D. 憑證與機密管理——🔵 隨 1B 一起做（不再延後）**
+- [ ] `.gitignore` 補上 `.env`、`.env.*`（除 `.env.example`）、`.garminconnect/`、
+      `*.token`、`session.json`、`*.session.json`
+- [ ] `.env.example` 範本（只放 key 不放 value，**進版控**供他人 setup 參考）
+- [ ] 為未來可能公開專案預留「每位使用者自帶自己憑證」的設計——不可硬編碼任何 token
+- [ ] setup 說明文件：怎麼填憑證、token 存哪、過期怎麼辦、2FA 注意事項
+- [ ] ⚠️ Windows 平台：`os.chmod(path, 0o700)` 幾乎是 no-op（只影響唯讀位元、不設 ACL）。
+      token 目錄的保護實際依賴「放在使用者 profile 內」的預設隔離；
+      **不得在文件或註解宣稱 `0700` 在此平台有效**
+- [ ] commit 前自檢：`git status` 確認無 `.env`／token 檔被 track
 
 ---
 
