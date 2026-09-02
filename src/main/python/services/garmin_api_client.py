@@ -107,6 +107,19 @@ class GarminApiClient:
         except Exception as e:
             raise _classify(e) from None
 
+    def _call_kw(self, method_name: str, **kwargs: Any) -> Any:
+        """同 `_call()`，但傳 keyword 引數。
+
+        `garminconnect` 有部分方法為 keyword-only（如 `get_lactate_threshold`），
+        用位置參數會 `TypeError`；該例外經 `_classify()` 轉為 `GarminFetchError`
+        後被呼叫端的容錯吞掉，欄位靜默落成 NULL 而不報錯——故需獨立入口。
+        """
+        self._throttle()
+        try:
+            return getattr(self._client, method_name)(**kwargs)
+        except Exception as e:
+            raise _classify(e) from None
+
     # --- 活動 ---
 
     def fetch_activities(
@@ -186,20 +199,33 @@ class GarminApiClient:
     def fetch_race_predictions(self) -> dict | None:
         """取得賽事完賽預測（5K／10K／半馬／全馬）。
 
-        ⚠️ 實測（2026-09-01）此端點**不吃日期參數**，回傳「當前」推估值，
-        非逐日序列——故不帶 cdate 引數。
+        簽章為 `(startdate, enddate, _type)` 但三者皆可省略；實測
+        （2026-09-02）不帶引數即回傳當前推估值的單筆 dict，
+        `fromCalendarDate`／`toCalendarDate` 為 None、`calendarDate`
+        為當日——故不帶引數。
         """
         return self._call("get_race_predictions")
 
     def fetch_lactate_threshold(self) -> dict | None:
-        """取得乳酸閾值心率與配速。
+        """取得乳酸閾值心率與配速，以及功能性閾值功率（FTP）。
 
-        ⚠️ 與 `fetch_race_predictions()` 同樣不吃日期參數，回傳當前值。
+        ⚠️ 此方法為 **keyword-only**（簽章 `(*, latest=True, start_date=None,
+        end_date=None, aggregation='daily')`）——傳位置參數會 `TypeError`，
+        且該例外會被 `_call()` 轉成 `GarminFetchError` 後由呼叫端吞掉，
+        欄位靜默落成 NULL。2026-09-02 實測確認，故明確以 `latest=True` 呼叫。
+
+        回傳為兩個子區塊：`speed_and_heart_rate`（配速與心率）與
+        `power`（FTP），非平坦結構。
         """
-        return self._call("get_lactate_threshold")
+        return self._call_kw("get_lactate_threshold", latest=True)
 
     def fetch_endurance_score(self, cdate: datetime.date) -> dict | None:
-        """取得耐力分數與來源貢獻拆解（P1，中長期趨勢用）。"""
+        """取得耐力分數與來源貢獻拆解（P1，中長期趨勢用）。
+
+        簽章為 `(startdate, enddate=None)`。省略 `enddate` 時回傳該日的
+        單筆快照 dict（實測 2026-09-02 含 `overallScore`／`contributors`）；
+        帶 `enddate` 則回傳區間彙整，結構不同——本專案只取單日快照。
+        """
         return self._call("get_endurance_score", cdate.isoformat())
 
     def fetch_fitness_age(self, cdate: datetime.date) -> dict | None:
@@ -207,7 +233,11 @@ class GarminApiClient:
         return self._call("get_fitnessage_data", cdate.isoformat())
 
     def fetch_hill_score(self, cdate: datetime.date) -> dict | None:
-        """取得爬坡分數（P1）。"""
+        """取得爬坡分數（P1）。
+
+        簽章與 `fetch_endurance_score()` 同為 `(startdate, enddate=None)`，
+        省略 `enddate` 回傳單日快照。
+        """
         return self._call("get_hill_score", cdate.isoformat())
 
     def fetch_daily_wellness_raw(self, cdate: datetime.date) -> dict:

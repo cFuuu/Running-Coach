@@ -19,15 +19,29 @@ from src.main.python.services.garmin_api_client import GarminApiClient, GarminFe
 
 
 class StubClient:
-    """假的底層 garminconnect client——記錄呼叫、依設定回傳值或拋例外。"""
+    """假的底層 garminconnect client——記錄呼叫、依設定回傳值或拋例外。
+
+    ⚠️ `calls` 同時記錄位置參數與 keyword 參數。初版只記 `*args`，於是
+    「該用 keyword 卻傳位置參數」這類錯誤在測試裡看不出來——`get_lactate_
+    threshold` 為 keyword-only，真實呼叫會 `TypeError`，假 client 卻照收，
+    測試全過而正式環境整欄靜默落 NULL（2026-09-02 實測發現）。
+    """
+
+    #: 底層函式庫中為 keyword-only 的方法——傳位置參數會 TypeError。
+    #: 假 client 必須複製這個限制，否則測不出呼叫方式的錯誤。
+    KEYWORD_ONLY = {"get_lactate_threshold"}
 
     def __init__(self, **methods):
         self._methods = methods
-        self.calls: list[tuple[str, tuple]] = []
+        self.calls: list[tuple[str, tuple, dict]] = []
 
     def __getattr__(self, name):
-        def _invoke(*args):
-            self.calls.append((name, args))
+        def _invoke(*args, **kwargs):
+            if name in self.KEYWORD_ONLY and args:
+                raise TypeError(
+                    f"{name}() takes 1 positional argument but {len(args) + 1} were given"
+                )
+            self.calls.append((name, args, kwargs))
             value = self._methods.get(name)
             if isinstance(value, BaseException):
                 raise value
@@ -52,7 +66,7 @@ class TestNewFetchMethods(unittest.TestCase):
         client = GarminApiClient(request_interval_sec=0, _client=stub)
         result = client.fetch_training_status(self.cdate)
         self.assertEqual(result, {"trainingStatus": 4})
-        self.assertEqual(stub.calls, [("get_training_status", ("2026-08-31",))])
+        self.assertEqual(stub.calls, [("get_training_status", ("2026-08-31",), {})])
 
     def test_fetch_race_predictions_takes_no_date_argument(self):
         """★ 審計報告 §2.4 實測：此端點不吃日期參數，回傳當前值。"""
@@ -60,31 +74,36 @@ class TestNewFetchMethods(unittest.TestCase):
         client = GarminApiClient(request_interval_sec=0, _client=stub)
         result = client.fetch_race_predictions()
         self.assertEqual(result, {"time5K": 1403})
-        self.assertEqual(stub.calls, [("get_race_predictions", ())])
+        self.assertEqual(stub.calls, [("get_race_predictions", (), {})])
 
-    def test_fetch_lactate_threshold_takes_no_date_argument(self):
-        stub = StubClient(get_lactate_threshold={"heartRate": 179.0})
+    def test_fetch_lactate_threshold_uses_keyword_only_call(self):
+        """★ 此端點為 keyword-only——傳位置參數會 TypeError 而靜默落 NULL。
+
+        `StubClient.KEYWORD_ONLY` 複製了真實函式庫的限制，故若實作改回
+        位置參數，這個測試會失敗而非誤過（2026-09-02 實測發現的缺陷）。
+        """
+        stub = StubClient(get_lactate_threshold={"speed_and_heart_rate": {}})
         client = GarminApiClient(request_interval_sec=0, _client=stub)
         client.fetch_lactate_threshold()
-        self.assertEqual(stub.calls, [("get_lactate_threshold", ())])
+        self.assertEqual(stub.calls, [("get_lactate_threshold", (), {"latest": True})])
 
     def test_fetch_endurance_score_passes_iso_date(self):
         stub = StubClient(get_endurance_score={"overallScore": 5905})
         client = GarminApiClient(request_interval_sec=0, _client=stub)
         client.fetch_endurance_score(self.cdate)
-        self.assertEqual(stub.calls, [("get_endurance_score", ("2026-08-31",))])
+        self.assertEqual(stub.calls, [("get_endurance_score", ("2026-08-31",), {})])
 
     def test_fetch_fitness_age_passes_iso_date(self):
         stub = StubClient(get_fitnessage_data={"fitnessAge": 19.8})
         client = GarminApiClient(request_interval_sec=0, _client=stub)
         client.fetch_fitness_age(self.cdate)
-        self.assertEqual(stub.calls, [("get_fitnessage_data", ("2026-08-31",))])
+        self.assertEqual(stub.calls, [("get_fitnessage_data", ("2026-08-31",), {})])
 
     def test_fetch_hill_score_passes_iso_date(self):
         stub = StubClient(get_hill_score={"overallScore": 27})
         client = GarminApiClient(request_interval_sec=0, _client=stub)
         client.fetch_hill_score(self.cdate)
-        self.assertEqual(stub.calls, [("get_hill_score", ("2026-08-31",))])
+        self.assertEqual(stub.calls, [("get_hill_score", ("2026-08-31",), {})])
 
 
 class TestFetchDailyWellnessRawIncludesTrainingStatus(unittest.TestCase):
