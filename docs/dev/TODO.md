@@ -13,11 +13,11 @@
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
 | **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始** |
-| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7、1B-8 完成並對真實資料庫實測：資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天）並預告耗時，解決固定天數的靜默資料遺漏。**1B-8 補抓分圈**——`get_activity_splits` 可取得完整逐圈明細（不需下載 FIT），同步進來的活動已能套用既有分類器補上 `workout_type`；同時修正 `external_id` 去重（原 UNIQUE 因浮點距離精度差擋不住跨來源重複）。⚠️ 逐秒資料仍需 FIT，故心率漂移／配速穩定度對同步活動仍不可評。剩 1B-6 備援層（Strava）未做。**1B-9 指標擴充：雲端部分已完成（2026-09-02）**——審計發現大量指標被 ETL 丟棄，schema／migration／正規化層／兩張新表 upsert 皆已完成，三個現存資料正確性缺陷已修（stress_avg 來源、acwr 語意、readiness 快照選取），488 項單元測試全過。待本機對真實帳號驗證欄位語意與端到端同步後才算完整完成|
+| **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7、1B-8 完成並對真實資料庫實測：資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天）並預告耗時，解決固定天數的靜默資料遺漏。**1B-8 補抓分圈**——`get_activity_splits` 可取得完整逐圈明細（不需下載 FIT），同步進來的活動已能套用既有分類器補上 `workout_type`；同時修正 `external_id` 去重（原 UNIQUE 因浮點距離精度差擋不住跨來源重複）。⚠️ 逐秒資料仍需 FIT，故心率漂移／配速穩定度對同步活動仍不可評。剩 1B-6 備援層（Strava）未做。**1B-9 指標擴充：主體完成（2026-09-02）**——審計發現大量指標被 ETL 丟棄，schema／migration／正規化層／兩張新表 upsert 皆已完成，三個現存資料正確性缺陷已修（stress_avg 來源、acwr 語意、readiness 快照選取）。**本機對真實帳號驗證抓出雲端實作的五處巢狀路徑與單位錯誤並修正**（`a07bbf6`，詳見 1B-9 段落表格），兩張新表現為零 NULL、491 項測試全過。剩歷史活動回填（271 筆跑姿／功率／溫度，資料已在 raw_data_json）與 metric_coverage 更新|
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設（2026-09-01，`@mcp.prompt("coach")`，待重啟 Claude Code 實測）**已完成；其後為對話層其餘能力／N-1 onboarding |
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **432 項**全通過。
+**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **491 項**全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
 
 **目前資料庫內容**（`output/running_coach.db`，不進版控，2026-09-01 同步後）
@@ -30,6 +30,8 @@
 | `activity_records` | 68884 | 逐秒降頻（每 10 秒）——**僅 FIT 來源**，API 同步無此資料 |
 | `metric_coverage` | 13 | 各指標實際可用起訖日 |
 | `training_plan` | 246 | Phase 2 已產生（含版本歷史，`is_active` 區分）|
+| `training_status` | 6 | 1B-9 新增：真 ACWR／急慢性負荷／熱適應，僅當日值無歷史回溯，故自 2026-08-28 起累積 |
+| `performance_metrics` | 1 | 1B-9 新增：賽事預測／乳酸閾值／FTP／耐力分數／體能年齡／爬坡分數，每次同步一筆快照 |
 
 ✅ **已可增量同步**（1B 完成）。日常更新直接跑，會自動回推到上次斷點：
 ```bash
@@ -486,29 +488,40 @@
       ——現寫「影響配速判讀」會誤導。依 N-3 查證，該欄位是**手腕體溫污染值**
       （四年間從未低於 21°C，一月台北記錄 max 29°C），不可當氣溫用
 
-> ⚠️ **`performance_metrics` 五個端點的巢狀欄位路徑未經真實帳號驗證**
-> （與已於審計時對真帳號確認過的 `training_status`／`endurance_contributors_json`
-> 不同層級的信心）。`normalize_performance_metrics()` 依 `garminconnect`
-> 慣例與審計報告文字描述做最佳推斷（例：賽事預測鍵名 `time5K`／
-> `time10K`／`timeHalfMarathon`／`timeMarathon`；乳酸閾值 `heartRate`／
-> `speed`，並相容 Garmin 歷史拼字錯誤 `hearRate`），欄位路徑錯誤時會
-> 靜默落成 NULL（不影響其他已驗證欄位），已列為下方本機驗證項目。
-
 **💻 必須在本機完成（需 token 或真實資料）**
 
-- [ ] 打真實 API 驗證正規化結果——**這是本任務真正的品質關卡**：
-  - [ ] `avgGradeAdjustedSpeed` 換算後配速是否合理（單位錯誤讀程式碼看不出來）
-  - [ ] `training_status` 的 deviceId 挑選是否真的挑到主力錶（payload 以
-        deviceId 字串為 key，須挑 `primaryTrainingDevice=True`）
-  - [ ] `AFTER_WAKEUP_RESET` 是否每天都抓得到（可能有些日子沒有此 context，
-        需確認 fallback 行為）
-  - [ ] 新端點在不同日期的空值行為（如 `get_max_metrics` 實測常回 `[]`）
-  - [ ] ⚠️ **新增**：`get_race_predictions`／`get_lactate_threshold`／
-        `get_endurance_score`／`get_fitnessage_data`／`get_hill_score`
-        五個端點的實際回傳巢狀欄位路徑與函式簽章（是否吃日期／區間）——
-        雲端實作僅依審計報告文字描述與函式庫慣例推斷，未對真實帳號驗證，
-        見上方雲端段落的警示框
-- [ ] 對 `output/running_coach.db` 實際執行一次同步，確認端到端正常
+- [x] 打真實 API 驗證正規化結果（2026-09-02，commit `a07bbf6`）——
+      **本機驗證抓出雲端實作的五處錯誤，見下方**：
+  - [x] `avgGradeAdjustedSpeed` 換算合理：8/30 那場 pace 6:14、GAP 6:14，
+        台北平地跑校正後幾乎不變，單位正確
+  - [x] `training_status` 的 deviceId 挑選正確（Forerunner 965，
+        `primaryTrainingDevice=True`）；但**外層路徑錯誤**，見下方
+  - [x] `AFTER_WAKEUP_RESET` 6/6 天全數抓到，fallback 未觸發，
+        時點落在 07:45–10:30，語意正確——缺陷 C 修正有效
+  - [x] 五個端點的真實簽章與巢狀結構已 dump 驗證
+
+**🐛 本機驗證抓出的五處錯誤（雲端 `251deaa` → 本機 `a07bbf6` 修正）**
+
+> 根因：**測試 fixture 與實作用同一套錯誤假設**，488 項測試全過卻一個都
+> 沒抓到。修正時一併補上能抓出這類錯誤的迴歸斷言（單位總和關係、
+> 合理值域、錯誤層級須取不到值、StubClient 複製 keyword-only 限制）。
+
+| # | 錯誤 | 後果 |
+|---|---|---|
+| 1 | `latestTrainingStatusData` 實際埋在 `mostRecentTrainingStatus` 下，少讀一層 | `acwr_ratio`／`acute_load`／`chronic_load`／`training_status_code`／`fitness_trend` 全 NULL——**缺陷 B 修正的關鍵欄位反而沒進來** |
+| 2 | `heatAltitudeAcclimation` 掛在 `mostRecentVO2Max` 下而非裝置節點 | 熱／高度適應三欄 NULL |
+| 3 | `get_lactate_threshold` 為 **keyword-only**，雲端傳位置參數 | `TypeError` 被 `_call()` 轉成 `GarminFetchError` 後遭容錯吞掉，三欄靜默落 NULL |
+| 4 | 乳酸閾值回傳為 `speed_and_heart_rate`／`power` 兩個子區塊，非平坦 | 同上 |
+| 5 | `hrTimeInZone_N` 單位是**秒**不是毫秒，誤套 `ms_to_sec()` | 5197 秒的 Zone 2 被壓成 5 秒——**有值但語意錯誤，比缺值更危險** |
+
+實測前 `training_status` 24 欄有 12 欄 NULL、`performance_metrics` 3 欄 NULL；
+修正後兩表皆**零 NULL**，ACWR 0.7–1.2 落在古典區間，心率區間總和佔活動
+時長 98%，乳酸閾值配速 5:58/km @179bpm 與 DB 中 avgHR 153–161 場次的
+5:44–6:19/km 相符。
+
+- [x] 對 `output/running_coach.db` 實際執行一次同步，確認端到端正常
+      （2026-09-02，6 天：活動 3、wellness 6、training_status 6、
+      performance_metrics 1）
 - [ ] 從既有 `raw_data_json` 回填 271 筆跑步活動的跑姿／功率／溫度欄位
       （資料已在，不需重打 API）
 - [ ] 回填後確認 `metric_coverage` 正確反映各新指標的可用區間
@@ -516,6 +529,9 @@
 > **⚠️ 為何本機驗證不可省**：這批變更的主要風險是**單位換算**與**巢狀結構
 > 解析**，兩者讀程式碼都看不出對錯。缺陷 A 與 B 正是這樣產生的——兩者都
 > 通過了 review 才進版控。雲端寫完不等於做完。
+> **2026-09-02 補充**：這條原則當天就再次應驗——雲端 488 項測試全過的
+> 提交，本機一驗就抓出五處錯誤。**測試通過不等於路徑正確，當 fixture
+> 與實作出自同一個推斷時尤然。**
 
 **1B-6. 備援層（維持原規劃，優先度低於上述）**
 - [ ] 釐清「token 過期（例行重新認證）」vs「結構性失效（Garmin 改版／上 JS challenge，需切 Strava）」
