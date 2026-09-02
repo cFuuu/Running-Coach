@@ -399,7 +399,8 @@ def get_session_detail(
     sql = """
         SELECT id, athlete_id, started_at, title, activity_type, workout_type, workout_type_source,
                distance_km, duration_sec, avg_pace_sec_per_km, avg_hr_bpm, max_hr_bpm,
-               avg_cadence_spm, aerobic_te, elevation_gain_m, calories, raw_data_json
+               avg_cadence_spm, aerobic_te, elevation_gain_m, calories, raw_data_json,
+               source_version
         FROM activities
         WHERE id = ?
     """
@@ -433,7 +434,10 @@ def get_session_detail(
             "elevation_gain_m": row["elevation_gain_m"],
             "calories": row["calories"],
         },
-        "hr_zones": _build_hr_zones(row["raw_data_json"]),
+        "hr_zones": _build_hr_zones(
+            row["raw_data_json"],
+            is_api=row["source_version"] == API_SYNC_SOURCE_VERSION,
+        ),
         "laps": _build_laps(conn, session_id, row["raw_data_json"]),
         "records": _build_records_block(records),
         "hr_drift": fit_parser.compute_hr_drift(records)
@@ -624,13 +628,44 @@ HR_ZONE_BELOW_FIRST = 0
 # 收不到資料），故上限訂為 5、不含 zone 6 這個裝置 padding。
 HR_ZONE_MAX = 5
 
+# `activities.source_version` 標記為此值者來自 API 同步，其 raw payload 的
+# 單位與官方匯出包不同（見 _build_hr_zones 的 docstring）。
+# ⚠️ 這裡刻意重寫字面值而不 import garmin_sync_runner.SYNC_SOURCE_VERSION：
+# 那個模組在 module level 匯入 garmin_api_client／garmin_auth，會把網路相依
+# 拖進純查詢層（FastAPI 與 MCP server 都會載入本模組）。兩邊一致性改由
+# test_dashboard_queries.test_api_sync_source_version_matches_sync_runner 強制。
+API_SYNC_SOURCE_VERSION = "api_sync"
 
-def _build_hr_zones(raw_data_json: str | None) -> dict:
-    """從 raw_data_json 取心率區間停留秒數（Garmin 匯出的 hrTimeInZone_N 欄位）。
 
-    實測欄位值單位是**毫秒**（例如某場 `hrTimeInZone_2 = 3629313`，換算 60.5 分鐘
-    與該場實際時長吻合），不是欄位名字面看起來的秒，須用 ms_to_sec() 換算，
-    不可直接當秒數使用。
+def _build_hr_zones(raw_data_json: str | None, *, is_api: bool = False) -> dict:
+    """從 raw_data_json 取心率區間停留秒數（Garmin 的 hrTimeInZone_N 欄位）。
+
+    ⚠️ **同一個欄位名在兩個來源是不同單位，必須由呼叫端告知來源**：
+
+    - **官方匯出包（`is_api=False`）是毫秒**：例如某場 `hrTimeInZone_2 = 3629313`，
+      換算 60.5 分鐘與該場實際時長吻合，須用 `ms_to_sec()` 換算。
+    - **API 同步（`is_api=True`）是秒**：與同一份 payload 的 `duration` 一致，
+      **不可**再除以 1000。
+
+    來源以 `activities.source_version == "api_sync"` 判定（見 `API_SYNC_SOURCE_VERSION`）。
+    2026-09-02 對真實資料庫全掃驗證此規則無例外：290 場有心率區間者中，7 場
+    api_sync 全為秒、283 場匯出包全為毫秒。
+
+    ⚠️ **不要改成「直接讀 `activities.hr_time_in_zone_json` 欄位」**——那個欄位
+    刻意只存 Z1~Z5、不存 Z0，而本函式的百分比分母**必須含 Z0**（見下方說明），
+    改讀該欄位會讓各區間佔比虛增，正是 2026-08-18 改版 Phase 2 修掉的那個 bug；
+    且該欄位僅涵蓋 203/529 場，退回路徑無論如何都省不掉。
+
+    **此錯誤已實際發生過**（2026-09-02 Phase 3 驗收時發現）：1B-9 修正了寫入端
+    的單位假設卻沒動讀取端，導致 API 同步的活動心率區間全被縮小 1000 倍——
+    5648 秒的長跑顯示為 5 秒。故此處的 `is_api` 不是可省略的最佳化，是正確性前提。
+
+    ⚠️ **跨來源比較百分比時的已知限制**：API payload **不含 `hrTimeInZone_0`**
+    （2026-09-02 實測 12 筆 api_sync 全數只有 Z1~Z5），故 API 來源的活動
+    `below_zone_1` 恆為 0、分母只有 Z1~Z5；匯出包來源則含 Z0 暖身時間。
+    兩者的 `pct` 分母語意因此不同，跨來源並排比較時分母差一段暖身時間。
+    這是資料可得性的限制，不是計算錯誤——**不要為了「一致」而把匯出包的 Z0
+    也排除**，那會回頭破壞既有場次的佔比正確性。
 
     全部區間都是 0 或不存在時視為沒有資料——這種活動多半根本沒戴心率帶，
     畫一張全 0 的長條圖只會誤導。
@@ -663,7 +698,7 @@ def _build_hr_zones(raw_data_json: str | None) -> dict:
         index = key[len("hrTimeInZone_") :]
         if not index.isdigit():
             continue
-        seconds = parser.ms_to_sec(value)
+        seconds = round(value) if is_api else parser.ms_to_sec(value)
         if seconds is None:
             continue
         seconds_by_zone[int(index)] = seconds

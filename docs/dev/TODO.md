@@ -12,12 +12,12 @@
 | Phase 1A 歷史資料匯入 | ✅ 完成 | 520 活動、1651 每日 wellness、13 項 metric_coverage |
 | Phase 1C 統一資料模型 | ✅ 完成 | 7 張表，含多人可用性設計 |
 | Phase 1E FIT 解析 | ✅ 完成 | 243/266 場（91%）分圈＋逐秒降頻＋自動分類 |
-| **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始**；⚠️ 2026-09-02 發現 **`hr_zones` 讀取端單位錯誤**（API 同步的 7 場心率區間值被縮小 1000 倍，同時影響 MCP 與前端圖表），未修 |
+| **Phase 1.5 Dashboard** | 🔵 **進行中** | Task A/B/C 已完成並經瀏覽器實測；改版 Phase 1~5（深色模式/心率區間修正/tooltip/自訂區間/指標自訂）已完成；**Phase 6 行事曆檢視未開始**；2026-09-02 發現並當日修正 **`hr_zones` 讀取端單位錯誤**（API 同步的 7 場心率區間值被縮小 1000 倍，同時影響 MCP 與前端圖表；改以 `source_version` 判定單位，510 項測試通過）|
 | **Phase 1B 即時同步** | ✅ **主體完成**（2026-09-01）| 1B-0～1B-5、1B-7、1B-8 完成並對真實資料庫實測：資料由 2026-08-16 推進至 **2026-09-01**；重複同步筆數不變（冪等成立）。認證與執行已解耦（`garmin_auth` 只讀 token）、MCP 新增唯一寫入型 tool `sync_garmin_data`。**1B-7 斷點自動補齊**——`days` 省略時依資料庫回推（斷點取兩表較舊者＋3 天重疊，上限 90 天）並預告耗時，解決固定天數的靜默資料遺漏。**1B-8 補抓分圈**——`get_activity_splits` 可取得完整逐圈明細（不需下載 FIT），同步進來的活動已能套用既有分類器補上 `workout_type`；同時修正 `external_id` 去重（原 UNIQUE 因浮點距離精度差擋不住跨來源重複）。⚠️ 逐秒資料仍需 FIT，故心率漂移／配速穩定度對同步活動仍不可評。剩 1B-6 備援層（Strava）未做。**1B-9 指標擴充：✅ 完成（2026-09-02）**——審計發現大量指標被 ETL 丟棄，schema／migration／正規化層／兩張新表 upsert 皆已完成，三個現存資料正確性缺陷已修（stress_avg 來源、acwr 語意、readiness 快照選取）。**本機對真實帳號驗證抓出雲端實作的五處巢狀路徑與單位錯誤並修正**（`a07bbf6`，詳見 1B-9 段落表格），兩張新表為零 NULL。歷史資料已回填（`74c4686`，504 筆活動、17 個活動類指標的 coverage）。505 項測試全過|
 | **Phase 2 規則引擎** | 🔵 **進行中** | VDOT／週期化排程器／訓練負荷（ATL/CTL/TSB）／恢復判斷邏輯／資料庫整合層皆已完成；已對 Fu 本人成功產生並寫入 16 週課表（111 天，VDOT 42.91）；N-2 外部課表實際匯入機制待 P-1（等有真實跟團格式）；`max_hr_bpm=198`（手錶顯示值，日後可用實測值校正，非阻塞） |
 | **Phase 3 AI Coach** | 🔵 **進行中** | ★ 專案主目標。MCP server 已完成，7 個唯讀 tools 已實測成功（含修復一個 SQLite 跨執行緒 bug）；`generate_training_plan` 寫入型 tool 待測；**N-6（訓練方法論）與 N-4（事實層/判斷層分工）已於 2026-08-25 grill 定案**（見 [PLAN.md §5](PLAN.md#5-訓練方法論的選擇-2026-08-25-grill-定案)／[§7](PLAN.md#7-事實層與判斷層的分工phase-3-規格依據-2026-08-25-grill-定案)）；**下一步為 N-3 科學依據**（範圍依 N-6 拆為兩批：課表結構出處 → Higdon/Daniels；生理閾值出處 → 運動生理文獻，後者與流派無關可先做），訓練品質評估（2026-09-01）與**行為約束層/教練人設**已完成——**2026-09-02 對 Fu 真實資料實跑三情境，五條行為約束逐條驗收通過**（含約束 1 實際攔截到一個錯誤數字，見 Phase 1.5 的 `hr_zones` bug），僅剩 `/coach` slash command 注入路徑待使用者親自走一次。**下一個大缺口為「課表調整」（N-7）**：主目標明列「訓練建議與**課表調整**」，但目前唯一寫入型 tool `generate_training_plan` 是整份重產，無單日／單週調整粒度，情境 C 驗收時暴露 |
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **505 項**全通過。
+**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **510 項**全通過。
 **執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
 
 **目前資料庫內容**（`output/running_coach.db`，不進版控，2026-09-01 同步後）
@@ -621,14 +621,20 @@
 - [x] 途中修正：排序操作後面板自動關閉的可用性問題（改為保持開啟）
 - [x] 併入視覺微調：同步游標標籤日期改 `MM/DD` 補零格式（不含年份，避免擁擠）＋數值粗體；X 軸刻度字體 11px→13px（已驗證 5 種寬度零重疊）；訓練日標記從短豎線改為整欄背景色帶
 
-**🐛 `hr_zones` 讀取端單位錯誤（2026-09-02 Phase 3 驗收時發現，未修）**
+**🐛 `hr_zones` 讀取端單位錯誤（2026-09-02 Phase 3 驗收時發現，✅ 當日修正）**
 
-- [ ] `get_session_detail` 回傳的心率區間對 **API 同步的活動全部錯誤**（值被縮小 1000 倍）。同一條路徑也餵給 Dashboard 前端的心率區間圖
+- [x] `get_session_detail` 回傳的心率區間對 **API 同步的活動全部錯誤**（值被縮小 1000 倍）。同一條路徑也餵給 Dashboard 前端的心率區間圖
   - **根因是兩條路徑對同一份 payload 的單位假設相反，1B-9 只修了寫入端**：
     - 寫入端 [`garmin_sync_runner._build_hr_time_in_zone_json()`](../../src/main/python/services/garmin_sync_runner.py)（1B-9 已修）正確地把 **API 的 `hrTimeInZone_N` 當秒**，存進 `activities.hr_time_in_zone_json`。實測 session 1042 該欄位為 `{"1":204,"2":5197,"3":116,"4":0,"5":0}`，總和 5517 秒 ≈ `duration_sec` 5648，正確
     - 讀取端 [`dashboard_queries._build_hr_zones()`](../../src/main/python/services/dashboard_queries.py) **不讀那個已正規化的欄位**，而是回頭重解 `raw_data_json` 並套 `ms_to_sec()`（該假設只對**官方匯出包**成立）→ 5517.4 / 1000 ≈ **5 秒**
   - **影響範圍實測**：290 場有 `hrTimeInZone`，其中 **7 場**為 API 同步（單位為秒）會被誤除 1000；其餘 283 場來自匯出包（確實是毫秒）目前正確。**壞掉的正好是最近同步、最常被問到的那幾場**，且此數字會隨每次同步增加
-  - **修法**：讀取端改吃 `activities.hr_time_in_zone_json`（已是正規化好的秒），不再重解 `raw_data_json`。⚠️ 匯出包來源的舊活動該欄位可能為 NULL，需確認回填涵蓋率或保留退回路徑
+  - **⚠️ 原訂修法被推翻（改前查證擋下）**：原本打算「讀取端改吃 `activities.hr_time_in_zone_json`」，實查後不可行——該欄位**刻意只存 Z1~Z5、不存 Z0**，而 `_build_hr_zones` 的百分比分母**必須含 Z0**（暖身時間），改讀該欄位會讓各區間佔比虛增，正是 2026-08-18 改版 Phase 2 修掉的那個 bug；且該欄位僅涵蓋 203/529 場，退回路徑無論如何省不掉
+  - **實際修法（✅ 已實作）**：修在**判斷單位**這一層而非資料來源。`_build_hr_zones(raw_data_json, *, is_api)` 新增來源旗標，由 `get_session_detail` 依該列的 `source_version == "api_sync"` 傳入；`is_api` 時直接取秒，否則維持 `ms_to_sec()`。此形狀與 `garmin_import_runner._build_backfill_hr_zones(raw, *, is_api)` 既有前例一致
+    - **判定規則已全庫驗證無例外**：290 場有心率區間者中，7 場 api_sync 全為秒、283 場匯出包全為毫秒。另 2 筆曾被誤判為異常的匯出包場次（id 214／267），實為其 zone 總和對應 `elapsedDuration`（含暫停）而非 `duration`，單位仍是毫秒
+    - **常數不 import 同步層**：`garmin_sync_runner` 在 module level 匯入 `garmin_api_client`／`garmin_auth`，會把網路相依拖進純查詢層（FastAPI 與 MCP server 都載入它）。故 `dashboard_queries.API_SYNC_SOURCE_VERSION` 重寫字面值，兩邊一致性由 `test_api_sync_source_version_matches_sync_runner` 強制
+    - **真實資料庫驗證**：session 1042 由 **5 秒 → 5517 秒**（占時長 97.7%），1043／1044 同樣恢復正常；匯出包場次數值零變動。全庫 290 場掃描後僅剩 1 筆比值異常（id 267 重訓，`duration_sec=53` 但實際經過 4170 秒，屬既有資料問題、與本修正無關）
+    - **新增 5 項單元測試**（毫秒路徑／秒路徑／Z0 仍計入分母的迴歸防護／`get_session_detail` 接線的端到端／常數一致性），全套 **510 項**通過
+  - **⚠️ 順帶查明的跨來源限制（已寫入 docstring，非缺陷）**：API payload **不含 `hrTimeInZone_0`**（12 筆 api_sync 全數只有 Z1~Z5），故 API 來源的 `below_zone_1` 恆為 0、分母只有 Z1~Z5，匯出包則含 Z0。兩者 `pct` 的分母語意不同，跨來源並排比較時需知道這件事。**不可為了「一致」而把匯出包的 Z0 也排除**——那會回頭破壞既有場次的佔比正確性
   - **教訓（已寫入 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log)／[§7.4](PLAN.md#74-錯誤事實的放大風險原-74-第-3-點--已處理)）**：正規化欄位一旦建立，下游就**不該再有第二條從 `raw_data_json` 重算的路徑**，否則單位假設會各自漂移。諷刺的是寫入端的 docstring 上個 session 已把這個失敗預言得一字不差（「若誤除以 1000 會得到總和 5 秒的荒謬值」），當時只修了自己那一側
 
 **Phase 6 — 行事曆檢視（未開始）**

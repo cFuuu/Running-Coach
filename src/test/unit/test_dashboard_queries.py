@@ -373,6 +373,85 @@ class TestSessionDetail(DashboardQueryTestCase):
         self.assertEqual(result["below_zone_1"]["seconds"], 1800)
         self.assertAlmostEqual(result["below_zone_1"]["pct"], 100.0)
 
+    def test_hr_zones_export_source_treats_values_as_milliseconds(self):
+        """官方匯出包的 hrTimeInZone_N 是毫秒，須除以 1000。"""
+        result = queries._build_hr_zones(
+            json.dumps({"hrTimeInZone_1": 203994.0, "hrTimeInZone_2": 5197439.0}),
+            is_api=False,
+        )
+        self.assertEqual(result["zones"][0]["seconds"], 204)
+        self.assertEqual(result["zones"][1]["seconds"], 5197)
+
+    def test_hr_zones_api_sync_source_treats_values_as_seconds(self):
+        """🐛 迴歸測試（2026-09-02 Phase 3 驗收時發現）：API 同步的 payload
+        單位是秒，若沿用匯出包的 ms_to_sec() 會把 8/30 那場 5648 秒的長跑
+        壓成 5 秒——實際發生過，且因不是 NULL、不拋錯而完全無聲。"""
+        result = queries._build_hr_zones(
+            json.dumps(
+                {
+                    "hrTimeInZone_1": 203.994,
+                    "hrTimeInZone_2": 5197.439,
+                    "hrTimeInZone_3": 116.002,
+                }
+            ),
+            is_api=True,
+        )
+        self.assertEqual(result["zones"][0]["seconds"], 204)
+        self.assertEqual(result["zones"][1]["seconds"], 5197)
+        self.assertEqual(result["zones"][2]["seconds"], 116)
+        self.assertEqual(result["total_seconds"], 5517)
+
+    def test_hr_zones_api_sync_still_counts_zone_0_in_denominator(self):
+        """換單位不得順手改掉分母規則：Z0 仍須計入，否則各區間佔比虛增
+        （2026-08-18 改版 Phase 2 修過的 bug，不可在此回歸）。"""
+        result = queries._build_hr_zones(
+            json.dumps({"hrTimeInZone_0": 300.0, "hrTimeInZone_2": 2700.0}),
+            is_api=True,
+        )
+        self.assertEqual(result["total_seconds"], 3000)
+        self.assertEqual(result["below_zone_1"]["seconds"], 300)
+        self.assertAlmostEqual(result["below_zone_1"]["pct"], 10.0)
+        zone2 = next(z for z in result["zones"] if z["zone"] == 2)
+        self.assertAlmostEqual(zone2["pct"], 90.0)
+
+    def test_get_session_detail_wires_is_api_from_source_version(self):
+        """端到端：`get_session_detail` 必須依該列的 source_version 決定單位。
+        單元層測對了但沒把旗標接上，正是 2026-09-02 那個 bug 的形狀——寫入端
+        修好了、讀取端沒跟上，中間沒有任何測試涵蓋這條接線。"""
+        self.conn.execute(
+            """
+            INSERT INTO activities (
+                athlete_id, source, source_version, fetched_at, external_id,
+                activity_type, title, started_at, distance_km, duration_sec,
+                raw_data_json
+            ) VALUES (?, 'garmin_export', 'api_sync', '2026-03-10T00:00:00',
+                      '99999999', 'running', '測試API同步跑',
+                      '2026-03-10T18:00:00', 15.1, 5648, ?)
+            """,
+            (
+                self.athlete_id,
+                json.dumps({"hrTimeInZone_1": 203.994, "hrTimeInZone_2": 5197.439}),
+            ),
+        )
+        self.conn.commit()
+
+        zones = self._detail("測試API同步跑")["hr_zones"]
+        self.assertTrue(zones["available"])
+        self.assertEqual(zones["zones"][1]["seconds"], 5197)
+        # 修正前這裡會是 5——與該場 5648 秒的實際時長差三個數量級
+        self.assertEqual(zones["total_seconds"], 5401)
+
+    def test_api_sync_source_version_matches_sync_runner(self):
+        """`dashboard_queries` 刻意重寫這個字面值而不 import 同步層（避免把
+        garmin_api_client／garmin_auth 的網路相依拖進純查詢層），故兩邊一致性
+        由本測試強制。同步層改了字串而這裡沒跟上時，心率區間會靜默錯 1000 倍。"""
+        from src.main.python.services import garmin_sync_runner
+
+        self.assertEqual(
+            queries.API_SYNC_SOURCE_VERSION,
+            garmin_sync_runner.SYNC_SOURCE_VERSION,
+        )
+
 
 class TestWellnessTrend(DashboardQueryTestCase):
     def test_all_thirteen_metrics_present_including_phase5_columns(self):
