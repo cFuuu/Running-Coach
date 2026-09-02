@@ -120,12 +120,6 @@ from src.main.python.services.fit_import_runner import (
     store_laps,
     update_workout_type,
 )
-# ⚠️ 只重用 ms_to_sec()：這不是「套用匯出包的單位換算係數」——hrTimeInZone_N
-# 這個特定欄位經 dashboard_queries.py 實測證實在 API 回傳裡就是毫秒（與同一
-# payload 裡 distance/duration 的公尺/秒慣例不同），是欄位本身的例外，
-# 不是本模組 docstring 警告的「誤用匯出包係數」情境。沿用同一顆已驗證過的
-# 函式，而非另外複製一份 /1000 邏輯（CLAUDE.md：禁止複製貼上程式碼區塊）。
-from src.main.python.services.garmin_export_parser import ms_to_sec
 
 # 寫入時採用的 source 值。沿用 garmin_export 的理由見模組 docstring。
 SYNC_SOURCE = "garmin_export"
@@ -224,9 +218,14 @@ _HR_ZONE_MAX = 5
 def _build_hr_time_in_zone_json(raw: dict) -> str | None:
     """從活動摘要抽出 `hrTimeInZone_1..5`，換算成秒後存為 JSON 字串。
 
-    ⚠️ 欄位值單位是**毫秒**（與同一 payload 裡 distance/duration 的
-    公尺/秒慣例不同），須用 `ms_to_sec()` 換算——見本模組頂部 import 註解
-    與 `dashboard_queries._build_hr_zones()` 的既有實測佐證。
+    ⚠️ 此 payload 的欄位值單位是**秒**，與同一 payload 的 `duration`
+    一致，**不可**套用 `ms_to_sec()`——那是官方匯出包（`dashboard_queries.
+    _build_hr_zones()` 的來源）才需要的換算。
+
+    2026-09-02 對真實帳號實測：8/30 那場 duration=5648 秒，
+    `hrTimeInZone_1..5` 總和為 5517.4（各區間 203.9／5197.4／116.0／0／0），
+    與時長相符；若誤除以 1000 會得到總和 5 秒的荒謬值——雲端實作曾因
+    沿用匯出包係數而寫錯，已修正。
 
     全部區間皆缺值或為 0 視為無心率資料，回傳 None（不存一個全 0 的 JSON，
     那會讓下游誤以為「查過了、確實是 0」而非「根本沒量到」）。
@@ -236,9 +235,7 @@ def _build_hr_time_in_zone_json(raw: dict) -> str | None:
         value = raw.get(f"{_HR_ZONE_PREFIX}{i}")
         if value is None:
             continue
-        seconds = ms_to_sec(value)
-        if seconds is not None:
-            zones[str(i)] = seconds
+        zones[str(i)] = round(value)
     if not zones or all(v == 0 for v in zones.values()):
         return None
     return json.dumps(zones, ensure_ascii=False)
@@ -496,24 +493,37 @@ def normalize_training_status(date_str: str, raw: dict | None) -> dict | None:
     非黑盒對照組），與 `daily_wellness.acwr`（Garmin 的 0–100 貢獻度分數，
     語意不同）分開存表，理由見 schema.sql 表註解。
 
-    ⚠️ 欄位巢狀路徑依審計報告 §2.1 記錄的真實帳號探測結果推導，**尚未**
-    對真實帳號重新驗證過完整結構（本機驗證清單項目）。裝置維度的資料
-    一律經 `_select_primary_device()` 挑選，見其 docstring。
+    ## 巢狀路徑（2026-09-02 對真實帳號 dump 驗證）
+
+    回傳有三個平行的頂層區塊，deviceId-keyed 的 map 各自埋在自己的區塊下：
+
+    - `mostRecentTrainingStatus.latestTrainingStatusData.<deviceId>`
+      ——訓練狀態碼、fitnessTrend，及巢狀的 `acuteTrainingLoadDTO`（真 ACWR）
+    - `mostRecentTrainingLoadBalance.metricsTrainingLoadBalanceDTOMap.<deviceId>`
+      ——月負荷三分類與平衡回饋
+    - `mostRecentVO2Max.generic`／`.heatAltitudeAcclimation`
+      ——VO2Max 與熱／高度適應，**非**裝置維度，不經 `_select_primary_device()`
+
+    裝置維度的兩個 map 一律經 `_select_primary_device()` 挑
+    `primaryTrainingDevice=True`，見其 docstring。
 
     `raw` 為 None 或空 dict 時回傳 None（不寫入空列）。
     """
     if not raw:
         return None
 
-    device = _select_primary_device(raw.get("latestTrainingStatusData"))
+    device = _select_primary_device(
+        (raw.get("mostRecentTrainingStatus") or {}).get("latestTrainingStatusData")
+    )
     load_balance = _select_primary_device(
         (raw.get("mostRecentTrainingLoadBalance") or {}).get(
             "metricsTrainingLoadBalanceDTOMap"
         )
     )
     acute_dto = device.get("acuteTrainingLoadDTO") or {}
-    heat_dto = device.get("heatAltitudeAcclimation") or {}
-    vo2max = (raw.get("mostRecentVO2Max") or {}).get("generic") or {}
+    vo2max_block = raw.get("mostRecentVO2Max") or {}
+    heat_dto = vo2max_block.get("heatAltitudeAcclimation") or {}
+    vo2max = vo2max_block.get("generic") or {}
 
     row = {
         "date": date_str,
@@ -548,13 +558,14 @@ def normalize_performance_metrics(date_str: str, raw: dict) -> dict | None:
     這些端點語意上是「當前值快照」而非逐日序列（見 schema.sql 表註解），
     `date_str` 由呼叫端傳入同步當下的日期，不是從回傳內容推導。
 
-    ⚠️ 除 `endurance_contributors_json` 的巢狀鍵名（`activityTypeId`／
-    `group`／`contribution`）已於審計時對真實帳號確認外，其餘欄位路徑
-    （賽事預測、乳酸閾值、體能年齡的巢狀結構）為依 `garminconnect`
-    慣例與審計報告文字描述的最佳推斷，**尚未**對真實帳號驗證，
-    屬本機驗證清單的額外項目（見 TODO.md 1B-9）。若真實欄位路徑不同，
-    對應欄位會落成 NULL（`data_confidence` 已要求信賴度必填，不會產生
-    「看似有值但語意錯誤」的欄位），不影響其他已驗證欄位的寫入。
+    ## 巢狀路徑（2026-09-02 對真實帳號 dump 全數驗證）
+
+    - 賽事預測：平坦結構，`time5K`／`time10K`／`timeHalfMarathon`／
+      `timeMarathon`，單位為秒
+    - 乳酸閾值：**兩個子區塊** `speed_and_heart_rate`（`speed`／`heartRate`）
+      與 `power`（`functionalThresholdPower`），非平坦結構
+    - 耐力分數／爬坡分數：平坦，各取 `overallScore`
+    - 體能年齡：平坦，`fitnessAge`／`chronologicalAge`／`achievableFitnessAge`
 
     `raw` 為 `garmin_api_client.fetch_performance_metrics_raw()` 的回傳，
     五項獨立容錯，全部為 None／空 dict 時回傳 None（不寫入空列）。
@@ -580,9 +591,17 @@ def normalize_performance_metrics(date_str: str, raw: dict) -> dict | None:
             ensure_ascii=False,
         )
 
-    # 乳酸閾值配速：speed 為公尺/秒，換算方式與 activities 的 best_pace 一致。
-    lactate_speed = lactate.get("speed")
-    lactate_pace = round(1000 / lactate_speed) if lactate_speed else None
+    # 乳酸閾值回傳為兩個子區塊，非平坦結構（2026-09-02 對真實帳號驗證）。
+    lactate_shr = lactate.get("speed_and_heart_rate") or {}
+    lactate_power = lactate.get("power") or {}
+
+    # ⚠️ 此處 `speed` 的單位是**秒/公尺**，不是 activities 慣用的公尺/秒——
+    # 直接乘 1000 得秒/公里，不可套用 `1000 / speed`。
+    # 實測 2026-09-02：speed=0.3583 → 358 秒/km（5:58/km），與 DB 中
+    # avgHR 153–161 場次的 5:44–6:19/km 相符；若用 1000/speed 會得到
+    # 2791 秒/km（46 分/km）的荒謬值。
+    lactate_speed = lactate_shr.get("speed")
+    lactate_pace = round(lactate_speed * 1000) if lactate_speed else None
 
     row = {
         "date": date_str,
@@ -590,15 +609,16 @@ def normalize_performance_metrics(date_str: str, raw: dict) -> dict | None:
         "race_predict_10k_sec": race.get("time10K"),
         "race_predict_half_sec": race.get("timeHalfMarathon"),
         "race_predict_marathon_sec": race.get("timeMarathon"),
-        # ⚠️ 依審計報告，garminconnect 函式庫在合併回傳時會處理 Garmin
-        # 原始欄位的歷史拼字錯誤 `hearRate`（缺一個 t）；究竟是改名為
-        # `heartRate` 還是原樣保留待本機驗證，故兩個鍵名都嘗試讀取。
+        # 實測 2026-09-02 為正確拼字 `heartRate`；仍保留 `hearRate` 後備，
+        # 因 Garmin 該欄位歷史上曾缺一個 t，不同帳號／韌體可能仍回舊拼字。
         "lactate_threshold_hr_bpm": _round_or_none(
-            lactate.get("heartRate") if lactate.get("heartRate") is not None
-            else lactate.get("hearRate")
+            lactate_shr.get("heartRate") if lactate_shr.get("heartRate") is not None
+            else lactate_shr.get("hearRate")
         ),
         "lactate_threshold_pace_sec_per_km": lactate_pace,
-        "functional_threshold_power": _round_or_none(lactate.get("functionalThresholdPower")),
+        "functional_threshold_power": _round_or_none(
+            lactate_power.get("functionalThresholdPower")
+        ),
         "endurance_score": _round_or_none(endurance.get("overallScore")),
         "endurance_classification": endurance.get("classification"),
         "endurance_contributors_json": contributors_json,

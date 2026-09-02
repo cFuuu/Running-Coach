@@ -925,25 +925,52 @@ class TestNormalizeActivityNewFields(unittest.TestCase):
 
 
 class TestBuildHrTimeInZoneJson(unittest.TestCase):
-    """★ hrTimeInZone_1..5：實測欄位值是毫秒，須換算成秒才存 JSON。"""
+    """★ hrTimeInZone_1..5：此 payload 的欄位值**已經是秒**，不可再換算。
 
-    def test_converts_milliseconds_to_seconds(self):
+    2026-09-02 對真實帳號實測推翻了先前「是毫秒」的假設——那是官方匯出包
+    才需要的換算。誤套 `ms_to_sec()` 會把 5197 秒壓成 5 秒。
+    """
+
+    def test_values_are_already_seconds(self):
+        """真實 payload（2026-08-30 該場，duration=5648 秒）。
+
+        區間總和 5517 秒與時長相符；若誤除以 1000 總和只剩 5 秒。
+        """
         raw = {
-            "hrTimeInZone_1": 203994.0,
-            "hrTimeInZone_2": 3629313.0,
-            "hrTimeInZone_3": 0.0,
+            "hrTimeInZone_1": 203.994,
+            "hrTimeInZone_2": 5197.439,
+            "hrTimeInZone_3": 116.002,
             "hrTimeInZone_4": 0.0,
             "hrTimeInZone_5": 0.0,
         }
         result = json.loads(runner._build_hr_time_in_zone_json(raw))
-        self.assertEqual(result["1"], 204)  # round(203994/1000)
-        self.assertEqual(result["2"], 3629)  # round(3629313/1000) ≈ 60.5 分鐘
+        self.assertEqual(result["1"], 204)
+        self.assertEqual(result["2"], 5197)
+        self.assertEqual(result["3"], 116)
+
+    def test_zone_total_matches_activity_duration(self):
+        """★ 單位迴歸守門：區間總和須與活動時長同一數量級。
+
+        這是能抓出 1000 倍單位錯誤的斷言——先前的實作通過了逐欄位測試，
+        卻在這個關係上失敗。
+        """
+        raw = {
+            "hrTimeInZone_1": 203.994,
+            "hrTimeInZone_2": 5197.439,
+            "hrTimeInZone_3": 116.002,
+            "hrTimeInZone_4": 0.0,
+            "hrTimeInZone_5": 0.0,
+        }
+        duration_sec = 5648
+        total = sum(json.loads(runner._build_hr_time_in_zone_json(raw)).values())
+        self.assertGreater(total, duration_sec * 0.5)
+        self.assertLessEqual(total, duration_sec)
 
     def test_zone_0_and_6_excluded(self):
         """Zone 0（暖身/靜止）與 Zone 6（裝置 padding）不列入，只收 1~5。"""
         raw = {
-            "hrTimeInZone_0": 50000.0,
-            "hrTimeInZone_1": 10000.0,
+            "hrTimeInZone_0": 50.0,
+            "hrTimeInZone_1": 10.0,
             "hrTimeInZone_6": 0.0,
         }
         result = json.loads(runner._build_hr_time_in_zone_json(raw))
@@ -1101,34 +1128,42 @@ class TestSelectPrimaryDevice(unittest.TestCase):
 
 
 class TestNormalizeTrainingStatus(unittest.TestCase):
-    """★ 新增：get_training_status() → training_status 表。"""
+    """★ 新增：get_training_status() → training_status 表。
+
+    fixture 結構於 2026-09-02 對真實帳號 dump 校正過：三個 deviceId-keyed
+    的 map 各自埋在自己的頂層區塊下，且 `heatAltitudeAcclimation` 掛在
+    `mostRecentVO2Max` 而非裝置節點下——初版 fixture 把兩者都放錯層級，
+    與實作的錯誤路徑「剛好對上」，因此測試全過卻抓不到 bug。
+    """
 
     def _raw(self):
         return {
-            "latestTrainingStatusData": {
-                "3453515234": {
-                    "primaryTrainingDevice": True,
-                    "trainingStatus": 4,
-                    "trainingStatusFeedbackPhrase": "MAINTAINING_2",
-                    "fitnessTrend": 2,
-                    "acuteTrainingLoadDTO": {
-                        "dailyTrainingLoadAcute": 302.0,
-                        "dailyTrainingLoadChronic": 275.0,
-                        "dailyAcuteChronicWorkloadRatio": 1.0,
-                        "minTrainingLoadChronic": 220.0,
-                        "maxTrainingLoadChronic": 412.5,
-                        "acwrStatus": "OPTIMAL",
-                    },
-                    "heatAltitudeAcclimation": {
-                        "heatAcclimationPercentage": 73,
-                        "previousHeatAcclimationPercentage": 84,
-                        "heatTrend": "DEACCLIMATIZING",
-                        "altitudeAcclimation": 0,
-                    },
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "3453515234": {
+                        "primaryTrainingDevice": True,
+                        "trainingStatus": 4,
+                        "trainingStatusFeedbackPhrase": "MAINTAINING_2",
+                        "fitnessTrend": 2,
+                        "acuteTrainingLoadDTO": {
+                            "dailyTrainingLoadAcute": 302.0,
+                            "dailyTrainingLoadChronic": 275.0,
+                            "dailyAcuteChronicWorkloadRatio": 1.0,
+                            "minTrainingLoadChronic": 220.0,
+                            "maxTrainingLoadChronic": 412.5,
+                            "acwrStatus": "OPTIMAL",
+                        },
+                    }
                 }
             },
             "mostRecentVO2Max": {
-                "generic": {"vo2MaxPreciseValue": 52.8, "calendarDate": "2026-08-30"}
+                "generic": {"vo2MaxPreciseValue": 52.8, "calendarDate": "2026-08-30"},
+                "heatAltitudeAcclimation": {
+                    "heatAcclimationPercentage": 73,
+                    "previousHeatAcclimationPercentage": 84,
+                    "heatTrend": "DEACCLIMATIZING",
+                    "altitudeAcclimation": 0,
+                },
             },
             "mostRecentTrainingLoadBalance": {
                 "metricsTrainingLoadBalanceDTOMap": {
@@ -1171,12 +1206,27 @@ class TestNormalizeTrainingStatus(unittest.TestCase):
     def test_selects_primary_device_not_first_key(self):
         """★ 結構陷阱迴歸：非 primary 的裝置排在字典前面時不可誤取。"""
         raw = self._raw()
-        raw["latestTrainingStatusData"] = {
+        primary = raw["mostRecentTrainingStatus"]["latestTrainingStatusData"]["3453515234"]
+        raw["mostRecentTrainingStatus"]["latestTrainingStatusData"] = {
             "9999999": {"primaryTrainingDevice": False, "trainingStatus": 1},
-            "3453515234": raw["latestTrainingStatusData"]["3453515234"],
+            "3453515234": primary,
         }
         row = runner.normalize_training_status("2026-08-31", raw)
         self.assertEqual(row["training_status_code"], 4)
+
+    def test_wrong_nesting_level_yields_nothing(self):
+        """★ 迴歸守門：把 map 放在頂層（初版實作預期的錯誤層級）應取不到值。
+
+        這個斷言正是初版缺少的——它讓「路徑少一層」這類錯誤在測試階段
+        就現形，而不是等到對真實帳號同步後才發現整欄 NULL。
+        """
+        raw = self._raw()
+        raw["latestTrainingStatusData"] = raw["mostRecentTrainingStatus"].pop(
+            "latestTrainingStatusData"
+        )
+        row = runner.normalize_training_status("2026-08-31", raw)
+        self.assertIsNone(row["training_status_code"])
+        self.assertIsNone(row["acwr_ratio"])
 
     def test_none_raw_returns_none(self):
         self.assertIsNone(runner.normalize_training_status("2026-08-31", None))
@@ -1194,9 +1244,11 @@ class TestNormalizePerformanceMetrics(unittest.TestCase):
                 "time5K": 1403, "time10K": 2994,
                 "timeHalfMarathon": 6796, "timeMarathon": 11565,
             },
+            # 真實結構為兩個子區塊（2026-09-02 dump 校正）：配速與心率在
+            # speed_and_heart_rate，FTP 在 power。初版 fixture 誤作平坦結構。
             "lactate_threshold": {
-                "heartRate": 179.0, "speed": 3.58,
-                "functionalThresholdPower": 245.0,
+                "speed_and_heart_rate": {"heartRate": 179.0, "speed": 0.3583},
+                "power": {"functionalThresholdPower": 372.0},
             },
             "endurance_score": {
                 "overallScore": 5905,
@@ -1223,17 +1275,36 @@ class TestNormalizePerformanceMetrics(unittest.TestCase):
         self.assertEqual(row["race_predict_marathon_sec"], 11565)
 
     def test_maps_lactate_threshold_and_converts_speed_to_pace(self):
+        """★ `speed` 單位是秒/公尺，乘 1000 得秒/公里——不是 1000/speed。
+
+        實測 0.3583 → 358 秒/km（5:58/km），與 DB 中 avgHR 153–161 場次的
+        5:44–6:19/km 相符。初版用 1000/speed 會得到 2791 秒/km（46 分/km）。
+        """
         row = runner.normalize_performance_metrics("2026-09-01", self._raw())
         self.assertEqual(row["lactate_threshold_hr_bpm"], 179)
-        # 1000 / 3.58 m/s ≈ 279 s/km
-        self.assertEqual(row["lactate_threshold_pace_sec_per_km"], 279)
-        self.assertEqual(row["functional_threshold_power"], 245)
+        self.assertEqual(row["lactate_threshold_pace_sec_per_km"], 358)
+        self.assertEqual(row["functional_threshold_power"], 372)
+
+    def test_lactate_pace_is_in_plausible_running_range(self):
+        """★ 單位迴歸守門：閾值配速須落在人類跑步的合理區間。
+
+        能抓出方向顛倒的換算——這是初版缺少的斷言。
+        """
+        pace = runner.normalize_performance_metrics("2026-09-01", self._raw())[
+            "lactate_threshold_pace_sec_per_km"
+        ]
+        self.assertGreater(pace, 150)   # 快於 2:30/km 不可能
+        self.assertLess(pace, 600)      # 慢於 10:00/km 不是閾值配速
 
     def test_lactate_hr_falls_back_to_misspelled_key(self):
         """⚠️ Garmin 歷史拼字錯誤 hearRate（缺一個 t），見 fetch_lactate_threshold docstring。"""
         row = runner.normalize_performance_metrics(
             "2026-09-01",
-            self._raw(lactate_threshold={"hearRate": 179.0, "speed": 3.58}),
+            self._raw(
+                lactate_threshold={
+                    "speed_and_heart_rate": {"hearRate": 179.0, "speed": 0.3583}
+                }
+            ),
         )
         self.assertEqual(row["lactate_threshold_hr_bpm"], 179)
 
@@ -1288,17 +1359,20 @@ class TestSyncWritesTrainingStatusAndPerformanceMetrics(unittest.TestCase):
         self.conn.close()
 
     def _training_status_raw(self):
+        """真實結構：deviceId-keyed 的 map 埋在 `mostRecentTrainingStatus` 下。"""
         return {
-            "latestTrainingStatusData": {
-                "111": {
-                    "primaryTrainingDevice": True,
-                    "trainingStatus": 4,
-                    "trainingStatusFeedbackPhrase": "MAINTAINING_2",
-                    "acuteTrainingLoadDTO": {
-                        "dailyTrainingLoadAcute": 302.0,
-                        "dailyTrainingLoadChronic": 275.0,
-                        "dailyAcuteChronicWorkloadRatio": 1.0,
-                    },
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "111": {
+                        "primaryTrainingDevice": True,
+                        "trainingStatus": 4,
+                        "trainingStatusFeedbackPhrase": "MAINTAINING_2",
+                        "acuteTrainingLoadDTO": {
+                            "dailyTrainingLoadAcute": 302.0,
+                            "dailyTrainingLoadChronic": 275.0,
+                            "dailyAcuteChronicWorkloadRatio": 1.0,
+                        },
+                    }
                 }
             }
         }
@@ -1338,7 +1412,7 @@ class TestSyncWritesTrainingStatusAndPerformanceMetrics(unittest.TestCase):
     def test_performance_metrics_written_once_per_sync(self):
         performance = {
             "race_predictions": {"time5K": 1403},
-            "lactate_threshold": {"heartRate": 179.0},
+            "lactate_threshold": {"speed_and_heart_rate": {"heartRate": 179.0}},
         }
         result = runner.sync(
             self.conn, 1, days=1,
