@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path
 
 from src.main.python.models.db import get_connection
+from src.main.python.services.activity_types import PACE_COMPARABLE_RUNNING_TYPES
 from src.main.python.services import fit_parser
 from src.main.python.services.workout_classifier import classify_workout
 
@@ -56,11 +57,11 @@ DEFAULT_SAMPLE_EVERY_SEC = 10
 # 計算「近期平均」時回看的活動筆數，供訓練類型判定做相對比較
 RECENT_WINDOW = 20
 
-# 計算「近期平均距離/配速」基準時，視為同一類活動的 DB activity_type 集合
-# （outdoor/treadmill/track running 互相可比較配速）。這是分類邏輯的參數，
-# 不是匯入邏輯的一部分——之後若對其他運動套用分類，呼叫端應傳入對應的集合，
-# 而不是在這裡加更多寫死的運動類型。
-DEFAULT_COMPARISON_ACTIVITY_TYPES = frozenset({"running", "treadmill_running", "track_running"})
+# 計算「近期平均距離/配速」基準時，視為同一類活動的 DB activity_type 集合。
+# 這是分類邏輯的參數，不是匯入邏輯的一部分——之後若對其他運動套用分類，
+# 呼叫端應傳入對應的集合，而不是在這裡加更多寫死的運動類型。
+# 定義見 activity_types.PACE_COMPARABLE_RUNNING_TYPES（刻意不含 trail_running）。
+DEFAULT_COMPARISON_ACTIVITY_TYPES = PACE_COMPARABLE_RUNNING_TYPES
 
 
 def find_uploaded_file_zips(base_dir: Path) -> list[Path]:
