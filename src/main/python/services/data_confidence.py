@@ -53,6 +53,14 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
         "這不是『未知的課種』而是分類器失敗——它可能是任何課種，"
         "拿 easy 的標準評一場其實是間歇的課會得到完全錯誤的結論",
     ),
+    "plan_match_inferred": (
+        "low",
+        "這場活動與計畫課表的對應關係是**推論的**，不是明確連結——"
+        "依據只有「同一天」與「運動類型相容」。目前 training_plan 沒有任何一列"
+        "填了 linked_activity_id，故所有對應皆為此種推論。若當天實際做的與課表"
+        "無關（臨時改課、補跑別的內容），這個對應就是錯的，據此判斷「有沒有照表操課」"
+        "會得到錯誤結論",
+    ),
     "garmin_blackbox": (
         "unusable",
         "此為 Garmin（Firstbeat）黑盒演算法衍生值，公式未公開、無法標出處，"

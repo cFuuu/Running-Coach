@@ -24,6 +24,8 @@ import sqlite3
 from typing import Any
 
 from src.main.python.services import fit_parser
+from src.main.python.services import plan_reconciliation
+from src.main.python.services.activity_types import RUNNING_ACTIVITY_TYPES
 from src.main.python.services import garmin_export_parser as parser
 from . import data_confidence
 
@@ -44,9 +46,6 @@ DEFAULT_RANGE = "30d"
 # 零改動就能支援自訂區間，不必動路由層簽章與前端每個呼叫點。
 CUSTOM_RANGE_PREFIX = "custom:"
 
-# 視為「跑步類」的 activity_type。跟 fit_import_runner 的比較集合一樣，
-# 這是可調整的參數而非寫死的假設——之後要把其他運動也納入單場分析時擴充這裡即可。
-RUNNING_ACTIVITY_TYPES: tuple[str, ...] = ("running", "treadmill_running", "track_running", "trail_running")
 
 # `/api/wellness-trend` 要回傳的指標定義，唯一真實來源——同時用來組 SQL
 # 欄位清單（見 get_wellness_trend 的 columns）與回給前端的顯示中繼資料
@@ -343,7 +342,9 @@ def list_sessions(
     if resolved is None:
         return {**window, "sessions": []}
 
-    type_placeholders = ",".join("?" for _ in RUNNING_ACTIVITY_TYPES)
+    # sorted() 讓 SQL 參數順序穩定（來源是 frozenset，迭代順序不保證）
+    running_types = sorted(RUNNING_ACTIVITY_TYPES)
+    type_placeholders = ",".join("?" for _ in running_types)
     sql = f"""
         SELECT id, started_at, title, activity_type, workout_type, workout_type_source,
                distance_km, duration_sec, avg_pace_sec_per_km, avg_hr_bpm, max_hr_bpm,
@@ -353,7 +354,7 @@ def list_sessions(
           AND activity_type IN ({type_placeholders})
           AND date(started_at) <= ?
     """
-    params: list[Any] = [resolved, *RUNNING_ACTIVITY_TYPES, window["end_date"]]
+    params: list[Any] = [resolved, *running_types, window["end_date"]]
     if window["start_date"]:
         sql += " AND date(started_at) >= ?"
         params.append(window["start_date"])
@@ -422,7 +423,15 @@ def get_session_detail(
         "activity_type": row["activity_type"],
         "workout_type": row["workout_type"],
         "workout_type_source": row["workout_type_source"],
-        "planned": _fetch_planned(conn, row["athlete_id"], row["started_at"], session_id),
+        **_planned_fields(
+            _fetch_planned(
+                conn,
+                row["athlete_id"],
+                row["started_at"],
+                session_id,
+                row["activity_type"],
+            )
+        ),
         "summary": {
             "distance_km": row["distance_km"],
             "duration_sec": row["duration_sec"],
@@ -476,30 +485,79 @@ def _build_assessability(row: sqlite3.Row) -> dict:
     }
 
 
+def _planned_fields(fetched: tuple[dict | None, dict]) -> dict:
+    """把 `_fetch_planned` 的回傳攤平成 session detail 的兩個欄位。"""
+    planned, match = fetched
+    return {"planned": planned, "planned_match": match}
+
+
 def _fetch_planned(
-    conn: sqlite3.Connection, athlete_id: int, started_at: str | None, session_id: int
-) -> dict | None:
-    """找出這場活動對應的計畫課表：先看直接連結，再退回同一天的計畫。"""
-    row = conn.execute(
-        "SELECT workout_type, planned_distance_km, planned_pace_sec_per_km, notes "
-        "FROM training_plan WHERE linked_activity_id = ? LIMIT 1",
-        (session_id,),
-    ).fetchone()
-    if row is None and started_at:
-        row = conn.execute(
-            "SELECT workout_type, planned_distance_km, planned_pace_sec_per_km, notes "
-            "FROM training_plan WHERE athlete_id = ? AND planned_date = ? "
-            "ORDER BY id LIMIT 1",
-            (athlete_id, started_at[:10]),
-        ).fetchone()
-    if row is None:
-        return None
-    return {
-        "workout_type": row["workout_type"],
-        "planned_distance_km": row["planned_distance_km"],
-        "planned_pace_sec_per_km": row["planned_pace_sec_per_km"],
-        "notes": row["notes"],
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    started_at: str | None,
+    session_id: int,
+    activity_type: str | None,
+) -> tuple[dict | None, dict]:
+    """找出這場活動對應的計畫課表。
+
+    回傳 `(planned, planned_match)`：
+
+    - `planned`：配對成功時的課表內容；**歧義或無對應時為 None**。
+      依 §7.3 硬規則，寧可不輸出，也不給一個可能配錯的計畫。
+      成功時附 `confidence`（推論而來的對應標記為 low，見
+      `data_confidence.KNOWN_BIASES["plan_match_inferred"]`）。
+    - `planned_match`：**永遠**回傳，說明配對結果與原因。歧義時
+      `state == "ambiguous"`，讓判斷層知道「當天有課表但無法確定是這場執行的」，
+      而不是誤以為當天根本沒排課。
+
+    配對規則見 `plan_reconciliation` 模組；本函式只負責取資料與包裝。
+    """
+    empty_match = {"state": "none", "method": None, "reason": "no_activity_date"}
+    if not started_at:
+        return None, empty_match
+
+    plan_date = started_at[:10]
+    plan_rows = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT id, workout_type, planned_distance_km, planned_pace_sec_per_km, "
+            "notes, linked_activity_id FROM training_plan "
+            "WHERE athlete_id = ? AND planned_date = ? AND is_active = 1 ORDER BY id",
+            (athlete_id, plan_date),
+        )
+    ]
+    same_day = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT id, activity_type FROM activities "
+            "WHERE athlete_id = ? AND date(started_at) = ?",
+            (athlete_id, plan_date),
+        )
+    ]
+    result = plan_reconciliation.match_activity_to_plan(
+        {"id": session_id, "activity_type": activity_type}, plan_rows, same_day
+    )
+    match_meta = {
+        "state": result["state"],
+        "method": result["method"],
+        "reason": result["reason"],
     }
+    plan = result["plan"]
+    if plan is None:
+        return None, match_meta
+
+    bias_codes = ["plan_match_inferred"] if result["state"] == "inferred" else []
+    payload = {
+        "workout_type": plan["workout_type"],
+        "planned_distance_km": plan["planned_distance_km"],
+        "planned_pace_sec_per_km": plan["planned_pace_sec_per_km"],
+        "notes": plan["notes"],
+    }
+    payload["confidence"] = {
+        "level": data_confidence.combine_level(bias_codes),
+        "biases": [data_confidence.describe_bias(c) for c in bias_codes],
+    }
+    return payload, match_meta
 
 
 def _fetch_records(conn: sqlite3.Connection, session_id: int) -> list[dict]:

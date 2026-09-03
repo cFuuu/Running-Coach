@@ -239,7 +239,59 @@ class TestSessionDetail(DashboardQueryTestCase):
         self.assertEqual(blocked[0]["bias_code"], "workout_type_unknown")
 
     def test_planned_is_none_when_no_plan_that_day(self):
-        self.assertIsNone(self._detail("測試手動分圈跑")["planned"])
+        detail = self._detail("測試手動分圈跑")
+        self.assertIsNone(detail["planned"])
+        self.assertEqual(detail["planned_match"]["state"], "none")
+
+    def test_inferred_plan_carries_low_confidence(self):
+        """推論而來的計畫對應必須帶信賴度標記（PLAN.md §7.3）——
+        目前 linked_activity_id 全為 NULL，故所有對應都是推論的。
+        """
+        detail = self._detail("測試晨跑")
+        self.assertEqual(detail["planned_match"]["state"], "inferred")
+        self.assertEqual(detail["planned_match"]["method"], "date_and_sport")
+        self.assertEqual(detail["planned"]["confidence"]["level"], "low")
+        codes = [b["code"] for b in detail["planned"]["confidence"]["biases"]]
+        self.assertIn("plan_match_inferred", codes)
+
+    def test_incompatible_activity_type_gets_no_plan(self):
+        """走路那場不得配到當天的跑步課表——舊邏輯只比日期會配上去。"""
+        session_id = self._detail("測試晨跑")["id"]
+        self.conn.execute(
+            "UPDATE activities SET activity_type = 'walking' WHERE id = ?", (session_id,)
+        )
+        detail = queries.get_session_detail(self.conn, session_id)
+        self.assertIsNone(detail["planned"])
+        self.assertEqual(detail["planned_match"]["reason"], "no_compatible_plan")
+
+    def test_two_runs_one_plan_reports_ambiguous_not_a_guess(self):
+        """同日兩場跑步搶一份課表時回報 ambiguous，而非任選一場宣稱執行了它。"""
+        detail = self._detail("測試晨跑")
+        session_id = detail["id"]
+        row = self.conn.execute(
+            "SELECT athlete_id, started_at, activity_type FROM activities WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        self.conn.execute(
+            "INSERT INTO activities (athlete_id, source, source_version, fetched_at, "
+            "activity_type, title, started_at, distance_km, duration_sec) "
+            "VALUES (?, 'garmin_export', 'test', '2026-03-10T00:00:00', ?, ?, ?, ?, ?)",
+            (
+                row["athlete_id"],
+                row["activity_type"],
+                "同日第二場跑步",
+                # 同一天、不同時間；日期相同才會構成搶同一份課表
+                row["started_at"][:10] + "T19:30:00",
+                5.0,
+                1800,
+            ),
+        )
+        detail = queries.get_session_detail(self.conn, session_id)
+        self.assertIsNone(detail["planned"])
+        self.assertEqual(detail["planned_match"]["state"], "ambiguous")
+        self.assertEqual(
+            detail["planned_match"]["reason"], "multiple_activities_for_one_plan"
+        )
 
     # --- 分圈來源優先序 ---
 

@@ -35,14 +35,12 @@ from typing import Any
 
 # --- 可調閾值（集中管理，勿散落於邏輯中）---
 
-# 視為「跑步類」的 activity_type。跟 dashboard_queries.py 的 RUNNING_ACTIVITY_TYPES
-# 同一慣例——可調整的參數而非寫死的假設，之後要納入其他跑步子類型時擴充這裡即可。
-RUNNING_ACTIVITY_TYPES: frozenset[str] = frozenset(
-    {"running", "treadmill_running", "track_running", "trail_running"}
+# 跑步類／重訓類活動的定義集中於 activity_types.py（單一真實來源）。
+# 此處 re-export 供既有呼叫端（如 training_load_queries）沿用原本的 import 路徑。
+from src.main.python.services.activity_types import (  # noqa: E402
+    RUNNING_ACTIVITY_TYPES,
+    STRENGTH_ACTIVITY_TYPES,
 )
-
-# 視為「重訓類」的 activity_type。同上，可調整參數。
-STRENGTH_ACTIVITY_TYPES: frozenset[str] = frozenset({"strength_training"})
 
 # 重訓完全無心率資料時的固定保守估計強度（% HRR）。
 # 50% HRR 對應一般認知中「輕度～中度」的體能消耗強度，作為缺乏實測時的保守下界，
