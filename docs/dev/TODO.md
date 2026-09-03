@@ -768,14 +768,15 @@
 - [ ] 建立評估回饋迴圈：AI 建議 → 實際執行 → 下次分析納入偏差比對
   - ⚠️ **2026-09-02 判定此項目前無法開工**：前提是「建議」有被記錄下來，而目前建議只存在於對話中，關掉視窗即消失 → 已獨立為 **N-8**，須先規劃
 
-- [ ] **★ 計畫↔實際配對層（2026-09-03 盤點外部專案時發現，⚠️ 這是既有缺陷而非新功能）**：教練看到的「這場活動對應的計畫」目前是一個**無防護的猜測**，且沒有任何信賴度標記——與 §7.3 三欄位契約直接衝突。
+- [x] **★ 計畫↔實際配對層 A1/A2 已完成（2026-09-03；B 段仍待 N-7 grill）**：教練看到的「這場活動對應的計畫」目前是一個**無防護的猜測**，且沒有任何信賴度標記——與 §7.3 三欄位契約直接衝突。
   - **F1 `linked_activity_id` 是死欄位**：[`schema.sql`](../../src/main/python/models/schema.sql) 有此欄、[`dashboard_queries.py`](../../src/main/python/services/dashboard_queries.py) 的 `_fetch_planned()` 會讀它，但**全專案無任何一行寫入**。實測 `training_plan` 246 筆中 `linked_activity_id IS NOT NULL` 為 **0 筆**，故第一條 query 永遠 miss、永遠掉到 fallback。
   - **F2 fallback 無防護**：fallback 為「同一天 + `ORDER BY id LIMIT 1`」，**不過濾 `activity_type`**、不檢查該課表是否已被同日其他活動認領、歧義時直接取第一筆。實測 **65 天有多場活動**，最常見組合為 `walking, running` 與 `walking, strength_training`——走路那場查 session detail 會拿到當天的跑步課表當成「這場的計畫」。
   - **影響範圍已查證**：`planned` 進入 MCP `get_session_detail` 與 Dashboard session detail（教練會直接讀到）；**未**進入 `assess_session_quality`（[`server.py`](../../src/main/python/mcp/server.py) 的品質評估未使用 `detail["planned"]`），故不污染評分，但污染教練敘述。
   - **F3 脫節偵測為零**：生效課表 2026-09-01 起，9/2 排 tempo 4.9km 而當天 0 場活動——**課表第二天就漏了且無人偵測**。此即 N-7 記載的「課表已與現實脫節」，現有具體實例。
-  - **A1 抽出運動類型家族常數**：跑步類型集合現定義於三處。⚠️ **初判「三處不一致」是誤讀**——[`fit_import_runner.py`](../../src/main/python/services/fit_import_runner.py) 的 `DEFAULT_COMPARISON_ACTIVITY_TYPES` 刻意不含 `trail_running`，其註解寫明用途是「配速**可比較**」，而 trail 因地形配速本就不可比，**這是正確的第三種語意、不是缺漏**。真正重複的是 [`dashboard_queries.py`](../../src/main/python/services/dashboard_queries.py) 與 [`training_load.py`](../../src/main/python/services/training_load.py) 的兩份完全相同定義。故 A1 為：建立單一模組同時定義「跑步家族」與「配速可比較的跑步」兩個具名集合，讓語意差異顯性化，而非把它們合併成一個。
-  - **A2 `_fetch_planned()` 改為明確配對器**：精確配對（`linked_activity_id`）→ 啟發式（同日 **+ 運動類型相符** + 該課表未被同日其他活動認領）→ 多候選回 `ambiguous` **不選**；課表日 ≥ 今天無活動為 `planned_future`、< 今天為 `skipped`。每筆帶 `match_method`／`match_confidence`，接上既有 [`data_confidence.py`](../../src/main/python/services/data_confidence.py)。**純函式、不寫入 DB**。
+  - [x] **A1 抽出運動類型家族常數（2026-09-03 完成，commit `37e3b5c`）**：跑步類型集合現定義於三處。⚠️ **初判「三處不一致」是誤讀**——[`fit_import_runner.py`](../../src/main/python/services/fit_import_runner.py) 的 `DEFAULT_COMPARISON_ACTIVITY_TYPES` 刻意不含 `trail_running`，其註解寫明用途是「配速**可比較**」，而 trail 因地形配速本就不可比，**這是正確的第三種語意、不是缺漏**。真正重複的是 [`dashboard_queries.py`](../../src/main/python/services/dashboard_queries.py) 與 [`training_load.py`](../../src/main/python/services/training_load.py) 的兩份完全相同定義。故 A1 為：建立單一模組同時定義「跑步家族」與「配速可比較的跑步」兩個具名集合，讓語意差異顯性化，而非把它們合併成一個。
+  - [x] **A2 `_fetch_planned()` 改為明確配對器（2026-09-03 完成，commit `37e3b5c`）**：精確配對（`linked_activity_id`）→ 啟發式（同日 **+ 運動類型相符** + 該課表未被同日其他活動認領）→ 多候選回 `ambiguous` **不選**；課表日 ≥ 今天無活動為 `planned_future`、< 今天為 `skipped`。每筆帶 `match_method`／`match_confidence`，接上既有 [`data_confidence.py`](../../src/main/python/services/data_confidence.py)。**純函式、不寫入 DB**。
   - **⚠️ 刻意不做（屬 N-7 爭點，不可先斬）**：不落地 `linked_activity_id`（爭點②版本化）、不定脫節偵測門檻（出處回到 N-3）、不推課表上手錶（爭點①粒度）。A1/A2 只把「猜的」標記成「猜的」，不改課表、不落地決策，故不預先決定 N-7 任何爭點；做完反而能提供真實配對率與歧義率供 grill 使用。
+  - **完成後的實測（2026-09-03）**：對真實資料庫比對舊新邏輯，與課表日期重疊的活動僅 1 場（生效課表 9/1 才開始）——activity 1080（走路）舊邏輯回報「計畫是 rest」，新邏輯回報 `no_compatible_plan`。**樣本數為 1，非統計證據**，但該案例正是 F2 的典型形狀。531 項單元測試全過；啟動 API 實查 session 1042／1080 確認 `planned_match` 正確透出。
   - **形狀出處**：[`ching-kuo/garmin-py`](https://github.com/ching-kuo/garmin-py)（MIT）的 `services/reconciliation.py` 狀態機與 `metrics/registry.py` 的 sport family 常數。**只取形狀不取程式碼**；其 metric registry 全面重構已評估後不採用（本專案 `normalize_activity()` 已是單一函式且註解記載得來不易的單位事實，重構風險大於收益）。
 
 ## Phase 4 — 之後可做（非 MVP）
