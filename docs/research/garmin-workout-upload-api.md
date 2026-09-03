@@ -2,7 +2,9 @@
 
 > **建立日期**：2026-09-03
 > **調查目的**：為未來「把 Phase 2 產生的課表推上手錶」保留 API 形狀與 enum 對照，避免屆時從零逆向。
-> **資料來源**：閱讀第三方公開 repo [`wenchi0920/garmin-tools-kit`](https://github.com/wenchi0920/garmin-tools-kit) 的原始碼（`client/workout_client.py`、`client/workout_parser.py`）。
+> **資料來源**：閱讀兩個第三方公開 repo 的原始碼——
+> [`wenchi0920/garmin-tools-kit`](https://github.com/wenchi0920/garmin-tools-kit)（無 LICENSE，enum 數字 ID 出處）與
+> [`ching-kuo/garmin-py`](https://github.com/ching-kuo/garmin-py)（MIT，2026-09-03 補入，端點補完與修正來源）。
 > **範圍限制**：本文**只**記錄「課表寫入 Garmin」這條路徑。既有的活動／健康資料**讀取**已由 `garminconnect` 實作，不在本文範圍。
 >
 > ## ⚠️ 信賴度警語（讀之前必看）
@@ -37,12 +39,22 @@
 | 列出課表 | GET | `/workout-service/workouts` | query: `start=0&limit=100`（有分頁，未確認上限） |
 | 取單一課表 | GET | `/workout-service/workout/{workoutId}` | |
 | 建立課表 | POST | `/workout-service/workout` | body 為課表 JSON，回傳含 `workoutId` |
-| 刪除課表 | DELETE | `/workout-service/workout/{workoutId}` | 該 repo 未讀 response body |
-| 排入行事曆 | POST | `/workout-service/schedule/{workoutId}` | body `{"date": "YYYY-MM-DD"}` |
+| **更新課表** | **PUT** | `/workout-service/workout/{workoutId}` | **2026-09-03 由第二來源補上**，見下方修正 |
+| 刪除課表 | DELETE | `/workout-service/workout/{workoutId}` | |
+| 排入行事曆 | POST | `/workout-service/schedule/{workoutId}` | body `{"date": "YYYY-MM-DD"}`，回傳含 `workoutScheduleId` |
+| **取消排程** | **DELETE** | `/workout-service/schedule/{workoutScheduleId}` | ⚠️ 參數是 `workoutScheduleId`，**不是** `workoutId`；課表本身保留 |
+| **讀行事曆** | GET | `/calendar-service/year/{y}/month/{m}/day/{d}/start/1` | ⚠️ `month` 是 **0-based**（一月=0）；回傳 `calendarItems`，一次一週 |
 
 > **注意「建立」與「排程」是兩步**：上傳只是把課表存進帳號的課表庫，
-> 要出現在手錶當日課表還得再呼叫一次 schedule。這影響 N-7「課表調整」的粒度設計——
-> 改一天的課表可能是「刪 + 建 + 重排」三個請求，不是一個 PATCH。
+> 要出現在手錶當日課表還得再呼叫一次 schedule。
+>
+> **🔧 修正（2026-09-03，第二來源）**：本文初版寫「改一天課表 = 刪＋建＋重排三個請求，
+> 沒有 PATCH」，**這是錯的**。[`ching-kuo/garmin-py`](https://github.com/ching-kuo/garmin-py)
+> （MIT，同樣建構於 `garminconnect`）明確實作了 `PUT /workout-service/workout/{id}`
+> 就地更新，以及 `DELETE /workout-service/schedule/{scheduleId}` 單獨取消排程。
+> 所以「改內容不動日期」只需一個 PUT；「改日期不動內容」只需 unschedule + schedule。
+> 錯誤來源是初版只讀了一個 repo，而那個 repo 沒實作 update ——
+> **單一來源的「沒有」不能推論成協定上的「不存在」**，這正是本文警語要防的事。
 
 ---
 
