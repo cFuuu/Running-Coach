@@ -340,6 +340,16 @@ CREATE TABLE training_status (
 
 ## 6. 待 Fu 決策事項
 
+> **✅ 本節三項已於 2026-09-02 全數定案並實作完成，保留原文作為當時的決策紀錄。**
+> ①**採納範圍**：採**方案 A′**（P0+P1 全部入庫，分析邏輯後續分階段加入）。
+> ②**acute/chronic load 與真 ACWR**：視為**可判讀**，存於 `training_status.acwr_ratio`；
+> `data_confidence` 的 `acwr_not_a_ratio` 標記已撤下。
+> ③**Readiness 快照**：取 `AFTER_WAKEUP_RESET`，找不到時退回 `[0]` 但誠實記錄
+> 實際 `inputContext`／`timestampLocal`（實測 6/6 天全數抓到，fallback 未觸發）。
+> ④**課表回推手錶**：不實作，已記錄為 [TODO N-7](TODO.md#新增需求討論後補充尚未併入-phase) 的背景輸入，
+> API 形狀調查見 [garmin-workout-upload-api.md](../research/garmin-workout-upload-api.md)。
+> 實作結果與本機驗證抓出的五處錯誤見 [TODO.md 的 1B-9 段落](TODO.md#1b-9-garmin-指標擴充審計已完成實作進行中2026-09-02)。
+
 ### 6.1 採納範圍
 
 - **選項 1**：只修三個現存缺陷（A/B/C），不擴充 — 最小風險
