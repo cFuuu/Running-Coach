@@ -335,6 +335,62 @@ CREATE TABLE IF NOT EXISTS activity_records (
     UNIQUE (activity_id, elapsed_sec)
 );
 
+-- 活動當下的環境條件，逐小時序列。來源為 Open-Meteo（見 PLAN.md §1
+-- 2026-09-05 決策）。用途是**歸因**——讓「這場掉速」能分辨成因是體能退步、
+-- 疲勞，還是高溫高濕，否則 AI Coach 的建議會建立在未校正環境因素的
+-- 配速趨勢上。
+--
+-- 為何存逐小時序列而非單一快照（2026-09-05 決策）：
+-- 一場跑步橫跨 1–2 小時，而長跑後半段（通常也正是掉速的那段）與起跑時
+-- 可能差 3–4°C。只存起跑快照會讓最需要解釋的那一段沒有對應的環境資料。
+-- 代價是每場多存 1–3 列；若日後證實太吃資源，可退回只存代表值
+-- （is_representative=1 的那列），不需改表結構。
+--
+-- ⚠️ 與 activities.min/max_temperature_c 完全不同，兩者不可混用：
+-- 那兩欄是**手錶的手腕體溫讀數**（實測四年從未低於 21°C，一月台北卻有
+-- max 29°C），本表才是真實環境氣溫。
+--
+-- ⚠️ 已知偏誤（依 §7.3 三欄位契約，下游取用時必須帶著）：
+-- 1. 數值為 ERA5 約 11km 網格的**內插值，非測站實測**，都市熱島與盆地
+--    地形效應會被抹平。
+-- 2. WBGT 為本專案自行計算的簡化式（非 Liljegren），公式版本記於
+--    wbgt_formula 欄位，跨版本比較前須確認該欄一致。
+CREATE TABLE IF NOT EXISTS activity_weather (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id         INTEGER NOT NULL REFERENCES activities(id),
+    -- 這列對應的整點時刻（ISO 8601 當地時間，與 Open-Meteo 的 timezone
+    -- 參數一致）。一場活動會有 1~3 列，視跨越幾個整點而定。
+    hour_local          TEXT NOT NULL,
+    -- 是否為本場的代表值（起跑那一小時）。讓「只要一個數字」的查詢
+    -- （列表、趨勢圖）不必每次都自己挑，也是日後若要退回單快照時的保留列。
+    -- 每場恰有一列為 1。
+    is_representative   INTEGER NOT NULL DEFAULT 0 CHECK (is_representative IN (0, 1)),
+    -- --- Open-Meteo 原始欄位（單位與 API 回傳一致，不做轉換）---
+    temperature_c       REAL,   -- temperature_2m (°C)
+    relative_humidity_pct REAL, -- relative_humidity_2m (%)
+    dew_point_c         REAL,   -- dew_point_2m (°C)
+    -- 短波輻射（GHI，W/m²）。**這是 WBGT 戶外式的必要輸入**，也是選用
+    -- Open-Meteo 而非 OpenWeather 的決定性理由（後者標準回傳不含輻射）。
+    shortwave_radiation_wm2 REAL,
+    direct_radiation_wm2    REAL,
+    wind_speed_kmh      REAL,   -- wind_speed_10m (km/h)
+    -- --- 本專案計算的衍生值 ---
+    -- 濕球黑球溫度（WBGT, Wet Bulb Globe Temperature，°C），熱壓力指標。
+    -- ⚠️ 必為**戶外版** 0.7·Tw + 0.2·Tg + 0.1·Ta（Tg 由輻射與風速推得）。
+    -- 嚴禁存入遮蔭版 0.7·Tw + 0.3·Ta——該式忽略輻射與風速，只適用室內或
+    -- 良好遮蔭，對戶外跑步是系統性低估，且正好低估在大太陽天。
+    wbgt_c              REAL,
+    -- 計算 wbgt_c 所用的公式版本識別字（如 'simplified_tg_v1'）。
+    -- 公式日後若調整，舊列不重算也能被正確解讀，避免跨版本混比。
+    wbgt_formula        TEXT,
+    -- 資料來源與取得時點。source 用 'open_meteo_archive'（ERA5，有 5 天延遲）
+    -- 或 'open_meteo_forecast'（past_days，供近 5 天用）區分——兩者模型不同，
+    -- 同一場活動日後若由 forecast 補成 archive，需知道現值是哪一種。
+    source              TEXT NOT NULL CHECK (source IN ('open_meteo_archive', 'open_meteo_forecast')),
+    fetched_at          TEXT NOT NULL,
+    UNIQUE (activity_id, hour_local)
+);
+
 -- plan_source：'generated'＝系統排程器產生，'external'＝外部來源（如跟團課表），
 -- 排程器產生課表時遇到已標記 external 的日期會直接跳過，不覆蓋。
 --
@@ -358,6 +414,8 @@ CREATE TABLE IF NOT EXISTS training_plan (
     created_at                  TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_activity_weather_activity
+    ON activity_weather (activity_id, hour_local);
 CREATE INDEX IF NOT EXISTS idx_activity_laps_activity ON activity_laps (activity_id);
 CREATE INDEX IF NOT EXISTS idx_activity_records_activity ON activity_records (activity_id, elapsed_sec);
 CREATE INDEX IF NOT EXISTS idx_activities_athlete_date ON activities (athlete_id, started_at);
