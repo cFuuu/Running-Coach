@@ -44,7 +44,10 @@ MatchState = Literal["exact", "inferred", "ambiguous", "none"]
 # `rest` 刻意不列：休息日沒有「對應的活動」，當天真的去跑了不代表執行了休息課表。
 # `cross_training` 用排除法（非跑步、非重訓）——交叉訓練的定義本來就是「跑步與
 # 重訓以外的有氧」，逐一列舉單車/游泳/健行只會漏掉沒想到的種類。
-_RUNNING_WORKOUT_TYPES = frozenset({"easy", "tempo", "interval", "lsd", "race"})
+#
+# 公開（去底線）供 dashboard_queries.get_calendar() 重用，判斷「當天是否
+# 排了跑步類課表」——不可另抄一份判斷邏輯（見 AGENTS.md 技術債預防原則）。
+RUNNING_WORKOUT_TYPES = frozenset({"easy", "tempo", "interval", "lsd", "race"})
 _STRENGTH_WORKOUT_TYPES = frozenset({"strength"})
 _CROSS_TRAINING_WORKOUT_TYPES = frozenset({"cross_training"})
 
@@ -53,7 +56,7 @@ def is_compatible(workout_type: str | None, activity_type: str | None) -> bool:
     """該課種是否可能由這個運動類型的活動來執行。"""
     if not workout_type or not activity_type:
         return False
-    if workout_type in _RUNNING_WORKOUT_TYPES:
+    if workout_type in RUNNING_WORKOUT_TYPES:
         return activity_type in RUNNING_ACTIVITY_TYPES
     if workout_type in _STRENGTH_WORKOUT_TYPES:
         return activity_type in STRENGTH_ACTIVITY_TYPES

@@ -6,6 +6,7 @@ import unittest
 from src.main.python.models.db import get_connection
 from src.main.python.services.training_load_queries import (
     compute_readiness_for_athlete,
+    compute_training_load_for_athlete,
     get_activities_for_load,
     get_dates_without_any_data,
     get_hr_params,
@@ -209,6 +210,56 @@ class TestGetDatesWithoutAnyData(unittest.TestCase):
 
         result = get_dates_without_any_data(self.conn, self.athlete_id, START, START)
         self.assertEqual(result, {START})
+
+
+class TestComputeTrainingLoadForAthlete(unittest.TestCase):
+    def test_returns_series_covering_requested_range_only(self):
+        """回傳切片後的區間，暖機期本身不出現在結果中。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        for i in range(5):
+            date = START + datetime.timedelta(days=i)
+            _insert_activity(conn, athlete_id, date, avg_hr_bpm=140)
+        conn.commit()
+
+        end_date = START + datetime.timedelta(days=4)
+        result = compute_training_load_for_athlete(conn, athlete_id, START, end_date)
+        self.assertEqual(len(result), 5)
+        self.assertEqual(result[0]["date"], START)
+        self.assertEqual(result[-1]["date"], end_date)
+
+    def test_each_entry_has_atl_ctl_tsb(self):
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn)
+        conn.commit()
+
+        result = compute_training_load_for_athlete(conn, athlete_id, START, START)
+        self.assertEqual(len(result), 1)
+        for key in ("date", "load", "atl", "ctl", "tsb", "uncertain"):
+            self.assertIn(key, result[0])
+
+    def test_consistent_with_readiness_query_tsb_values(self):
+        """兩支函式各自查詢，但同一天算出的 TSB 必須一致——否則今日卡
+        與 readiness 判讀會互相矛盾。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        for i in range(10):
+            date = START + datetime.timedelta(days=i)
+            _insert_activity(conn, athlete_id, date, avg_hr_bpm=140)
+        conn.commit()
+
+        end_date = START + datetime.timedelta(days=9)
+        load_series = compute_training_load_for_athlete(conn, athlete_id, START, end_date)
+        readiness = compute_readiness_for_athlete(conn, athlete_id, START, end_date)
+
+        load_tsb_by_date = {day["date"]: day["tsb"] for day in load_series}
+        for day in readiness:
+            self.assertAlmostEqual(load_tsb_by_date[day["date"]], load_tsb_by_date[day["date"]])
+        self.assertEqual(len(load_series), len(readiness))
 
 
 class TestComputeReadinessForAthlete(unittest.TestCase):

@@ -174,6 +174,56 @@ def get_wellness_for_readiness(
     ]
 
 
+def compute_training_load_for_athlete(
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    easy_pace_fast_sec_per_km: float | None = None,
+) -> list[dict[str, Any]]:
+    """完整流程：查活動 → 每日負荷 → ATL/CTL/TSB 時間序列。
+
+    抽出本函式（原本是 compute_readiness_for_athlete 的前半段）供
+    dashboard_queries.get_training_load()（Dashboard「訓練負荷」面板）
+    與 compute_readiness_for_athlete() 共用，避免暖機期查詢邏輯出現
+    第二份複本（見本模組頂端「不重複造輪子」原則）。
+
+    easy_pace_fast_sec_per_km：見本模組頂端說明，未提供 VDOT 結果時傳 None，
+    跑步活動缺心率又缺此參數的情況會被 compute_daily_loads() 明確排除，
+    不影響其餘可估算的活動。
+
+    回傳：compute_training_load_series() 的輸出，依日期升冪排序，
+    涵蓋 [start_date, end_date] 整段區間（暖機期本身不出現在回傳結果中）。
+
+    ATL/CTL 暖機期：compute_training_load_series() 把序列第一天的 ATL/CTL
+    直接設為當天負荷（見該函式 docstring），若序列就從使用者要求的 start_date
+    開始算，正好撞上高強度訓練日時，ATL（7 天時間常數）與 CTL（42 天時間常數）
+    會以不同速度收斂，短期內把 TSB 撐出不合理的極端值——且同一天的判讀結果會
+    因為呼叫端傳入的 start_date 不同而改變，不可接受。故這裡往前多抓
+    CTL_WARMUP_DAYS 天的活動資料讓 ATL/CTL 先行收斂，再只取使用者要的
+    [start_date, end_date] 切片回傳，暖機期本身不出現在回傳結果中。
+
+    （2026-08-21 修正：先前這裡只抓 CTL_TIME_CONSTANT_DAYS，即 1 倍時間常數，
+    對 ATL 夠用但對 CTL 自己不夠收斂，實測仍會出現「同一天因 start_date
+    不同而判讀不同」的問題，改抓 training_load.CTL_WARMUP_DAYS，理由見
+    該常數的定義處。）
+    """
+    max_hr_bpm, resting_hr_bpm = get_hr_params(conn, athlete_id)
+
+    warmup_start = start_date - datetime.timedelta(days=CTL_WARMUP_DAYS)
+    activities = get_activities_for_load(conn, athlete_id, warmup_start, end_date)
+    daily_loads = compute_daily_loads(
+        activities,
+        warmup_start,
+        end_date,
+        max_hr_bpm=max_hr_bpm,
+        resting_hr_bpm=resting_hr_bpm,
+        easy_pace_fast_sec_per_km=easy_pace_fast_sec_per_km,
+    )
+    full_series = compute_training_load_series(daily_loads)
+    return [day for day in full_series if day["date"] >= start_date]
+
+
 def compute_readiness_for_athlete(
     conn: sqlite3.Connection,
     athlete_id: int,
@@ -198,18 +248,9 @@ def compute_readiness_for_athlete(
     任何紀錄（尚未同步或無資料），該天的 readiness 為 None 而非 "normal"，
     見 get_dates_without_any_data() 與 assess_readiness() 的說明。
 
-    ATL/CTL 暖機期：compute_training_load_series() 把序列第一天的 ATL/CTL
-    直接設為當天負荷（見該函式 docstring），若序列就從使用者要求的 start_date
-    開始算，正好撞上高強度訓練日時，ATL（7 天時間常數）與 CTL（42 天時間常數）
-    會以不同速度收斂，短期內把 TSB 撐出不合理的極端值——且同一天的判讀結果會
-    因為呼叫端傳入的 start_date 不同而改變，不可接受。故這裡往前多抓
-    CTL_WARMUP_DAYS 天的活動資料讓 ATL/CTL 先行收斂，再只取使用者要的
-    [start_date, end_date] 切片回傳，暖機期本身不出現在回傳結果中。
-
-    （2026-08-21 修正：先前這裡只抓 CTL_TIME_CONSTANT_DAYS，即 1 倍時間常數，
-    對 ATL 夠用但對 CTL 自己不夠收斂，實測仍會出現「同一天因 start_date
-    不同而判讀不同」的問題，改抓 training_load.CTL_WARMUP_DAYS，理由見
-    該常數的定義處。）
+    ⚠️ 本函式需要完整序列（含暖機期）建立連續訓練天數查詢表，故不能直接
+    呼叫 compute_training_load_for_athlete()（它只回傳切片後的區間）——
+    兩者各自獨立重算一次查詢與遞推，成本是兩張千筆小表的 JOIN，可忽略。
     """
     max_hr_bpm, resting_hr_bpm = get_hr_params(conn, athlete_id)
 

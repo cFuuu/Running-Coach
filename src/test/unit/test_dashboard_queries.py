@@ -4,11 +4,13 @@
 絕不碰使用者真實的 output/running_coach.db（專案規範：個人資料不進版控、不進測試）。
 """
 
+import datetime
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
+from src.main.python.models.db import get_connection
 from src.main.python.services import dashboard_queries as queries
 from src.main.python.services import garmin_export_parser as parser
 from src.test.unit.fixtures import FAKE_ATHLETE_NAME, build_fixture_db
@@ -642,6 +644,179 @@ class TestRecoveryImpact(DashboardQueryTestCase):
     def test_impacts_respect_range(self):
         dates = [i["training_date"] for i in queries.get_recovery_impact(self.conn, range_key="30d")["impacts"]]
         self.assertNotIn("2026-01-15", dates)
+
+
+class TestToday(DashboardQueryTestCase):
+    """今日卡。fixture 的「今天」固定用 FAKE_TODAY（2026-03-10），
+    這天剛好有完整的 daily_wellness 與活動資料。"""
+
+    def test_today_with_full_data_evaluates_all_dimensions(self):
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        self.assertEqual(result["date"], "2026-03-10")
+        self.assertEqual(result["freshness"]["wellness_latest"], "2026-03-10")
+        self.assertEqual(result["freshness"]["days_behind"], 0)
+        self.assertIsNotNone(result["readiness"]["today"])
+        self.assertIsNotNone(result["load"])
+        self.assertIsNotNone(result["hrv"])
+
+    def test_future_date_with_no_data_returns_none_readiness_and_load(self):
+        """N-13：完全無資料的日期，readiness.today 與 load 皆為 None，
+        不可假裝評估過。"""
+        far_future = datetime.date(2026, 6, 1)
+        result = queries.get_today(self.conn, today=far_future)
+        self.assertIsNone(result["readiness"]["today"]["readiness"])
+        self.assertEqual(result["readiness"]["today"]["dimensions_evaluated"], [])
+        self.assertIsNone(result["load"])
+        self.assertIsNone(result["hrv"])
+
+    def test_latest_evaluable_falls_back_to_most_recent_assessed_day(self):
+        """在回溯窗（_READINESS_LOOKBACK_DAYS）內選一個無資料的日期，
+        確認 latest_evaluable 能找回窗內最近一個有評估過的日子。"""
+        within_lookback_but_no_data = datetime.date(2026, 3, 20)
+        result = queries.get_today(self.conn, today=within_lookback_but_no_data)
+        self.assertIsNone(result["readiness"]["today"]["readiness"])
+        self.assertIsNotNone(result["readiness"]["latest_evaluable"])
+        self.assertEqual(result["readiness"]["latest_evaluable"]["date"], "2026-03-10")
+
+    def test_planned_today_reflects_training_plan_row(self):
+        """fixture 的 training_plan 只有 2026-03-09 一筆（lsd 12km）。"""
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 9))
+        self.assertIsNotNone(result["planned"]["today"])
+        self.assertEqual(result["planned"]["today"]["workout_type"], "lsd")
+        self.assertEqual(result["planned"]["today"]["planned_distance_km"], 12.0)
+
+    def test_planned_missing_day_is_none(self):
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        self.assertIsNone(result["planned"]["today"])
+        self.assertIsNone(result["planned"]["tomorrow"])
+
+    def test_last_activity_reflects_most_recent_on_or_before_today(self):
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        self.assertIsNotNone(result["last_activity"])
+        self.assertEqual(result["last_activity"]["date"], "2026-03-09")
+
+    def test_load_fact_carries_confidence(self):
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        for key in ("atl", "ctl", "tsb"):
+            with self.subTest(key=key):
+                self.assertIn("confidence", result["load"][key])
+                self.assertIn("value", result["load"][key])
+
+    def test_no_athlete_returns_safe_defaults(self):
+        empty_conn = get_connection(":memory:")
+        self.addCleanup(empty_conn.close)
+        result = queries.get_today(empty_conn, today=datetime.date(2026, 3, 10))
+        self.assertIsNone(result["readiness"])
+        self.assertIsNone(result["last_activity"])
+
+
+class TestCalendar(DashboardQueryTestCase):
+    def test_covers_full_requested_range(self):
+        result = queries.get_calendar(
+            self.conn, start="2026-03-01", end="2026-03-05", today=datetime.date(2026, 3, 10)
+        )
+        self.assertEqual(len(result["days"]), 5)
+        self.assertEqual(result["days"][0]["date"], "2026-03-01")
+        self.assertEqual(result["days"][-1]["date"], "2026-03-05")
+
+    def test_planned_day_matched_to_activity_is_planned_done(self):
+        """2026-03-09 有 lsd 課表且有一場跑步活動——應配對成功。"""
+        result = queries.get_calendar(
+            self.conn, start="2026-03-09", end="2026-03-09", today=datetime.date(2026, 3, 10)
+        )
+        day = result["days"][0]
+        self.assertEqual(day["day_state"], "planned_done")
+        self.assertEqual(len(day["activities"]), 1)
+        self.assertEqual(day["activities"][0]["plan_match"]["state"], "inferred")
+
+    def test_planned_day_without_activity_before_today_is_planned_missed(self):
+        """2026-03-01 無課表、無活動——先驗證 rest_ok，再驗證有課表無活動的情境。"""
+        self.conn.execute(
+            "INSERT INTO training_plan (athlete_id, planned_date, workout_type, "
+            "planned_distance_km, plan_source, created_at) VALUES (?, '2026-03-01', "
+            "'tempo', 5.0, 'generated', '2026-03-01T00:00:00')",
+            (self.athlete_id,),
+        )
+        self.conn.commit()
+        result = queries.get_calendar(
+            self.conn, start="2026-03-01", end="2026-03-01", today=datetime.date(2026, 3, 10)
+        )
+        self.assertEqual(result["days"][0]["day_state"], "planned_missed")
+
+    def test_today_with_pending_plan_is_today_pending_not_missed(self):
+        """今天有課表但還沒活動——今天還沒過完，不可判為錯過。"""
+        self.conn.execute(
+            "INSERT INTO training_plan (athlete_id, planned_date, workout_type, "
+            "planned_distance_km, plan_source, created_at) VALUES (?, '2026-03-10', "
+            "'easy', 5.0, 'generated', '2026-03-01T00:00:00')",
+            (self.athlete_id,),
+        )
+        self.conn.commit()
+        result = queries.get_calendar(
+            self.conn, start="2026-03-10", end="2026-03-10", today=datetime.date(2026, 3, 10)
+        )
+        self.assertEqual(result["days"][0]["day_state"], "today_pending")
+
+    def test_future_day_is_future(self):
+        result = queries.get_calendar(
+            self.conn, start="2026-03-15", end="2026-03-15", today=datetime.date(2026, 3, 10)
+        )
+        self.assertEqual(result["days"][0]["day_state"], "future")
+
+    def test_day_with_no_plan_and_no_activity_is_rest_ok(self):
+        result = queries.get_calendar(
+            self.conn, start="2026-03-01", end="2026-03-01", today=datetime.date(2026, 3, 10)
+        )
+        self.assertEqual(result["days"][0]["day_state"], "rest_ok")
+
+    def test_non_running_activity_on_unplanned_day_is_rest_ok(self):
+        """2026-03-02 是重訓活動，無跑步課表——重訓不佔用跑步的「有排課」語意。"""
+        result = queries.get_calendar(
+            self.conn, start="2026-03-02", end="2026-03-02", today=datetime.date(2026, 3, 10)
+        )
+        day = result["days"][0]
+        self.assertEqual(day["day_state"], "rest_ok")
+        self.assertFalse(day["activities"][0]["is_running"])
+
+    def test_all_activity_types_are_included_not_only_running(self):
+        result = queries.get_calendar(
+            self.conn, start="2026-03-02", end="2026-03-02", today=datetime.date(2026, 3, 10)
+        )
+        self.assertEqual(result["days"][0]["activities"][0]["activity_type"], "strength_training")
+
+    def test_no_athlete_returns_empty_days(self):
+        empty_conn = get_connection(":memory:")
+        self.addCleanup(empty_conn.close)
+        result = queries.get_calendar(
+            empty_conn, start="2026-03-01", end="2026-03-05", today=datetime.date(2026, 3, 10)
+        )
+        self.assertEqual(result["days"], [])
+
+
+class TestTrainingLoad(DashboardQueryTestCase):
+    def test_series_covers_range(self):
+        result = queries.get_training_load(self.conn, range_key="7d")
+        self.assertEqual(len(result["series"]), 7)
+        self.assertEqual(result["series"][0]["date"], result["start_date"])
+        self.assertEqual(result["series"][-1]["date"], result["end_date"])
+
+    def test_each_entry_has_atl_ctl_tsb_with_confidence(self):
+        result = queries.get_training_load(self.conn, range_key="7d")
+        for entry in result["series"]:
+            for key in ("atl", "ctl", "tsb"):
+                with self.subTest(date=entry["date"], key=key):
+                    self.assertIn("confidence", entry[key])
+
+    def test_respects_range_key(self):
+        short = queries.get_training_load(self.conn, range_key="7d")
+        long = queries.get_training_load(self.conn, range_key="30d")
+        self.assertLess(len(short["series"]), len(long["series"]))
+
+    def test_no_athlete_returns_empty_series(self):
+        empty_conn = get_connection(":memory:")
+        self.addCleanup(empty_conn.close)
+        result = queries.get_training_load(empty_conn, range_key="7d")
+        self.assertEqual(result["series"], [])
 
 
 class TestNoFastapiDependency(unittest.TestCase):
