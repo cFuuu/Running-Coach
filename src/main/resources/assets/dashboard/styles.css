@@ -100,6 +100,41 @@
 
   --radius: 10px;
   --gap: 16px;
+
+  /* 信賴度 badge（PLAN.md §7.3 三欄位契約）：high 用中性色（不強調，
+     因為「可信」是預期狀態，不需要視覺提醒）；low 用與 badge-clipped
+     同色系的警示色（提醒有已知偏誤但仍可用）；unusable／未評用最弱化
+     的灰階（幾乎融入背景，因為這是「不該被拿來下結論」的訊號）。 */
+  --conf-high-bg: var(--surface-sunken);
+  --conf-high-border: var(--border);
+  --conf-high-text: var(--text-muted);
+  --conf-low-bg: var(--badge-clipped-bg);
+  --conf-low-border: var(--badge-clipped-border);
+  --conf-low-text: var(--badge-clipped-text);
+  --conf-none-bg: var(--surface-sunken);
+  --conf-none-border: var(--border);
+  --conf-none-text: var(--text-muted);
+
+  /* 行事曆／週條的日狀態底色——刻意用低飽和度，因為 day_state 是狀態
+     分類不是評價（見 dashboard_queries.get_calendar 說明），配色不該
+     暗示「好/壞」。today_pending 用強調色框線標出「今天」，其餘用背景色塊。 */
+  --day-planned-done-bg: var(--accent-soft);
+  --day-planned-done-border: var(--accent-border);
+  --day-planned-missed-bg: var(--badge-clipped-bg);
+  --day-planned-missed-border: var(--badge-clipped-border);
+  --day-unplanned-bg: var(--tag-planned-bg);
+  --day-unplanned-border: var(--tag-planned-border);
+  --day-rest-bg: var(--surface-sunken);
+  --day-rest-border: var(--border);
+  --day-today-ring: var(--accent);
+  --day-future-text: var(--text-muted);
+
+  /* 全部運動類型的行事曆上色（跑步以外，見 get_calendar 全類型顯示需求） */
+  --activity-running: var(--c-pace);
+  --activity-strength_training: var(--tag-race-text);
+  --activity-walking: var(--c-distance);
+  --activity-cycling: var(--c-volume);
+  --activity-other: var(--text-muted);
 }
 
 * {
@@ -378,6 +413,421 @@ h1, h2, h3 {
   .layout {
     grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   }
+}
+
+/* ------------------------------------------------------------ 導覽列
+ *
+ * 五個錨點按鈕，不做 tab（分頁會需要重新設計版面與同步游標群組，本次
+ * 保留單頁重排＋錨點跳轉）。手機上這一列本身可橫向捲動，但不影響
+ * 整頁 body 的橫向捲動限制。
+ */
+.section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.section-nav-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  gap: 4px;
+  padding: 6px 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.section-nav-link {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.section-nav-link:hover {
+  color: var(--text);
+}
+
+.section-nav-link.is-active {
+  color: var(--accent-text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.section-nav-link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* ------------------------------------------------------------ 今日卡
+ *
+ * 桌機橫跨左右兩欄（見 .panel-today 於 .layout 內的 grid-column），
+ * 手機維持單欄堆疊順序的第一塊。三個子卡（課表／準備度／最近一場）
+ * 用 grid 並排，窄螢幕自動收成單欄。
+ */
+.panel-today {
+  grid-column: 1 / -1;
+}
+
+.today-freshness {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--gap);
+}
+
+.today-block {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.today-block-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.today-plan-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.today-plan-row:last-child {
+  border-bottom: none;
+}
+
+.today-plan-label {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  min-width: 34px;
+}
+
+.today-plan-value {
+  font-weight: 600;
+}
+
+.today-fact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+}
+
+.today-fact-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.today-fact-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.today-note {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* 信賴度 badge（§7.3 三欄位契約） */
+.conf-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.conf-badge.conf-high {
+  background: var(--conf-high-bg);
+  border: 1px solid var(--conf-high-border);
+  color: var(--conf-high-text);
+}
+
+.conf-badge.conf-low {
+  background: var(--conf-low-bg);
+  border: 1px solid var(--conf-low-border);
+  color: var(--conf-low-text);
+}
+
+.conf-badge.conf-none {
+  background: var(--conf-none-bg);
+  border: 1px dashed var(--conf-none-border);
+  color: var(--conf-none-text);
+}
+
+/* ------------------------------------------------------------ 週條與行事曆
+ *
+ * 週條：7 格等寬，手機上單格約 44-50px，只放圖示與距離；桌機再加日期。
+ * 行事曆：月曆格狀，預設收合成週條，展開後每格顯示當月所有活動色點。
+ */
+.week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.week-cell {
+  min-height: 60px;
+  border-radius: 8px;
+  border: 1px solid var(--day-rest-border);
+  background: var(--day-rest-bg);
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: default;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.week-cell.is-clickable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.week-cell.is-clickable:hover {
+  border-color: var(--accent);
+}
+
+.week-cell.day-planned_done {
+  background: var(--day-planned-done-bg);
+  border-color: var(--day-planned-done-border);
+}
+
+.week-cell.day-planned_missed {
+  background: var(--day-planned-missed-bg);
+  border-color: var(--day-planned-missed-border);
+}
+
+.week-cell.day-unplanned_activity {
+  background: var(--day-unplanned-bg);
+  border-color: var(--day-unplanned-border);
+}
+
+.week-cell.day-today_pending {
+  outline: 2px solid var(--day-today-ring);
+  outline-offset: -2px;
+}
+
+.week-cell.day-future {
+  color: var(--day-future-text);
+  opacity: 0.6;
+}
+
+.week-cell-dow {
+  font-size: 0.68rem;
+}
+
+.week-cell-date {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.week-cell-workout {
+  font-size: 0.68rem;
+  line-height: 1.2;
+  text-align: center;
+  word-break: break-word;
+}
+
+.week-cell-dots {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.calendar-toggle {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.calendar-toggle:hover {
+  border-color: var(--accent);
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.calendar-nav-btn {
+  min-height: 40px;
+  min-width: 40px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.calendar-nav-btn:hover {
+  border-color: var(--accent);
+}
+
+.calendar-nav-label {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendar-cell {
+  min-height: 56px;
+  border-radius: 6px;
+  border: 1px solid var(--day-rest-border);
+  background: var(--day-rest-bg);
+  padding: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.calendar-cell.is-clickable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.calendar-cell.is-clickable:hover {
+  border-color: var(--accent);
+}
+
+.calendar-cell.is-outside-month {
+  opacity: 0.35;
+}
+
+.calendar-cell.day-planned_done {
+  background: var(--day-planned-done-bg);
+  border-color: var(--day-planned-done-border);
+}
+
+.calendar-cell.day-planned_missed {
+  background: var(--day-planned-missed-bg);
+  border-color: var(--day-planned-missed-border);
+}
+
+.calendar-cell.day-unplanned_activity {
+  background: var(--day-unplanned-bg);
+  border-color: var(--day-unplanned-border);
+}
+
+.calendar-cell.day-today_pending {
+  outline: 2px solid var(--day-today-ring);
+  outline-offset: -2px;
+}
+
+.calendar-cell-date {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 10px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+/* 圖例色塊：重用行事曆格的 day-* 背景色變數，legend 與實際格子色一致 */
+.legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--day-rest-border);
+  background: var(--day-rest-bg);
+}
+
+.legend-swatch.day-planned_done {
+  background: var(--day-planned-done-bg);
+  border-color: var(--day-planned-done-border);
+}
+
+.legend-swatch.day-planned_missed {
+  background: var(--day-planned-missed-bg);
+  border-color: var(--day-planned-missed-border);
+}
+
+.legend-swatch.day-unplanned_activity {
+  background: var(--day-unplanned-bg);
+  border-color: var(--day-unplanned-border);
+}
+
+.legend-swatch.day-today_pending {
+  outline: 2px solid var(--day-today-ring);
+  outline-offset: -2px;
+}
+
+/* 觸控目標 ≥44px：週條/行事曆格在手機上仍要好點，用最小高度撐開，
+   實際寬度由 grid 自動分配（7 欄在 320px 螢幕約 40px 寬，配合較高的
+   min-height 讓點擊面積足夠，寬度不足時仍優先保證不橫向捲動）。 */
+@media (max-width: 480px) {
+  .week-cell { min-height: 52px; }
+  .calendar-cell { min-height: 44px; }
 }
 
 /* ------------------------------------------------------------ 圖表容器 */

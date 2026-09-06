@@ -390,6 +390,134 @@
     return { range: range, impacts: impacts };
   }
 
+  // ---- 今日卡 ----
+  // BASE_DATE 是假想的「今天」，剛好落在 ALL_SESSIONS 資料範圍內，可直接
+  // 從假資料反查「最近一場」與「今日/明日課表」，不需要另建一份平行資料。
+  function buildToday() {
+    var rnd = makeRandom(20260900);
+    var lastActivity = ALL_SESSIONS.length > 0 ? ALL_SESSIONS[0] : null;
+
+    function fact(value, source, level, biasDetail) {
+      return {
+        value: value,
+        source: source,
+        confidence: { level: level, biases: biasDetail ? [{ code: 'mock_bias', level: level, detail: biasDetail }] : [] }
+      };
+    }
+
+    return {
+      date: BASE_DATE,
+      freshness: { wellness_latest: BASE_DATE, activity_latest: lastActivity ? lastActivity.date : null, days_behind: 0 },
+      planned: {
+        today: { workout_type: 'easy', planned_distance_km: 6.0, planned_pace_sec_per_km: 340, notes: null, plan_source: 'generated', created_at: dateMinus(20) + 'T00:00:00' },
+        tomorrow: { workout_type: 'rest', planned_distance_km: 0, planned_pace_sec_per_km: null, notes: null, plan_source: 'generated', created_at: dateMinus(20) + 'T00:00:00' }
+      },
+      readiness: {
+        today: {
+          date: BASE_DATE,
+          readiness: 'normal',
+          triggers: [],
+          dimensions_evaluated: ['consecutive_training_days', 'tsb', 'hrv'],
+          not_assessed: []
+        },
+        latest_evaluable: null
+      },
+      load: {
+        atl: fact(Math.round(60 + rnd() * 20), 'Banister EWMA（7 日時間常數）', 'low', 'HRmax 為手錶顯示值、非實測（假資料示範）'),
+        ctl: fact(Math.round(55 + rnd() * 15), 'Banister EWMA（42 日時間常數）', 'low', 'HRmax 為手錶顯示值、非實測（假資料示範）'),
+        tsb: fact(Math.round((rnd() - 0.5) * 20), 'TSB = CTL − ATL', 'low', 'TSB 門檻為工程實務決策、無文獻背書（假資料示範）')
+      },
+      hrv: {
+        today_ms: fact(Math.round(45 + rnd() * 10), 'daily_wellness.hrv_ms', 'high'),
+        weekly_avg_ms: fact(Math.round(46 + rnd() * 8), 'daily_wellness.hrv_weekly_avg_ms（7 日滾動均值）', 'high'),
+        delta_pct: fact(Math.round((rnd() - 0.5) * 16 * 10) / 10, '(今日 - 7日均值) / 7日均值', 'low', 'HRV 短期波動百分比形式尚未經驗證（假資料示範）')
+      },
+      consecutive_training_days: { value: 2, threshold: 6, threshold_source: 'default' },
+      last_activity: lastActivity ? {
+        id: lastActivity.id, date: lastActivity.date, activity_type: lastActivity.activity_type,
+        workout_type: lastActivity.workout_type, distance_km: lastActivity.distance_km,
+        avg_pace_sec_per_km: lastActivity.avg_pace_sec_per_km, avg_hr_bpm: lastActivity.avg_hr_bpm
+      } : null
+    };
+  }
+
+  // ---- 行事曆／週條 ----
+  // 用 ALL_SESSIONS 反推每日活動，課表用簡化的固定週期樣板（週一/三/五
+  // easy、週六 lsd，其餘 rest），足以示範 day_state 各種分類。
+  var CALENDAR_PLAN_CYCLE = { 1: 'easy', 3: 'tempo', 5: 'easy', 6: 'lsd' }; // 0=週日
+  function plannedWorkoutTypeFor(dateStr) {
+    var dow = new Date(dateStr + 'T00:00:00Z').getUTCDay();
+    return CALENDAR_PLAN_CYCLE[dow] || 'rest';
+  }
+
+  function buildCalendarDay(dateStr) {
+    var sessionsThatDay = ALL_SESSIONS.filter(function (s) { return s.date === dateStr; });
+    var workoutType = plannedWorkoutTypeFor(dateStr);
+    var planned = workoutType === 'rest' ? [] : [{
+      id: dateStr, workout_type: workoutType, planned_distance_km: workoutType === 'lsd' ? 12 : 6,
+      planned_pace_sec_per_km: 340, plan_source: 'generated'
+    }];
+    var activities = sessionsThatDay.map(function (s) {
+      return {
+        id: s.id, activity_type: s.activity_type, is_running: true,
+        workout_type: s.workout_type, distance_km: s.distance_km, duration_sec: s.duration_sec,
+        title: s.title,
+        plan_match: planned.length > 0
+          ? { state: 'inferred', method: 'date_and_sport', reason: null }
+          : { state: 'none', method: null, reason: 'no_compatible_plan' }
+      };
+    });
+    var hasRunningPlan = workoutType !== 'rest';
+    var anyMatched = activities.some(function (a) { return a.plan_match.state === 'inferred' || a.plan_match.state === 'exact'; });
+    var isToday = dateStr === BASE_DATE;
+    var isFuture = dateStr > BASE_DATE;
+    var dayState;
+    if (isFuture) dayState = 'future';
+    else if (hasRunningPlan && anyMatched) dayState = 'planned_done';
+    else if (hasRunningPlan && isToday) dayState = 'today_pending';
+    else if (hasRunningPlan) dayState = 'planned_missed';
+    else if (activities.length > 0) dayState = 'unplanned_activity';
+    else dayState = 'rest_ok';
+    return { date: dateStr, planned: planned, activities: activities, day_state: dayState };
+  }
+
+  function buildCalendar(start, end) {
+    var days = [];
+    var cursor = start;
+    while (cursor <= end) {
+      days.push(buildCalendarDay(cursor));
+      var d = new Date(cursor + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + 1);
+      cursor = toISODate(d);
+    }
+    return { start: start, end: end, today: BASE_DATE, days: days };
+  }
+
+  // ---- 訓練負荷 ----
+  function buildTrainingLoad(range) {
+    var window = resolveWindow(range);
+    var rnd = makeRandom(20260901);
+    var startMs = Date.parse(window.start + 'T00:00:00Z');
+    var endMs = Date.parse(window.end + 'T00:00:00Z');
+    var totalDays = Math.round((endMs - startMs) / 86400000) + 1;
+    var atl = 60, ctl = 55;
+    var series = [];
+    for (var i = 0; i < totalDays; i += 1) {
+      var date = toISODate(new Date(startMs + i * 86400000));
+      atl = atl * 0.86 + (30 + rnd() * 40) * 0.14;
+      ctl = ctl * 0.976 + (30 + rnd() * 40) * 0.024;
+      var tsb = Math.round((ctl - atl) * 10) / 10;
+      series.push({
+        date: date,
+        atl: { value: Math.round(atl * 10) / 10, source: 'Banister EWMA（7 日時間常數）', confidence: { level: 'low', biases: [] } },
+        ctl: { value: Math.round(ctl * 10) / 10, source: 'Banister EWMA（42 日時間常數）', confidence: { level: 'low', biases: [] } },
+        tsb: { value: tsb, source: 'TSB = CTL − ATL', confidence: { level: 'low', biases: [] } },
+        uncertain: false
+      });
+    }
+    return { range: range, start_date: window.start, end_date: window.end, series: series };
+  }
+
   function filterSessions(range) {
     var window = resolveWindow(range);
     var list = ALL_SESSIONS.filter(function (s) { return s.date >= window.start && s.date <= window.end; });
@@ -468,6 +596,13 @@
     if (pathname === '/api/wellness-trend') return buildWellness(range);
     if (pathname === '/api/training-days') return buildTrainingDays(range);
     if (pathname === '/api/recovery-impact') return buildRecoveryImpact(range);
+    if (pathname === '/api/today') return buildToday();
+    if (pathname === '/api/calendar') {
+      var start = params.get('start') || dateMinus(6);
+      var end = params.get('end') || BASE_DATE;
+      return buildCalendar(start, end);
+    }
+    if (pathname === '/api/training-load') return buildTrainingLoad(range);
 
     var m = pathname.match(/^\/api\/sessions\/(\d+)$/);
     if (m) {
