@@ -18,8 +18,14 @@
        尚未恢復的常見生理訊號。此維度缺資料時直接跳過，不影響其他維度判斷
        （呼應 1C 的資料完整度標記，不因單一欄位缺失就整體失效）。
 
-任一維度觸發即整體判定為 low；三個維度都無法判斷（訓練與 wellness 資料都缺）
-時明確標記 unavailable，不勉強給出誤導性的 normal。
+任一維度觸發即整體判定為 low；三個維度都無法判斷時 readiness 為 None
+（不是 "normal"）——"normal" 代表「查過了、確實沒有異常訊號」，資料
+完全缺席時不具備這個語意，硬填 normal 等於偽造一個從未做出的判斷
+（見 N-13，2026-09-05 對真實資料庫實測發現：09-03～09-05 完全無
+activities／daily_wellness 紀錄的三天，靜默回報 normal，與「有量測
+且確實正常」在輸出上無法區分）。"哪些日期完全無資料"由上層 orchestrator
+（training_load_queries.compute_readiness_for_athlete）查出並傳入，本模組
+不碰資料庫，故無法自行判斷「查無此日」與「查過為 0」的差異。
 
 suggest_recovery_threshold()（Issue #18）是另一個定位：獨立的**分析工具**，
 會碰資料庫掃描歷史 activities/daily_wellness，估算「連續訓練幾天後開始出現
@@ -196,6 +202,7 @@ def assess_readiness(
     high_risk_consecutive_training_days: int | None = None,
     output_from_date: datetime.date | None = None,
     max_hr_source: str | None = None,
+    dates_without_any_data: set[datetime.date] | None = None,
 ) -> list[dict[str, Any]]:
     """對 training_load_series 涵蓋的每一天，輸出恢復狀態評分/旗標。
 
@@ -224,13 +231,22 @@ def assess_readiness(
         天數與 ATL/CTL 暖機計算，不出現在回傳結果中。為 None 時輸出
         training_load_series 的整段日期範圍（既有行為不變）。
 
+    dates_without_any_data（N-13）：該日期在 activities 與 daily_wellness
+        皆完全查無任何紀錄（不是「查過為 0」，是「根本沒同步到」）。這個
+        區分只有碰得到資料庫的上層才知道——compute_daily_loads() 對無訓練
+        日一律填 load=0.0，本函式若不靠這個參數，無法分辨「今天真的沒練」
+        與「今天的資料還沒同步進來」。省略時視為空集合（沿用既有行為，
+        呼叫端未提供時不強制啟用此檢查）。
+
     回傳：依日期升冪排序的 list，每筆
         {
             "date": datetime.date,
-            "readiness": "low" | "normal",
+            "readiness": "low" | "normal" | None,  # None＝三維度皆不可評
             "triggers": list[dict],  # 觸發的維度、說明與該維度的信賴度標記
                 # （{"dimension", "detail", "confidence": {"level", "biases"}}），
-                # 空 list 代表無觸發
+                # 空 list 代表無觸發（readiness 為 None 時亦為空 list）
+            "dimensions_evaluated": list[str],  # 本日實際評估了哪些維度
+            "not_assessed": list[dict],  # 未評的維度與原因，{"dimension", "reason"}
             "threshold_source": "default" | "personalized",
             "consecutive_training_days": int,
         }
@@ -239,6 +255,7 @@ def assess_readiness(
 
     本函式不碰資料庫，呼叫後不會、也無從修改 training_plan 或其他任何資料表。
     """
+    dates_without_any_data = dates_without_any_data or set()
     threshold = (
         high_risk_consecutive_training_days
         if high_risk_consecutive_training_days is not None
@@ -271,29 +288,85 @@ def assess_readiness(
             continue
         consecutive_days = _consecutive_training_days_ending_at(daily_loads_by_date, date)
         wellness = wellness_by_date.get(date, {})
+        no_data_today = date in dates_without_any_data
 
+        dimensions_evaluated: list[str] = []
+        not_assessed: list[dict[str, Any]] = []
         triggers = []
-        for trigger in (
-            _evaluate_consecutive_training(consecutive_days, threshold),
-            _evaluate_tsb(day["tsb"], tsb_threshold, hrmax_bias_codes),
-            _evaluate_hrv(
-                wellness.get("hrv_ms"),
-                wellness.get("hrv_weekly_avg_ms"),
-                sum(
-                    1
-                    for offset in range(7)
-                    if date - datetime.timedelta(days=offset) in hrv_dates
-                ),
-            ),
-        ):
-            if trigger is not None:
-                triggers.append(trigger)
+
+        if no_data_today:
+            # 今天在 activities／daily_wellness 皆無任何紀錄——三個維度都
+            # 建立在「今天發生了什麼」之上，沒有紀錄就沒有前提可評，不論
+            # compute_daily_loads() 填的 load 是不是 0。
+            not_assessed = [
+                {
+                    "dimension": dim,
+                    "reason": "此日期無任何 activities／daily_wellness 紀錄，尚未同步或無資料",
+                }
+                for dim in ("consecutive_training_days", "tsb", "hrv")
+            ]
+        else:
+            consecutive_trigger = _evaluate_consecutive_training(consecutive_days, threshold)
+            dimensions_evaluated.append("consecutive_training_days")
+            if consecutive_trigger is not None:
+                triggers.append(consecutive_trigger)
+
+            if tsb_threshold is None:
+                not_assessed.append(
+                    {
+                        "dimension": "tsb",
+                        "reason": (
+                            f"歷史 TSB 樣本數不足 {MIN_TSB_SAMPLES_FOR_PERCENTILE} 筆，"
+                            "無法建立個人分布門檻"
+                        ),
+                    }
+                )
+            else:
+                dimensions_evaluated.append("tsb")
+                tsb_trigger = _evaluate_tsb(day["tsb"], tsb_threshold, hrmax_bias_codes)
+                if tsb_trigger is not None:
+                    triggers.append(tsb_trigger)
+
+            hrv_ms = wellness.get("hrv_ms")
+            hrv_weekly_avg_ms = wellness.get("hrv_weekly_avg_ms")
+            recent_point_count = sum(
+                1
+                for offset in range(7)
+                if date - datetime.timedelta(days=offset) in hrv_dates
+            )
+            if not hrv_ms or not hrv_weekly_avg_ms:
+                not_assessed.append(
+                    {"dimension": "hrv", "reason": "當日無 HRV 紀錄或 7 日均值尚未建立"}
+                )
+            elif recent_point_count < MIN_HRV_POINTS_PER_WEEK:
+                not_assessed.append(
+                    {
+                        "dimension": "hrv",
+                        "reason": (
+                            f"過去 7 天內有效 HRV 測量點僅 {recent_point_count} 筆，"
+                            f"少於文獻要求的 {MIN_HRV_POINTS_PER_WEEK} 筆，7 日均值不可靠"
+                        ),
+                    }
+                )
+            else:
+                dimensions_evaluated.append("hrv")
+                hrv_trigger = _evaluate_hrv(hrv_ms, hrv_weekly_avg_ms, recent_point_count)
+                if hrv_trigger is not None:
+                    triggers.append(hrv_trigger)
+
+        readiness: str | None
+        if not dimensions_evaluated:
+            readiness = None
+        else:
+            readiness = "low" if triggers else "normal"
 
         results.append(
             {
                 "date": date,
-                "readiness": "low" if triggers else "normal",
+                "readiness": readiness,
                 "triggers": triggers,
+                "dimensions_evaluated": dimensions_evaluated,
+                "not_assessed": not_assessed,
                 "threshold_source": threshold_source,
                 "consecutive_training_days": consecutive_days,
             }

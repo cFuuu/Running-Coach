@@ -7,6 +7,7 @@ from src.main.python.models.db import get_connection
 from src.main.python.services.training_load_queries import (
     compute_readiness_for_athlete,
     get_activities_for_load,
+    get_dates_without_any_data,
     get_hr_params,
     get_wellness_for_readiness,
 )
@@ -166,6 +167,50 @@ class TestGetWellnessForReadiness(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class TestGetDatesWithoutAnyData(unittest.TestCase):
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.athlete_id = _build_athlete(self.conn)
+
+    def test_all_dates_flagged_when_nothing_exists(self):
+        end_date = START + datetime.timedelta(days=2)
+        result = get_dates_without_any_data(self.conn, self.athlete_id, START, end_date)
+        self.assertEqual(
+            result, {START, START + datetime.timedelta(days=1), START + datetime.timedelta(days=2)}
+        )
+
+    def test_date_with_activity_is_excluded(self):
+        _insert_activity(self.conn, self.athlete_id, START)
+        self.conn.commit()
+
+        result = get_dates_without_any_data(self.conn, self.athlete_id, START, START)
+        self.assertEqual(result, set())
+
+    def test_date_with_only_wellness_is_excluded(self):
+        _insert_wellness(self.conn, self.athlete_id, START, hrv_ms=50.0)
+        self.conn.commit()
+
+        result = get_dates_without_any_data(self.conn, self.athlete_id, START, START)
+        self.assertEqual(result, set())
+
+    def test_activity_of_any_type_counts_as_data_present(self):
+        """即使該活動類型不列入負荷計算，只要有紀錄就代表這天已同步。"""
+        _insert_activity(self.conn, self.athlete_id, START, activity_type="cycling")
+        self.conn.commit()
+
+        result = get_dates_without_any_data(self.conn, self.athlete_id, START, START)
+        self.assertEqual(result, set())
+
+    def test_other_athletes_data_does_not_count(self):
+        other_athlete_id = _build_athlete(self.conn)
+        self.conn.commit()
+        _insert_activity(self.conn, other_athlete_id, START)
+        self.conn.commit()
+
+        result = get_dates_without_any_data(self.conn, self.athlete_id, START, START)
+        self.assertEqual(result, {START})
+
+
 class TestComputeReadinessForAthlete(unittest.TestCase):
     def test_end_to_end_produces_nonempty_series(self):
         conn = get_connection(":memory:")
@@ -185,6 +230,9 @@ class TestComputeReadinessForAthlete(unittest.TestCase):
         self.assertTrue(all("readiness" in day for day in result))
 
     def test_covers_full_range_even_with_no_data(self):
+        """N-13：完全無資料的日期回報長度不變，但 readiness 為 None
+        （不是誤導性的 "normal"）——三天都在 activities／daily_wellness
+        裡查無任何紀錄。"""
         conn = get_connection(":memory:")
         athlete_id = _build_athlete(conn)
         conn.commit()
@@ -192,7 +240,26 @@ class TestComputeReadinessForAthlete(unittest.TestCase):
         end_date = START + datetime.timedelta(days=2)
         result = compute_readiness_for_athlete(conn, athlete_id, START, end_date)
         self.assertEqual(len(result), 3)
-        self.assertTrue(all(day["readiness"] == "normal" for day in result))
+        self.assertTrue(all(day["readiness"] is None for day in result))
+        self.assertTrue(all(day["dimensions_evaluated"] == [] for day in result))
+
+    def test_days_with_data_are_not_affected_by_later_no_data_days(self):
+        """有資料的日子仍照舊判讀，N-13 檢查只影響真正缺資料的那幾天
+        （迴歸：確認既有有資料日的判定零變動）。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        _insert_activity(conn, athlete_id, START, avg_hr_bpm=140)
+        _insert_wellness(conn, athlete_id, START, hrv_ms=50.0, hrv_weekly_avg_ms=52.0)
+        conn.commit()
+        # START+1、START+2 完全無資料。
+
+        end_date = START + datetime.timedelta(days=2)
+        result = compute_readiness_for_athlete(conn, athlete_id, START, end_date)
+        self.assertIsNotNone(result[0]["readiness"])
+        self.assertIsNone(result[1]["readiness"])
+        self.assertIsNone(result[2]["readiness"])
 
     def test_missing_hr_params_do_not_raise_and_use_pace_fallback_when_available(self):
         conn = get_connection(":memory:")
