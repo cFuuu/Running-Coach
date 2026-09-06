@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import datetime
 import sqlite3
 from typing import Callable, Iterator
 
@@ -135,3 +136,63 @@ def read_recovery_impact(
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict:
     return queries.get_recovery_impact(conn, athlete_id, _validate_range(range))
+
+
+def _parse_date_param(value: str, param_name: str) -> datetime.date:
+    """把 YYYY-MM-DD 字串轉成 date，格式錯誤轉成 HTTP 400（而非 500）。"""
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"{param_name} 格式錯誤，應為 YYYY-MM-DD：{value}"
+        ) from exc
+
+
+@router.get("/today")
+def read_today(
+    date: str | None = Query(
+        default=None, description="覆寫『今天』，格式 YYYY-MM-DD；省略時用系統今天"
+    ),
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """今日卡：今日／明日課表、規則引擎的準備度判讀、訓練負荷、最近一場活動。
+
+    純呈現層薄封裝——實際邏輯全在 dashboard_queries.get_today()。
+    """
+    today = _parse_date_param(date, "date") if date else None
+    return queries.get_today(conn, athlete_id, today)
+
+
+@router.get("/calendar")
+def read_calendar(
+    start: str = Query(..., description="起日，格式 YYYY-MM-DD"),
+    end: str = Query(..., description="訖日，格式 YYYY-MM-DD"),
+    today: str | None = Query(
+        default=None, description="覆寫『今天』，格式 YYYY-MM-DD；省略時用系統今天"
+    ),
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """[start, end] 內每日課表與實際活動，供週條與行事曆共用。
+
+    **刻意不走 resolve_range()／不接受 range 參數**——行事曆錨定真實今天，
+    range 系列端點錨定資料庫最新日，兩者語意不同，見
+    dashboard_queries.get_calendar() 的說明。
+    """
+    start_date = _parse_date_param(start, "start")
+    end_date = _parse_date_param(end, "end")
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail=f"start 不可晚於 end：{start} > {end}")
+    today_date = _parse_date_param(today, "today") if today else None
+    return queries.get_calendar(conn, athlete_id, start, end, today_date)
+
+
+@router.get("/training-load")
+def read_training_load(
+    range: str = RangeParam,
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """訓練負荷面板：range 內每日 ATL/CTL/TSB 時間序列，各自帶信賴度。"""
+    return queries.get_training_load(conn, athlete_id, _validate_range(range))

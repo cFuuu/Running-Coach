@@ -25,8 +25,10 @@ from typing import Any
 
 from src.main.python.services import fit_parser
 from src.main.python.services import plan_reconciliation
+from src.main.python.services import training_load_queries
 from src.main.python.services.activity_types import RUNNING_ACTIVITY_TYPES
 from src.main.python.services import garmin_export_parser as parser
+from src.main.python.services.readiness import DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS
 from . import data_confidence
 
 # range 參數合法值 → 往回推的天數。"all" 代表不設起日。
@@ -985,3 +987,453 @@ def _build_next_day(row: sqlite3.Row) -> dict:
             "reason": "訓練當天或隔天缺少可比較的指標數值",
         }
     return result
+
+
+# --------------------------------------------------------------------------
+# /api/today
+# --------------------------------------------------------------------------
+
+
+def _fetch_plan_row(
+    conn: sqlite3.Connection, athlete_id: int, plan_date: str
+) -> dict | None:
+    """取某天生效中的課表（若當天有多筆，只取第一筆——多筆同日課表是
+    N-12 記載的既有資料異常，今日卡只呈現不解讀，故不在此處理歧義）。
+    """
+    row = conn.execute(
+        """
+        SELECT workout_type, planned_distance_km, planned_pace_sec_per_km,
+               notes, plan_source, created_at
+        FROM training_plan
+        WHERE athlete_id = ? AND planned_date = ? AND is_active = 1
+        ORDER BY id LIMIT 1
+        """,
+        (athlete_id, plan_date),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "workout_type": row["workout_type"],
+        "planned_distance_km": row["planned_distance_km"],
+        "planned_pace_sec_per_km": row["planned_pace_sec_per_km"],
+        "notes": row["notes"],
+        "plan_source": row["plan_source"],
+        "created_at": row["created_at"],
+    }
+
+
+def get_today(
+    conn: sqlite3.Connection,
+    athlete_id: int | None = None,
+    today: datetime.date | None = None,
+) -> dict:
+    """今日卡：今日／明日課表、規則引擎的準備度判讀、訓練負荷、最近一場活動。
+
+    today 可覆寫（預設系統今天）——供測試與需要重現特定日期畫面時使用。
+
+    純呈現層：本函式不解讀「今天該不該練」，只把規則引擎
+    （readiness.py／training_load.py）已經算出的事實依 §7.3 三欄位契約
+    包裝後透出。信賴度為 unusable 時 data_confidence.fact() 回傳 None，
+    前端須顯示「未評」而非省略欄位。
+    """
+    resolved = resolve_athlete_id(conn, athlete_id)
+    today = today or datetime.date.today()
+    tomorrow = today + datetime.timedelta(days=1)
+
+    if resolved is None:
+        return {
+            "date": today.isoformat(),
+            "freshness": None,
+            "planned": {"today": None, "tomorrow": None},
+            "readiness": None,
+            "load": None,
+            "hrv": None,
+            "consecutive_training_days": None,
+            "last_activity": None,
+        }
+
+    latest_wellness_row = conn.execute(
+        "SELECT MAX(date) AS d FROM daily_wellness WHERE athlete_id = ?", (resolved,)
+    ).fetchone()
+    latest_activity_row = conn.execute(
+        "SELECT MAX(date(started_at)) AS d FROM activities WHERE athlete_id = ?",
+        (resolved,),
+    ).fetchone()
+    wellness_latest = latest_wellness_row["d"] if latest_wellness_row else None
+    activity_latest = latest_activity_row["d"] if latest_activity_row else None
+    most_recent = max((d for d in (wellness_latest, activity_latest) if d), default=None)
+    days_behind = (
+        (today - datetime.date.fromisoformat(most_recent)).days
+        if most_recent
+        else None
+    )
+
+    planned_today = _fetch_plan_row(conn, resolved, today.isoformat())
+    planned_tomorrow = _fetch_plan_row(conn, resolved, tomorrow.isoformat())
+
+    # 準備度：查一段涵蓋今天在內、往回抓幾天的窗，找出「今天」與
+    # 「往回第一個真正可評的日期」（N-13：今天很可能還沒同步，None
+    # 不代表異常，但今日卡想同時呈現「最近一次真正評過的狀態」）。
+    lookback_start = today - datetime.timedelta(days=_READINESS_LOOKBACK_DAYS)
+    readiness_series = training_load_queries.compute_readiness_for_athlete(
+        conn, resolved, lookback_start, today
+    )
+    readiness_by_date = {r["date"]: r for r in readiness_series}
+    today_readiness = readiness_by_date.get(today)
+    latest_evaluable = next(
+        (r for r in reversed(readiness_series) if r["readiness"] is not None),
+        None,
+    )
+
+    # N-13 同一原則套用到負荷面板：compute_daily_loads() 對「今天」一律填
+    # load=0.0 才能遞推 ATL/CTL/TSB，今天完全無資料時這個 0 是假設而非
+    # 事實，直接顯示出來的 TSB 會跟 readiness.today 為 None 互相矛盾
+    # （一邊說「未評」，另一邊卻煞有介事顯示數字）。故今天若在
+    # get_dates_without_any_data() 裡，today 的負荷同樣不輸出。
+    today_has_no_data = today in training_load_queries.get_dates_without_any_data(
+        conn, resolved, today, today
+    )
+
+    load_series = training_load_queries.compute_training_load_for_athlete(
+        conn, resolved, today, today
+    )
+    load_today = load_series[0] if load_series else None
+
+    hrmax_row = conn.execute(
+        "SELECT max_hr_source FROM athlete_profile WHERE id = ?", (resolved,)
+    ).fetchone()
+    max_hr_source = hrmax_row["max_hr_source"] if hrmax_row else None
+    hrmax_biases = data_confidence.hrmax_bias_codes(max_hr_source)
+
+    load_fact = None
+    if load_today is not None and not today_has_no_data:
+        tsb_bias_codes = [*hrmax_biases, "tsb_percentile_engineering"]
+        load_fact = {
+            "atl": data_confidence.fact(
+                _round(load_today["atl"]), source="Banister EWMA（7 日時間常數）",
+                bias_codes=hrmax_biases,
+            ),
+            "ctl": data_confidence.fact(
+                _round(load_today["ctl"]), source="Banister EWMA（42 日時間常數）",
+                bias_codes=hrmax_biases,
+            ),
+            "tsb": data_confidence.fact(
+                _round(load_today["tsb"]), source="TSB = CTL − ATL",
+                bias_codes=tsb_bias_codes,
+            ),
+        }
+
+    wellness_today_row = conn.execute(
+        "SELECT hrv_ms, hrv_weekly_avg_ms FROM daily_wellness WHERE athlete_id = ? AND date = ?",
+        (resolved, today.isoformat()),
+    ).fetchone()
+    hrv_fact = None
+    if wellness_today_row is not None:
+        hrv_ms = wellness_today_row["hrv_ms"]
+        hrv_weekly_avg_ms = wellness_today_row["hrv_weekly_avg_ms"]
+        delta_pct = None
+        if hrv_ms is not None and hrv_weekly_avg_ms:
+            delta_pct = _round((hrv_ms - hrv_weekly_avg_ms) / hrv_weekly_avg_ms * 100, 1)
+        hrv_fact = {
+            "today_ms": data_confidence.fact(hrv_ms, source="daily_wellness.hrv_ms")
+            if hrv_ms is not None
+            else None,
+            "weekly_avg_ms": data_confidence.fact(
+                hrv_weekly_avg_ms, source="daily_wellness.hrv_weekly_avg_ms（7 日滾動均值）"
+            )
+            if hrv_weekly_avg_ms is not None
+            else None,
+            "delta_pct": data_confidence.fact(
+                delta_pct,
+                source="(今日 - 7日均值) / 7日均值",
+                bias_codes=["hrv_pct_form_unvalidated"],
+            )
+            if delta_pct is not None
+            else None,
+        }
+
+    consecutive_training_days = None
+    if today_readiness is not None:
+        consecutive_training_days = {
+            "value": today_readiness["consecutive_training_days"],
+            "threshold": (
+                DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS
+                if today_readiness["threshold_source"] == "default"
+                else _fetch_personalized_threshold(conn, resolved)
+            ),
+            "threshold_source": today_readiness["threshold_source"],
+        }
+
+    last_activity_row = conn.execute(
+        """
+        SELECT id, date(started_at) AS d, activity_type, workout_type,
+               distance_km, avg_pace_sec_per_km, avg_hr_bpm
+        FROM activities
+        WHERE athlete_id = ? AND date(started_at) <= ?
+        ORDER BY started_at DESC LIMIT 1
+        """,
+        (resolved, today.isoformat()),
+    ).fetchone()
+    last_activity = None
+    if last_activity_row is not None:
+        last_activity = {
+            "id": last_activity_row["id"],
+            "date": last_activity_row["d"],
+            "activity_type": last_activity_row["activity_type"],
+            "workout_type": last_activity_row["workout_type"],
+            "distance_km": last_activity_row["distance_km"],
+            "avg_pace_sec_per_km": last_activity_row["avg_pace_sec_per_km"],
+            "avg_hr_bpm": last_activity_row["avg_hr_bpm"],
+        }
+
+    return {
+        "date": today.isoformat(),
+        "freshness": {
+            "wellness_latest": wellness_latest,
+            "activity_latest": activity_latest,
+            "days_behind": days_behind,
+        },
+        "planned": {"today": planned_today, "tomorrow": planned_tomorrow},
+        "readiness": {
+            "today": _serialize_readiness_entry(today_readiness),
+            "latest_evaluable": _serialize_readiness_entry(latest_evaluable),
+        },
+        "load": load_fact,
+        "hrv": hrv_fact,
+        "consecutive_training_days": consecutive_training_days,
+        "last_activity": last_activity,
+    }
+
+
+# 準備度往回查幾天找「最近一次可評日」——超過這個範圍代表資料同步斷了
+# 太久，今日卡不再往回找，交由 freshness.days_behind 呈現這個事實即可。
+_READINESS_LOOKBACK_DAYS = 14
+
+
+
+def _fetch_personalized_threshold(conn: sqlite3.Connection, athlete_id: int) -> int | None:
+    row = conn.execute(
+        "SELECT high_risk_consecutive_training_days FROM athlete_profile WHERE id = ?",
+        (athlete_id,),
+    ).fetchone()
+    return row["high_risk_consecutive_training_days"] if row else None
+
+
+def _serialize_readiness_entry(entry: dict | None) -> dict | None:
+    """把 readiness.assess_readiness() 一筆輸出轉成今日卡要的形狀
+    （date 轉字串，其餘原樣透傳）。entry 為 None 時（該區間內完全沒有
+    可評的日子）回傳 None。
+    """
+    if entry is None:
+        return None
+    return {
+        "date": entry["date"].isoformat(),
+        "readiness": entry["readiness"],
+        "triggers": entry["triggers"],
+        "dimensions_evaluated": entry["dimensions_evaluated"],
+        "not_assessed": entry["not_assessed"],
+    }
+
+
+# --------------------------------------------------------------------------
+# /api/calendar
+# --------------------------------------------------------------------------
+
+
+def get_calendar(
+    conn: sqlite3.Connection,
+    athlete_id: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    today: datetime.date | None = None,
+) -> dict:
+    """[start, end] 內每一天的課表與實際活動（全部運動類型），供週條與
+    行事曆共用。**刻意不走 resolve_range()**——那個函式錨定「資料庫最新
+    一天」，會讓行事曆被截斷；行事曆要用真實今天當作參照點（呼應既有
+    Phase 6 規格：行事曆用真實今天，其他 range 圖表維持錨定資料庫最新日）。
+
+    課表與活動的配對重用 plan_reconciliation.match_activity_to_plan()——
+    與單場明細（_fetch_planned）走同一套規則，避免行事曆另立一份配對邏輯。
+
+    day_state 是狀態分類，不是評價：
+        - "rest_ok"：當天無跑步課表（無課表，或課表為 rest），且無跑步活動
+        - "planned_done"：當天有跑步課表，且配對成功（exact/inferred）
+        - "planned_missed"：**今天以前**有跑步課表，但沒有任何活動可配對
+        - "today_pending"：**今天**有跑步課表、尚無配對成功的活動——今天
+          還沒過完，不可判定為「錯過」，故與 planned_missed 分開
+        - "unplanned_activity"：當天有跑步活動，但無對應課表可配對成功
+          （含歧義／無課表兩種情況；不細分是因為兩者對「有練但沒排」
+          這件事的呈現相同）
+        - "future"：today 之後，尚未發生
+    """
+    resolved = resolve_athlete_id(conn, athlete_id)
+    today = today or datetime.date.today()
+    if resolved is None or not start or not end:
+        return {"start": start, "end": end, "today": today.isoformat(), "days": []}
+
+    plan_rows = conn.execute(
+        """
+        SELECT id, planned_date, workout_type, planned_distance_km,
+               planned_pace_sec_per_km, plan_source, linked_activity_id
+        FROM training_plan
+        WHERE athlete_id = ? AND is_active = 1
+          AND planned_date >= ? AND planned_date <= ?
+        ORDER BY planned_date, id
+        """,
+        (resolved, start, end),
+    ).fetchall()
+    plans_by_date: dict[str, list[dict]] = {}
+    for row in plan_rows:
+        plans_by_date.setdefault(row["planned_date"], []).append(dict(row))
+
+    activity_rows = conn.execute(
+        """
+        SELECT id, date(started_at) AS d, activity_type, workout_type,
+               title, distance_km, duration_sec
+        FROM activities
+        WHERE athlete_id = ? AND date(started_at) >= ? AND date(started_at) <= ?
+        ORDER BY started_at
+        """,
+        (resolved, start, end),
+    ).fetchall()
+    activities_by_date: dict[str, list[sqlite3.Row]] = {}
+    for row in activity_rows:
+        activities_by_date.setdefault(row["d"], []).append(row)
+
+    start_date = datetime.date.fromisoformat(start)
+    end_date = datetime.date.fromisoformat(end)
+    days = []
+    current = start_date
+    while current <= end_date:
+        date_str = current.isoformat()
+        day_plans = plans_by_date.get(date_str, [])
+        day_activities = activities_by_date.get(date_str, [])
+        same_day_for_match = [
+            {"id": a["id"], "activity_type": a["activity_type"]} for a in day_activities
+        ]
+
+        activities_out = []
+        any_matched = False
+        for activity_row in day_activities:
+            match = plan_reconciliation.match_activity_to_plan(
+                {"id": activity_row["id"], "activity_type": activity_row["activity_type"]},
+                day_plans,
+                same_day_for_match,
+            )
+            if match["state"] in ("exact", "inferred"):
+                any_matched = True
+            activities_out.append(
+                {
+                    "id": activity_row["id"],
+                    "activity_type": activity_row["activity_type"],
+                    "is_running": activity_row["activity_type"] in RUNNING_ACTIVITY_TYPES,
+                    "workout_type": activity_row["workout_type"],
+                    "distance_km": activity_row["distance_km"],
+                    "duration_sec": activity_row["duration_sec"],
+                    "title": activity_row["title"],
+                    "plan_match": {
+                        "state": match["state"],
+                        "method": match["method"],
+                        "reason": match["reason"],
+                    },
+                }
+            )
+
+        has_running_plan = any(
+            p["workout_type"] in plan_reconciliation.RUNNING_WORKOUT_TYPES for p in day_plans
+        )
+        has_running_activity = any(a["is_running"] for a in activities_out)
+
+        if current > today:
+            day_state = "future"
+        elif has_running_plan and any_matched:
+            day_state = "planned_done"
+        elif has_running_plan and current == today:
+            day_state = "today_pending"
+        elif has_running_plan and not any_matched:
+            day_state = "planned_missed"
+        elif has_running_activity and not any_matched:
+            day_state = "unplanned_activity"
+        else:
+            day_state = "rest_ok"
+
+        days.append(
+            {
+                "date": date_str,
+                "planned": [
+                    {
+                        "id": p["id"],
+                        "workout_type": p["workout_type"],
+                        "planned_distance_km": p["planned_distance_km"],
+                        "planned_pace_sec_per_km": p["planned_pace_sec_per_km"],
+                        "plan_source": p["plan_source"],
+                    }
+                    for p in day_plans
+                ],
+                "activities": activities_out,
+                "day_state": day_state,
+            }
+        )
+        current += datetime.timedelta(days=1)
+
+    return {"start": start, "end": end, "today": today.isoformat(), "days": days}
+
+
+# --------------------------------------------------------------------------
+# /api/training-load
+# --------------------------------------------------------------------------
+
+
+def get_training_load(
+    conn: sqlite3.Connection,
+    athlete_id: int | None = None,
+    range_key: str = DEFAULT_RANGE,
+) -> dict:
+    """訓練負荷面板：range 內每日的 ATL/CTL/TSB 時間序列，各自帶信賴度。
+
+    走既有 resolve_range()——與其他 range 端點（sessions／wellness-trend
+    等）共用同一套 range 切換，錨定「資料庫最新日」而非真實今天
+    （與 /api/today／/api/calendar 的錨點刻意不同，理由見各自的說明）。
+    """
+    resolved = resolve_athlete_id(conn, athlete_id)
+    window = resolve_range(conn, resolved, range_key)
+    if resolved is None or not window["start_date"]:
+        return {**window, "series": []}
+
+    start_date = datetime.date.fromisoformat(window["start_date"])
+    end_date = datetime.date.fromisoformat(window["end_date"])
+
+    hrmax_row = conn.execute(
+        "SELECT max_hr_source FROM athlete_profile WHERE id = ?", (resolved,)
+    ).fetchone()
+    hrmax_biases = data_confidence.hrmax_bias_codes(
+        hrmax_row["max_hr_source"] if hrmax_row else None
+    )
+    tsb_bias_codes = [*hrmax_biases, "tsb_percentile_engineering"]
+
+    load_series = training_load_queries.compute_training_load_for_athlete(
+        conn, resolved, start_date, end_date
+    )
+
+    series = []
+    for day in load_series:
+        series.append(
+            {
+                "date": day["date"].isoformat(),
+                "atl": data_confidence.fact(
+                    _round(day["atl"]), source="Banister EWMA（7 日時間常數）",
+                    bias_codes=hrmax_biases,
+                ),
+                "ctl": data_confidence.fact(
+                    _round(day["ctl"]), source="Banister EWMA（42 日時間常數）",
+                    bias_codes=hrmax_biases,
+                ),
+                "tsb": data_confidence.fact(
+                    _round(day["tsb"]), source="TSB = CTL − ATL",
+                    bias_codes=tsb_bias_codes,
+                ),
+                "uncertain": day["uncertain"],
+            }
+        )
+
+    return {**window, "series": series}
