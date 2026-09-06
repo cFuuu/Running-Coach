@@ -208,10 +208,17 @@ class TestAssessReadinessHrv(unittest.TestCase):
         self.assertTrue(all(r["readiness"] == "normal" for r in result))
 
     def test_missing_wellness_record_entirely_degrades_gracefully(self):
+        """wellness 缺紀錄但當天仍有負荷資料（不在 dates_without_any_data
+        內）——HRV 維度不可評，但 consecutive_training_days 維度仍可評，
+        故 readiness 為 "normal" 而非 None。"""
         series = _load_series([0.0])
         result = assess_readiness(series, [])
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["readiness"], "normal")
+        self.assertIn("consecutive_training_days", result[0]["dimensions_evaluated"])
+        self.assertTrue(
+            any(na["dimension"] == "hrv" for na in result[0]["not_assessed"])
+        )
 
 
 class TestAssessReadinessGeneral(unittest.TestCase):
@@ -239,6 +246,54 @@ class TestAssessReadinessGeneral(unittest.TestCase):
         self.assertEqual(
             triggered_dimensions, {"consecutive_training_days", "tsb", "hrv"}
         )
+
+
+class TestAssessReadinessDatesWithoutAnyData(unittest.TestCase):
+    """N-13：完全無資料的日期應回報 readiness=None，不是 normal。"""
+
+    def test_date_without_any_data_returns_none_not_normal(self):
+        series = _load_series([0.0, 0.0, 0.0])
+        no_data_date = series[-1]["date"]
+        result = assess_readiness(series, [], dates_without_any_data={no_data_date})
+        self.assertIsNone(result[-1]["readiness"])
+        self.assertEqual(result[-1]["dimensions_evaluated"], [])
+        self.assertEqual(result[-1]["triggers"], [])
+        not_assessed_dims = {na["dimension"] for na in result[-1]["not_assessed"]}
+        self.assertEqual(
+            not_assessed_dims, {"consecutive_training_days", "tsb", "hrv"}
+        )
+        for na in result[-1]["not_assessed"]:
+            self.assertIn("reason", na)
+
+    def test_only_the_flagged_date_is_affected(self):
+        series = _load_series([0.0, 0.0, 0.0])
+        no_data_date = series[1]["date"]
+        result = assess_readiness(series, [], dates_without_any_data={no_data_date})
+        self.assertIsNone(result[1]["readiness"])
+        self.assertEqual(result[0]["readiness"], "normal")
+        self.assertEqual(result[2]["readiness"], "normal")
+
+    def test_omitting_the_parameter_preserves_existing_behavior(self):
+        """未傳入時視為空集合，既有呼叫端（未跟進此參數）行為零變動。"""
+        series = _load_series([0.0])
+        result = assess_readiness(series, [])
+        self.assertEqual(result[0]["readiness"], "normal")
+
+    def test_dimensions_evaluated_present_on_normal_day(self):
+        series = _load_series([0.0])
+        result = assess_readiness(series, [])
+        self.assertEqual(
+            result[0]["dimensions_evaluated"], ["consecutive_training_days"]
+        )
+
+    def test_tsb_not_assessed_reason_present_when_samples_insufficient(self):
+        series = _load_series([0.0] * 5, tsb_overrides={0: -9999.0})
+        result = assess_readiness(series, [])
+        tsb_not_assessed = [
+            na for na in result[0]["not_assessed"] if na["dimension"] == "tsb"
+        ]
+        self.assertEqual(len(tsb_not_assessed), 1)
+        self.assertIn("reason", tsb_not_assessed[0])
 
 
 class TestAssessReadinessDoesNotMutateTrainingPlan(unittest.TestCase):

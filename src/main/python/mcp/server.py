@@ -259,9 +259,15 @@ def get_readiness_status(
     end_date: str,
     athlete_id: int | None = None,
 ) -> list[dict]:
-    """取得指定日期區間內每日的恢復狀態判讀（readiness: low/normal），
+    """取得指定日期區間內每日的恢復狀態判讀（readiness: low/normal/None），
     綜合連續訓練天數、訓練負荷趨勢（TSB）、HRV 相對 7 日均值變化三個維度，
     附觸發原因。只輸出判讀結果，不會修改任何課表。
+
+    readiness 為 None 代表三個維度皆無法評估（例如該日尚未同步任何
+    activities／daily_wellness 紀錄），**不等於** "normal"——None 是
+    「沒查」，"normal" 是「查過了、確實沒有異常訊號」。回傳的每筆另附
+    dimensions_evaluated（實際評估了哪些維度）與 not_assessed（未評的
+    維度與原因），行為約束第 2 條「不可評的維度就不評」同樣適用於此。
 
     start_date／end_date 格式為 YYYY-MM-DD。athlete_id 省略時預設取
     資料庫中第一位學員。

@@ -99,6 +99,49 @@ def get_hr_params(
     return row["max_hr_bpm"], row["resting_hr_bpm"]
 
 
+def get_dates_without_any_data(
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> set[datetime.date]:
+    """找出 [start_date, end_date] 內、activities 與 daily_wellness 皆完全
+    無任何紀錄的日期（N-13）。
+
+    這與「查過、當天負荷為 0」不同——compute_daily_loads() 對沒有訓練的
+    日子一律填 load=0.0，讀不出「今天到底有沒有同步資料」；本函式直接查
+    兩張來源表本身有沒有列，供 assess_readiness() 判斷該日是否連「評估的
+    前提」都不存在（例如尚未執行 Garmin 同步的最新幾天）。
+
+    只看該 athlete 是否有任一筆活動（不限 activity_type，因為只要有活動
+    紀錄就代表這天資料已同步，即使該活動類型不列入負荷計算）或任一筆
+    daily_wellness 紀錄。
+    """
+    dates_with_data: set[datetime.date] = set()
+    for row in conn.execute(
+        """
+        SELECT DISTINCT date(started_at) AS d FROM activities
+        WHERE athlete_id = ? AND date(started_at) >= ? AND date(started_at) <= ?
+        """,
+        (athlete_id, start_date.isoformat(), end_date.isoformat()),
+    ):
+        dates_with_data.add(datetime.date.fromisoformat(row["d"]))
+    for row in conn.execute(
+        """
+        SELECT DISTINCT date FROM daily_wellness
+        WHERE athlete_id = ? AND date >= ? AND date <= ?
+        """,
+        (athlete_id, start_date.isoformat(), end_date.isoformat()),
+    ):
+        dates_with_data.add(datetime.date.fromisoformat(row["date"]))
+
+    all_dates = {
+        start_date + datetime.timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
+    }
+    return all_dates - dates_with_data
+
+
 def get_wellness_for_readiness(
     conn: sqlite3.Connection,
     athlete_id: int,
@@ -151,6 +194,10 @@ def compute_readiness_for_athlete(
     回傳：readiness.assess_readiness() 的輸出，依日期升冪排序，涵蓋
     [start_date, end_date] 整段區間。
 
+    N-13：[start_date, end_date] 內若某天 activities／daily_wellness 皆無
+    任何紀錄（尚未同步或無資料），該天的 readiness 為 None 而非 "normal"，
+    見 get_dates_without_any_data() 與 assess_readiness() 的說明。
+
     ATL/CTL 暖機期：compute_training_load_series() 把序列第一天的 ATL/CTL
     直接設為當天負荷（見該函式 docstring），若序列就從使用者要求的 start_date
     開始算，正好撞上高強度訓練日時，ATL（7 天時間常數）與 CTL（42 天時間常數）
@@ -180,6 +227,11 @@ def compute_readiness_for_athlete(
 
     daily_wellness = get_wellness_for_readiness(conn, athlete_id, start_date, end_date)
 
+    # N-13：只在呼叫端要求輸出的區間內查「完全無資料的日期」，暖機期
+    # （warmup_start~start_date 之間）不需要這個檢查——那段本來就只用於
+    # ATL/CTL 收斂與連續訓練天數查詢表，不會被輸出。
+    dates_without_any_data = get_dates_without_any_data(conn, athlete_id, start_date, end_date)
+
     threshold_row = conn.execute(
         "SELECT high_risk_consecutive_training_days FROM athlete_profile WHERE id = ?",
         (athlete_id,),
@@ -202,4 +254,5 @@ def compute_readiness_for_athlete(
         high_risk_consecutive_training_days=high_risk_consecutive_training_days,
         output_from_date=start_date,
         max_hr_source=max_hr_source,
+        dates_without_any_data=dates_without_any_data,
     )
