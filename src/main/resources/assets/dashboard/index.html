@@ -64,16 +64,41 @@
   <div class="notice-bar" id="notice-bar"></div>
 
   <!--
+    導覽列：五個錨點按鈕，跳轉到下方對應區塊（不做 tab，仍是單頁）。
+    連結由 app.js 依 SECTION_NAV 常數產生 is-active 高亮，這裡先放好
+    固定的 5 個錨點與 aria-label，內容（is-active class）由 JS 接手。
+  -->
+  <nav class="section-nav" aria-label="區塊導覽" id="section-nav">
+    <div class="section-nav-inner">
+      <a class="section-nav-link" href="#panel-today" data-nav-target="panel-today">今日</a>
+      <a class="section-nav-link" href="#panel-calendar" data-nav-target="panel-calendar">本週與行事曆</a>
+      <a class="section-nav-link" href="#panel-session" data-nav-target="panel-session">單場分析</a>
+      <a class="section-nav-link" href="#panel-load" data-nav-target="panel-load">訓練負荷與趨勢</a>
+      <a class="section-nav-link" href="#panel-wellness" data-nav-target="panel-wellness">每日身體狀況</a>
+    </div>
+  </nav>
+
+  <!--
     版面：
-      手機（<768px）單欄堆疊，DOM 順序即為顯示順序：單場分析 → 跨場趨勢 → 每日身體狀況
-      桌機（≥768px）左右兩欄：左欄＝單場分析(上)+跨場趨勢(下)，右欄＝每日身體狀況
+      手機（<768px）單欄堆疊，DOM 順序＝顯示順序：
+        今日 → 本週與行事曆 → 單場分析 → 訓練負荷與趨勢 → 每日身體狀況
+      桌機（≥768px）今日卡橫跨兩欄置頂；其下左欄＝單場分析(上)+訓練負荷與趨勢(下)，
+      右欄＝本週與行事曆(上)+每日身體狀況(下)
   -->
   <main class="layout">
 
+    <!-- 區塊一：今日（桌機橫跨兩欄，見 .panel-today 樣式） -->
+    <section class="panel panel-today" id="panel-today" aria-labelledby="h-today">
+      <h2 class="panel-title" id="h-today">
+        今日<span class="panel-hint">規則引擎輸出的事實與信賴度，不含判讀建議</span>
+      </h2>
+      <div id="today-body"></div>
+    </section>
+
     <div class="col-left">
 
-      <!-- 區塊一：單場分析 -->
-      <section class="panel" aria-labelledby="h-session">
+      <!-- 區塊三：單場分析 -->
+      <section class="panel" id="panel-session" aria-labelledby="h-session">
         <h2 class="panel-title" id="h-session">
           單場分析<span class="panel-hint">預設為區間內最近一場，可切換</span>
         </h2>
@@ -110,9 +135,10 @@
         </div>
       </section>
 
-      <!-- 區塊二：跨場次趨勢 -->
-      <section class="panel" aria-labelledby="h-trend">
-        <h2 class="panel-title" id="h-trend">跨場次趨勢</h2>
+      <!-- 區塊四：訓練負荷與趨勢（原「跨場次趨勢」＋新增負荷曲線） -->
+      <section class="panel" id="panel-load" aria-labelledby="h-load">
+        <h2 class="panel-title" id="h-load">訓練負荷與趨勢</h2>
+        <div id="load-chart"></div>
         <div id="trend-charts"></div>
         <div id="session-list"></div>
       </section>
@@ -121,8 +147,17 @@
 
     <div class="col-right">
 
-      <!-- 區塊三：每日身體狀況 -->
-      <section class="panel" aria-labelledby="h-wellness">
+      <!-- 區塊二：本週與行事曆 -->
+      <section class="panel" id="panel-calendar" aria-labelledby="h-calendar">
+        <h2 class="panel-title" id="h-calendar">本週與行事曆</h2>
+        <div id="week-strip"></div>
+        <button type="button" class="calendar-toggle" id="calendar-toggle" aria-expanded="false">展開月曆 ▾</button>
+        <div id="calendar-body" hidden></div>
+        <div class="calendar-legend" id="calendar-legend"></div>
+      </section>
+
+      <!-- 區塊五：每日身體狀況 -->
+      <section class="panel" id="panel-wellness" aria-labelledby="h-wellness">
         <h2 class="panel-title" id="h-wellness">
           每日身體狀況<span class="panel-hint">淡色背景為訓練日</span>
         </h2>

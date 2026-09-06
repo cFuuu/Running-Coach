@@ -32,7 +32,13 @@
     wellness: null,
     trainingDays: [],
     recoveryImpacts: [],
-    meta: null
+    meta: null,
+    today: null,
+    loadSeries: null,
+    calendarExpanded: false,
+    calendarMonth: null,   // 'YYYY-MM'，展開月曆時才需要，預設當月
+    calendarData: null,    // /api/calendar 回傳的月曆資料（展開後才載入）
+    weekDays: null         // /api/calendar 的本週資料（週條用）
   };
 
   // range 的合法值改由 /api/meta 的 ranges 動態提供（後端 RANGE_LABELS
@@ -113,10 +119,76 @@
     lsd: '長距離慢跑',
     race: '比賽',
     recovery: '恢復跑',
-    unknown: '未分類'
+    unknown: '未分類',
+    rest: '休息',
+    strength: '重訓課',
+    cross_training: '交叉訓練'
   };
 
   var SOURCE_LABEL = { auto: '自動判定', manual: '手動設定' };
+
+  // 今日卡／行事曆用：activity_type → 顯示名稱與 CSS 色票 key
+  // （--activity-* 變數，見 styles.css；未列出的類型退回 activity-other）。
+  var ACTIVITY_TYPE_LABEL = {
+    running: '跑步',
+    treadmill_running: '跑步機',
+    track_running: '田徑場跑步',
+    trail_running: '越野跑',
+    strength_training: '重訓',
+    walking: '健走',
+    cycling: '騎車',
+    hiking: '登山'
+  };
+  var ACTIVITY_COLOR_VARS = {
+    running: '--activity-running',
+    treadmill_running: '--activity-running',
+    track_running: '--activity-running',
+    trail_running: '--activity-running',
+    strength_training: '--activity-strength_training',
+    walking: '--activity-walking',
+    cycling: '--activity-cycling'
+  };
+  function activityColorVar(activityType) {
+    return ACTIVITY_COLOR_VARS[activityType] || '--activity-other';
+  }
+
+  var DAY_STATE_LABEL = {
+    rest_ok: '休息',
+    planned_done: '完成',
+    planned_missed: '未執行',
+    today_pending: '今天待完成',
+    unplanned_activity: '額外訓練',
+    future: '尚未發生'
+  };
+
+  var CONFIDENCE_LABEL = { high: '可信', low: '低信賴', unusable: '不可用' };
+
+  /**
+   * 把 data_confidence.fact() 的三欄位輸出（{value, source, confidence}）
+   * 渲染成一個帶信賴度 badge 的行內元素。fact 為 null／undefined 時顯示
+   * 「未評」（§7.3 硬規則：無法標記信賴度就不輸出裸數字，前端對應地
+   * 不可把 null 顯示成 0 或空白，必須明確標示未評）。
+   * @param {Object|null} fact {value, source, confidence:{level, biases}}
+   * @param {function} formatter 把 value 轉成顯示字串
+   * @param {string} [unit]
+   */
+  function factValueNode(fact, formatter, unit) {
+    var wrap = h('span', 'today-fact-value');
+    if (!fact || fact.value === null || fact.value === undefined) {
+      wrap.appendChild(h('span', null, '未評'));
+      var noneBadge = h('span', 'conf-badge conf-none', '無資料');
+      wrap.appendChild(noneBadge);
+      return wrap;
+    }
+    wrap.appendChild(document.createTextNode(formatter(fact.value) + (unit || '')));
+    var level = (fact.confidence && fact.confidence.level) || 'high';
+    var badge = h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level);
+    var biasDetails = (fact.confidence && fact.confidence.biases || [])
+      .map(function (b) { return b.detail; }).join('；');
+    badge.title = (fact.source || '') + (biasDetails ? '　' + biasDetails : '');
+    wrap.appendChild(badge);
+    return wrap;
+  }
 
   // ------------------------------------------------------------ 資料存取層
 
@@ -235,9 +307,12 @@
   // 一處做這個轉換的地方。
 
   // 同步群組：容器 id → 該群組內所有連續模式圖表共用同一條邏輯 X 軸。
-  // 三組互不同步，因為 X 軸基準不同（單場分析＝經過秒數；跨場趨勢／
-  // 身體狀況＝日期字串，兩者字典序恰好與時間序一致，可直接比較）。
-  var SYNC_GROUPS = ['session-body', 'trend-charts', 'wellness-charts'];
+  // 三組互不同步，因為 X 軸基準不同（單場分析＝經過秒數；訓練負荷／
+  // 跨場趨勢／身體狀況＝日期字串，兩者字典序恰好與時間序一致，可直接
+  // 比較）。用 panel-load 整個面板（而非 trend-charts 子容器）當同步
+  // 邊界，讓新增的 TSB 折線（load-chart）與週跑量/距離/配速等跨場趨勢圖
+  // 共用同一條垂直參考線——兩者 X 軸基準相同，理當同步。
+  var SYNC_GROUPS = ['session-body', 'panel-load', 'wellness-charts'];
 
   var tooltipEl = null;
 
@@ -532,7 +607,171 @@
     return '';
   }
 
-  // ------------------------------------------------------------ 區塊一：單場分析
+  // ------------------------------------------------------------ 區塊一：今日
+  //
+  // 純呈現層：把 /api/today 的三欄位事實（數值/來源/信賴度）與課表原樣
+  // 顯示出來，不做任何「今天該不該練」的判讀——判讀留給 MCP 對話中的
+  // 教練（見 PLAN.md §7.3、mcp/server.py 的 coach 行為約束）。
+
+  function renderTodayPlanRow(label, plan) {
+    var row = h('div', 'today-plan-row');
+    row.appendChild(h('span', 'today-plan-label', label));
+    if (!plan) {
+      row.appendChild(h('span', 'today-plan-value', '無課表'));
+      return row;
+    }
+    var text = (WORKOUT_TYPE_LABEL[plan.workout_type] || plan.workout_type || '—');
+    if (plan.planned_distance_km !== null && plan.planned_distance_km !== undefined && plan.planned_distance_km > 0) {
+      text += '　' + C.formatNumber(plan.planned_distance_km, 1) + ' km';
+    }
+    if (plan.planned_pace_sec_per_km) {
+      text += '　' + C.formatPace(plan.planned_pace_sec_per_km) + '/km';
+    }
+    row.appendChild(h('span', 'today-plan-value', text));
+    if (plan.created_at) {
+      row.appendChild(h('span', 'today-note', '課表版本 ' + plan.created_at.slice(0, 10)));
+    }
+    return row;
+  }
+
+  function renderTodayReadinessBlock(readiness) {
+    var block = h('div', 'today-block');
+    block.appendChild(h('div', 'today-block-title', '準備度（規則引擎）'));
+
+    var today = readiness && readiness.today;
+    if (!today || today.readiness === null || today.readiness === undefined) {
+      var reasons = (today && today.not_assessed || [])
+        .map(function (na) { return na.reason; });
+      block.appendChild(h('div', 'state-msg state-unavailable',
+        reasons.length ? reasons[0] : '今日尚無足夠資料可評估'));
+    } else {
+      var row = h('div', 'today-fact-row');
+      row.appendChild(h('span', 'today-fact-label', '今日判定'));
+      row.appendChild(h('span', 'today-fact-value', today.readiness === 'low' ? '低' : '正常'));
+      block.appendChild(row);
+      (today.triggers || []).forEach(function (t) {
+        var trow = h('div', 'today-plan-row');
+        trow.appendChild(h('span', 'today-plan-label', ''));
+        var detailWrap = h('span', 'today-plan-value', t.detail);
+        trow.appendChild(detailWrap);
+        var level = (t.confidence && t.confidence.level) || 'high';
+        trow.appendChild(h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level));
+        block.appendChild(trow);
+      });
+    }
+
+    var latest = readiness && readiness.latest_evaluable;
+    if (latest && (!today || today.readiness === null || today.readiness === undefined)) {
+      block.appendChild(h('div', 'today-note',
+        '最近一次可評估：' + latest.date + '　' + (latest.readiness === 'low' ? '低' : '正常')));
+    }
+    return block;
+  }
+
+  function renderToday() {
+    var node = $('today-body');
+    clear(node);
+    var data = state.today;
+    if (!data) { showLoading(node, '載入今日狀態'); return; }
+
+    if (data.freshness) {
+      var days = data.freshness.days_behind;
+      var freshText = data.freshness.wellness_latest
+        ? '資料最後同步：' + (data.freshness.activity_latest || data.freshness.wellness_latest)
+          + (days > 0 ? '（' + days + ' 天前）' : '（今天）')
+        : '尚無同步資料';
+      node.appendChild(h('div', 'today-freshness', freshText));
+    }
+
+    var grid = h('div', 'today-grid');
+
+    // 課表卡
+    var planBlock = h('div', 'today-block');
+    planBlock.appendChild(h('div', 'today-block-title', '課表'));
+    var planned = data.planned || {};
+    planBlock.appendChild(renderTodayPlanRow('今日', planned.today));
+    planBlock.appendChild(renderTodayPlanRow('明日', planned.tomorrow));
+    grid.appendChild(planBlock);
+
+    // 準備度卡
+    grid.appendChild(renderTodayReadinessBlock(data.readiness));
+
+    // 訓練負荷 + HRV 卡
+    var loadBlock = h('div', 'today-block');
+    loadBlock.appendChild(h('div', 'today-block-title', '訓練負荷與 HRV'));
+    if (!data.load && !data.hrv) {
+      loadBlock.appendChild(h('div', 'state-msg state-unavailable', '今日尚無資料可評估'));
+    } else {
+      if (data.load) {
+        ['atl', 'ctl', 'tsb'].forEach(function (key) {
+          var row = h('div', 'today-fact-row');
+          row.appendChild(h('span', 'today-fact-label', key.toUpperCase()));
+          row.appendChild(factValueNode(data.load[key], function (v) { return C.formatNumber(v, 1); }));
+          loadBlock.appendChild(row);
+        });
+      }
+      if (data.hrv) {
+        var hrvRow = h('div', 'today-fact-row');
+        hrvRow.appendChild(h('span', 'today-fact-label', 'HRV'));
+        hrvRow.appendChild(factValueNode(data.hrv.today_ms, function (v) { return C.formatNumber(v, 1); }, ' ms'));
+        loadBlock.appendChild(hrvRow);
+        if (data.hrv.delta_pct) {
+          var deltaRow = h('div', 'today-fact-row');
+          deltaRow.appendChild(h('span', 'today-fact-label', '較 7 日均值'));
+          deltaRow.appendChild(factValueNode(data.hrv.delta_pct, function (v) { return fmtDelta(v, 1, '%'); }));
+          loadBlock.appendChild(deltaRow);
+        }
+      }
+    }
+    grid.appendChild(loadBlock);
+
+    // 最近一場活動卡
+    var lastBlock = h('div', 'today-block');
+    lastBlock.appendChild(h('div', 'today-block-title', '最近一場'));
+    if (!data.last_activity) {
+      lastBlock.appendChild(h('div', 'state-msg state-unavailable', '尚無活動紀錄'));
+    } else {
+      var la = data.last_activity;
+      var btn = h('button', 'session-card', null);
+      btn.type = 'button';
+      var text = la.date + '　' + (ACTIVITY_TYPE_LABEL[la.activity_type] || la.activity_type);
+      if (la.distance_km) text += '　' + C.formatNumber(la.distance_km, 1) + ' km';
+      if (la.avg_pace_sec_per_km) text += '　' + C.formatPace(la.avg_pace_sec_per_km) + '/km';
+      btn.textContent = text;
+      if (la.activity_type && RUNNING_ACTIVITY_TYPES_CLIENT.indexOf(la.activity_type) !== -1) {
+        btn.addEventListener('click', function () { selectSession(la.id); scrollToSection('panel-session'); });
+      } else {
+        btn.disabled = true;
+        btn.title = '非跑步活動，無單場分析頁可跳轉';
+      }
+      lastBlock.appendChild(btn);
+    }
+    grid.appendChild(lastBlock);
+
+    node.appendChild(grid);
+  }
+
+  // 與後端 activity_types.RUNNING_ACTIVITY_TYPES 對應的前端唯讀複本——
+  // 僅用於「今日卡的最近一場是否可跳轉單場分析」這個 UI 判斷，不影響
+  // 任何資料篩選（篩選邏輯仍在後端 /api/sessions 完成）。
+  var RUNNING_ACTIVITY_TYPES_CLIENT = ['running', 'treadmill_running', 'track_running', 'trail_running'];
+
+  function scrollToSection(id) {
+    var el = $(id);
+    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function loadToday() {
+    showLoading($('today-body'), '載入今日狀態');
+    api('/api/today').then(function (data) {
+      state.today = data;
+      renderToday();
+    }).catch(function (err) {
+      showError($('today-body'), err.message);
+    });
+  }
+
+  // ------------------------------------------------------------ 區塊三：單場分析
 
   function renderSessionPicker() {
     var node = $('session-picker');
@@ -757,7 +996,272 @@
     renderRecoveryImpact();
   }
 
-  // ------------------------------------------------------------ 區塊二：跨場趨勢
+  // ------------------------------------------------------------ 區塊二：本週與行事曆
+  //
+  // 週條與行事曆共用 /api/calendar（start/end 起訖日），刻意不走 range
+  // 系統——這裡永遠錨定真實今天，與其他 range 圖表錨定「資料庫最新日」
+  // 的語意不同（見後端 dashboard_queries.get_calendar 說明）。
+
+  /** 取「今天」所在週的週一（UTC，與既有 weeklyVolume() 週一為週首慣例一致）。 */
+  function mondayOf(dateStr) {
+    var d = new Date(dateStr + 'T00:00:00Z');
+    var dow = d.getUTCDay();
+    var offset = dow === 0 ? 6 : dow - 1;
+    d.setUTCDate(d.getUTCDate() - offset);
+    return d;
+  }
+
+  function addDaysISO(dateStr, days) {
+    var d = new Date(dateStr + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function todayISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function dowLabel(dateStr) {
+    var names = ['日', '一', '二', '三', '四', '五', '六'];
+    return names[new Date(dateStr + 'T00:00:00Z').getUTCDay()];
+  }
+
+  /** 建立一格週條／行事曆格內的活動色點列（全部運動類型，見 get_calendar）。 */
+  function activityDots(activities) {
+    var wrap = h('div', 'week-cell-dots');
+    activities.forEach(function (a) {
+      var dot = h('span', 'activity-dot');
+      dot.style.background = 'var(' + activityColorVar(a.activity_type) + ')';
+      dot.title = (ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type)
+        + (a.distance_km ? '　' + C.formatNumber(a.distance_km, 1) + ' km' : '');
+      wrap.appendChild(dot);
+    });
+    return wrap;
+  }
+
+  function firstRunningActivity(activities) {
+    for (var i = 0; i < activities.length; i += 1) {
+      if (activities[i].is_running) return activities[i];
+    }
+    return null;
+  }
+
+  function renderWeekStrip() {
+    var node = $('week-strip');
+    clear(node);
+    if (!state.weekDays) { showLoading(node, '載入本週'); return; }
+
+    var grid = h('div', 'week-strip');
+    state.weekDays.forEach(function (day) {
+      var cell = h('div', 'week-cell day-' + day.day_state);
+      var runnable = firstRunningActivity(day.activities);
+      if (runnable) {
+        cell.classList.add('is-clickable');
+        cell.addEventListener('click', function () {
+          selectSession(runnable.id);
+          scrollToSection('panel-session');
+        });
+      }
+      cell.appendChild(h('span', 'week-cell-dow', dowLabel(day.date)));
+      cell.appendChild(h('span', 'week-cell-date', day.date.slice(8, 10)));
+      if (day.planned.length > 0) {
+        var wt = day.planned[0].workout_type;
+        cell.appendChild(h('span', 'week-cell-workout', WORKOUT_TYPE_LABEL[wt] || wt));
+      }
+      if (day.activities.length > 0) cell.appendChild(activityDots(day.activities));
+      cell.title = day.date + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
+      grid.appendChild(cell);
+    });
+    node.appendChild(grid);
+  }
+
+  function loadWeekStrip() {
+    var monday = mondayOf(todayISO());
+    var sunday = addDaysISO(monday.toISOString().slice(0, 10), 6);
+    var start = monday.toISOString().slice(0, 10);
+    api('/api/calendar?start=' + start + '&end=' + sunday).then(function (data) {
+      state.weekDays = data.days || [];
+      renderWeekStrip();
+    }).catch(function (err) {
+      showError($('week-strip'), err.message);
+    });
+  }
+
+  /** 行事曆展開時用的月份邊界（YYYY-MM 的第一天所在週一 ~ 最後一天所在週日）。 */
+  function monthGridRange(yearMonth) {
+    var firstOfMonth = yearMonth + '-01';
+    var d = new Date(firstOfMonth + 'T00:00:00Z');
+    var nextMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+    var lastOfMonth = new Date(nextMonth.getTime() - 86400000).toISOString().slice(0, 10);
+    return {
+      start: mondayOf(firstOfMonth).toISOString().slice(0, 10),
+      end: (function () {
+        var sundayBase = mondayOf(lastOfMonth);
+        sundayBase.setUTCDate(sundayBase.getUTCDate() + 6);
+        return sundayBase.toISOString().slice(0, 10);
+      })(),
+      monthStart: firstOfMonth,
+      monthEnd: lastOfMonth
+    };
+  }
+
+  function renderCalendarBody() {
+    var node = $('calendar-body');
+    clear(node);
+    if (!state.calendarExpanded) return;
+    if (!state.calendarData) { showLoading(node, '載入月曆'); return; }
+
+    var range = monthGridRange(state.calendarMonth);
+    var nav = h('div', 'calendar-nav');
+    var prevBtn = h('button', 'calendar-nav-btn', '‹');
+    prevBtn.type = 'button';
+    prevBtn.addEventListener('click', function () { shiftCalendarMonth(-1); });
+    var label = h('span', 'calendar-nav-label', state.calendarMonth);
+    var nextBtn = h('button', 'calendar-nav-btn', '›');
+    nextBtn.type = 'button';
+    nextBtn.addEventListener('click', function () { shiftCalendarMonth(1); });
+    nav.appendChild(prevBtn);
+    nav.appendChild(label);
+    nav.appendChild(nextBtn);
+    node.appendChild(nav);
+
+    var grid = h('div', 'calendar-grid');
+    var byDate = {};
+    (state.calendarData.days || []).forEach(function (d) { byDate[d.date] = d; });
+
+    var cursor = range.start;
+    while (cursor <= range.end) {
+      var day = byDate[cursor];
+      var cell = h('div', 'calendar-cell' + (day ? ' day-' + day.day_state : ''));
+      if (cursor < range.monthStart || cursor > range.monthEnd) cell.classList.add('is-outside-month');
+      cell.appendChild(h('span', 'calendar-cell-date', cursor.slice(8, 10)));
+      if (day) {
+        var runnable = firstRunningActivity(day.activities);
+        if (runnable) {
+          cell.classList.add('is-clickable');
+          cell.addEventListener('click', function (id) {
+            return function () { selectSession(id); scrollToSection('panel-session'); };
+          }(runnable.id));
+        }
+        if (day.activities.length > 0) cell.appendChild(activityDots(day.activities));
+        cell.title = cursor + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
+      }
+      grid.appendChild(cell);
+      cursor = addDaysISO(cursor, 1);
+    }
+    node.appendChild(grid);
+  }
+
+  function loadCalendarBody() {
+    var range = monthGridRange(state.calendarMonth);
+    api('/api/calendar?start=' + range.start + '&end=' + range.end).then(function (data) {
+      state.calendarData = data;
+      renderCalendarBody();
+    }).catch(function (err) {
+      showError($('calendar-body'), err.message);
+    });
+  }
+
+  function shiftCalendarMonth(delta) {
+    var d = new Date(state.calendarMonth + '-01T00:00:00Z');
+    d.setUTCMonth(d.getUTCMonth() + delta);
+    state.calendarMonth = d.toISOString().slice(0, 7);
+    loadCalendarBody();
+  }
+
+  function renderCalendarLegend() {
+    var node = $('calendar-legend');
+    clear(node);
+    Object.keys(DAY_STATE_LABEL).forEach(function (key) {
+      if (key === 'future') return;
+      var item = h('span', 'legend-item');
+      item.appendChild(h('span', 'legend-swatch day-' + key));
+      item.appendChild(document.createTextNode(DAY_STATE_LABEL[key]));
+      node.appendChild(item);
+    });
+  }
+
+  function bindCalendarToggle() {
+    var toggle = $('calendar-toggle');
+    if (!toggle) return;
+    toggle.addEventListener('click', function () {
+      state.calendarExpanded = !state.calendarExpanded;
+      toggle.textContent = state.calendarExpanded ? '收合月曆 ▴' : '展開月曆 ▾';
+      toggle.setAttribute('aria-expanded', state.calendarExpanded ? 'true' : 'false');
+      var body = $('calendar-body');
+      body.hidden = !state.calendarExpanded;
+      if (state.calendarExpanded && !state.calendarMonth) {
+        state.calendarMonth = todayISO().slice(0, 7);
+      }
+      if (state.calendarExpanded && !state.calendarData) {
+        loadCalendarBody();
+      } else {
+        renderCalendarBody();
+      }
+    });
+  }
+
+  // ------------------------------------------------------------ 區塊四：訓練負荷
+
+  /**
+   * 把 /api/training-load 的 fact 序列（{value, source, confidence}）
+   * 轉成 charts.trendLineChart() 要的簡單 {date, value} 序列。信賴度
+   * badge 顯示在圖表下方的說明列（TSB 每天信賴度理論上相同，逐點畫
+   * badge 會過度擁擠），不逐點畫在圖上——這是折線圖已有的既有限制
+   * （trendLineChart 不支援逐點 badge），非本次新增的缺陷。
+   */
+  function loadSeriesToChartSeries(series, key) {
+    return series.map(function (day) {
+      var fact = day[key];
+      return { date: day.date, value: fact ? fact.value : null };
+    });
+  }
+
+  function renderLoad() {
+    var node = $('load-chart');
+    clear(node);
+    var series = state.loadSeries;
+    if (!series || series.series.length === 0) {
+      node.appendChild(h('div', 'state-msg state-unavailable', '此區間內無訓練負荷資料'));
+      return;
+    }
+    var rows = series.series;
+    var hasAny = rows.some(function (r) { return r.tsb && r.tsb.value !== null; });
+    var card = h('div', 'chart-block');
+    card.appendChild(h('h3', 'chart-title', 'TSB（訓練壓力平衡，CTL − ATL）'));
+    if (!hasAny) {
+      card.appendChild(h('div', 'state-msg state-unavailable', '此區間內無訓練負荷資料'));
+    } else {
+      card.appendChild(wrapChart(C.trendLineChart(loadSeriesToChartSeries(rows, 'tsb'), {
+        label: 'TSB',
+        formatter: function (v) { return C.formatNumber(v, 1); },
+        lineClass: 'line-te',
+        dotClass: 'dot-te',
+        containerWidth: widthOf(node)
+      })));
+      var firstConf = rows.map(function (r) { return r.tsb; }).filter(Boolean)[0];
+      if (firstConf) {
+        var level = (firstConf.confidence && firstConf.confidence.level) || 'high';
+        var note = h('div', 'chart-note');
+        note.appendChild(document.createTextNode(firstConf.source + '　'));
+        note.appendChild(h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level));
+        card.appendChild(note);
+      }
+    }
+    node.appendChild(card);
+  }
+
+  function loadLoadSeries() {
+    showLoading($('load-chart'), '載入訓練負荷');
+    api('/api/training-load?range=' + state.range).then(function (data) {
+      state.loadSeries = data;
+      renderLoad();
+    }).catch(function (err) {
+      showError($('load-chart'), err.message);
+    });
+  }
+
+  // ------------------------------------------------------------ 區塊四之二：跨場趨勢
 
   /** 以場次日期建立趨勢資料（由舊到新） */
   function seriesFromSessions(field) {
@@ -1135,6 +1639,9 @@
     }).catch(function (err) {
       showError(wellnessNode, err.message);
     });
+
+    // 訓練負荷（獨立於場次/身體狀況，走同一個 range）
+    loadLoadSeries();
   }
 
   function loadSessionDetail(id) {
@@ -1283,6 +1790,51 @@
     });
   }
 
+  /**
+   * 導覽列高亮：用 IntersectionObserver 追蹤哪個區塊目前在可視範圍內
+   * 最靠近頁首，對應的導覽連結加上 is-active。純視覺輔助，不影響任何
+   * 資料載入或狀態——找不到 IntersectionObserver（極舊瀏覽器）時直接
+   * 跳過，導覽列仍可正常點擊跳轉，只是不會高亮目前區塊。
+   */
+  function bindSectionNav() {
+    var nav = $('section-nav');
+    if (!nav) return;
+    var links = nav.querySelectorAll('.section-nav-link');
+
+    Array.prototype.forEach.call(links, function (link) {
+      link.addEventListener('click', function (evt) {
+        var targetId = link.getAttribute('data-nav-target');
+        var target = $(targetId);
+        if (target) {
+          evt.preventDefault();
+          scrollToSection(targetId);
+        }
+      });
+    });
+
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    function setActive(id) {
+      Array.prototype.forEach.call(links, function (link) {
+        link.classList.toggle('is-active', link.getAttribute('data-nav-target') === id);
+      });
+    }
+
+    var navHeight = nav.offsetHeight || 44;
+    var observer = new IntersectionObserver(function (entries) {
+      var visible = entries.filter(function (e) { return e.isIntersecting; });
+      if (visible.length === 0) return;
+      // 取最靠近頁首（top 最小）的可見區塊
+      visible.sort(function (a, b) { return a.boundingClientRect.top - b.boundingClientRect.top; });
+      setActive(visible[0].target.id);
+    }, { rootMargin: '-' + (navHeight + 4) + 'px 0px -70% 0px' });
+
+    ['panel-today', 'panel-calendar', 'panel-session', 'panel-load', 'panel-wellness'].forEach(function (id) {
+      var el = $(id);
+      if (el) observer.observe(el);
+    });
+  }
+
   // 視窗尺寸改變時重繪（X 軸刻度數量依容器寬度決定，需重算）
   var resizeTimer = null;
   function bindResize() {
@@ -1292,6 +1844,7 @@
         if (state.sessionDetail) renderSessionDetail();
         if (state.sessions.length > 0) renderTrends();
         if (state.wellness) renderWellness();
+        if (state.loadSeries) renderLoad();
       }, 200);
     });
   }
@@ -1326,6 +1879,9 @@
     bindResize();
     bindTooltipDelegation();
     bindCustomRangePanel();
+    bindCalendarToggle();
+    bindSectionNav();
+    renderCalendarLegend();
 
     api('/api/meta').then(function (meta) {
       state.meta = meta;
@@ -1341,6 +1897,8 @@
       renderRangeButtons(); // meta 失敗仍要能操作，退回 FALLBACK_RANGES
     });
 
+    loadToday();
+    loadWeekStrip();
     loadRangeData();
   }
 
