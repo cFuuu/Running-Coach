@@ -312,6 +312,53 @@ class TestComputeReadinessForAthlete(unittest.TestCase):
         self.assertIsNone(result[1]["readiness"])
         self.assertIsNone(result[2]["readiness"])
 
+    def test_hrv_lookback_reaches_before_start_date(self):
+        """HRV 充足度檢查須看得到 start_date 之前的測量點。
+
+        迴歸：先前 wellness 只查 [start_date, end_date]，而 assess_readiness()
+        的充足度檢查要往前回看 HRV_LOOKBACK_DAYS 天——單日查詢時視窗內只看得到
+        當天那 1 筆，即使 daily_wellness 天天有值也被誤判為「測量點不足」而不評。
+        教練最常問的「今天能不能練」正是單日查詢，必然中招。
+        """
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        # 連續 10 天都有 HRV 與活動，最後一天才是要查的目標日。
+        for i in range(10):
+            date = START + datetime.timedelta(days=i)
+            _insert_activity(conn, athlete_id, date, avg_hr_bpm=140)
+            _insert_wellness(conn, athlete_id, date, hrv_ms=50.0, hrv_weekly_avg_ms=52.0)
+        conn.commit()
+
+        target = START + datetime.timedelta(days=9)
+        result = compute_readiness_for_athlete(conn, athlete_id, target, target)
+
+        self.assertEqual(len(result), 1)
+        self.assertIn("hrv", result[0]["dimensions_evaluated"])
+        self.assertNotIn(
+            "hrv", [item["dimension"] for item in result[0]["not_assessed"]]
+        )
+
+    def test_hrv_still_not_assessed_when_genuinely_too_few_points(self):
+        """真的測量點不足時仍須誠實標為不可評——回看視窗擴大不得把
+        「查不到」變成「假裝夠」（與上一項測試互為邊界）。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        # 目標日當天有 HRV，但前 7 天內只有這 1 筆（其餘日期完全無 HRV 紀錄）。
+        target = START + datetime.timedelta(days=9)
+        for i in range(10):
+            _insert_activity(conn, athlete_id, START + datetime.timedelta(days=i), avg_hr_bpm=140)
+        _insert_wellness(conn, athlete_id, target, hrv_ms=50.0, hrv_weekly_avg_ms=52.0)
+        conn.commit()
+
+        result = compute_readiness_for_athlete(conn, athlete_id, target, target)
+
+        self.assertNotIn("hrv", result[0]["dimensions_evaluated"])
+        self.assertIn("hrv", [item["dimension"] for item in result[0]["not_assessed"]])
+
     def test_missing_hr_params_do_not_raise_and_use_pace_fallback_when_available(self):
         conn = get_connection(":memory:")
         athlete_id = _build_athlete(conn)  # 無 max_hr/resting_hr

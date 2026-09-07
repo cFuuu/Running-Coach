@@ -23,7 +23,7 @@ import datetime
 import sqlite3
 from typing import Any
 
-from src.main.python.services.readiness import assess_readiness
+from src.main.python.services.readiness import HRV_LOOKBACK_DAYS, assess_readiness
 from src.main.python.services.training_load import (
     CTL_WARMUP_DAYS,
     RUNNING_ACTIVITY_TYPES,
@@ -153,6 +153,11 @@ def get_wellness_for_readiness(
     回傳每筆至少含 "date"（datetime.date）／"hrv_ms"／"hrv_weekly_avg_ms"。
     某天缺紀錄的日期不會出現在回傳清單中——assess_readiness() 對缺紀錄的日期
     本來就視為該天 HRV 維度資料缺失，呼叫端不需要為缺漏日期補上佔位列。
+
+    ⚠️ 呼叫端若要讓 assess_readiness() 正確做 HRV 充足度檢查，必須把
+    start_date 往前推 readiness.HRV_LOOKBACK_DAYS 天再傳進來，理由見
+    compute_readiness_for_athlete()。本函式只忠實回傳被要求的區間，
+    不自行擴張——它也被其他不需要回看的呼叫端使用。
     """
     rows = conn.execute(
         """
@@ -266,7 +271,13 @@ def compute_readiness_for_athlete(
     )
     training_load_series = compute_training_load_series(daily_loads)
 
-    daily_wellness = get_wellness_for_readiness(conn, athlete_id, start_date, end_date)
+    # HRV 的充足度檢查會往前回看 HRV_LOOKBACK_DAYS 天數算「有幾個有效測量點」，
+    # 而 assess_readiness() 只看得到這裡傳進去的列。若只查 [start_date, end_date]，
+    # 區間最前面幾天的回看視窗會落在資料之外，即使 daily_wellness 天天有值也會
+    # 被誤判為「測量點不足、不評」——單日查詢（教練最常問的「今天能不能練」）
+    # 必然中招。與上方 activities 的 warmup 是同一個形狀的問題，故同樣往前多抓。
+    wellness_start = start_date - datetime.timedelta(days=HRV_LOOKBACK_DAYS)
+    daily_wellness = get_wellness_for_readiness(conn, athlete_id, wellness_start, end_date)
 
     # N-13：只在呼叫端要求輸出的區間內查「完全無資料的日期」，暖機期
     # （warmup_start~start_date 之間）不需要這個檢查——那段本來就只用於
