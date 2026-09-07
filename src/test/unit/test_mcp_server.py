@@ -14,15 +14,19 @@ from src.main.python.mcp.server import (
     _BEHAVIOR_CONSTRAINTS,
     _ROLE,
     _serialize,
+    add_context_note,
     coach,
     generate_training_plan,
     get_active_training_plan,
     get_athlete_meta,
     get_readiness_status,
+    get_context_notes,
     get_recovery_impact,
     get_session_detail,
+    get_today,
     get_wellness_trend,
     list_running_sessions,
+    save_external_workouts,
 )
 
 START = datetime.date(2026, 8, 1)
@@ -152,6 +156,30 @@ class TestReadOnlyTools(unittest.TestCase):
         result = get_active_training_plan(_fake_ctx(self.conn))
         self.assertEqual(result, [])
 
+    def test_get_today_returns_expected_sections(self):
+        """今日卡聚合：回傳結構含全部區塊，且日期已序列化為 ISO 字串。"""
+        result = get_today(_fake_ctx(self.conn))
+        for key in (
+            "date",
+            "freshness",
+            "planned",
+            "readiness",
+            "load",
+            "hrv",
+            "consecutive_training_days",
+            "last_activity",
+        ):
+            self.assertIn(key, result)
+        self.assertIsInstance(result["date"], str)
+
+    def test_get_today_no_athlete_returns_empty_sections(self):
+        """查無學員時不得拋錯，各區塊回 None——None 是「無法評估」，
+        呼叫端據此顯示「未評」而非 0。"""
+        conn = get_connection(":memory:")
+        result = get_today(_fake_ctx(conn))
+        self.assertIsNone(result["readiness"])
+        self.assertIsNone(result["load"])
+
 
 class TestGenerateTrainingPlanTool(unittest.TestCase):
     def test_returns_unavailable_when_no_vdot_candidate(self):
@@ -277,3 +305,92 @@ class CoachPromptTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSaveExternalWorkoutsTool(unittest.TestCase):
+    """N-2：外部課表寫入型 tool 的薄封裝行為。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.athlete_id = _build_athlete(self.conn)
+        self.conn.commit()
+
+    def test_saves_and_reports_count(self):
+        result = save_external_workouts(
+            _fake_ctx(self.conn),
+            workouts=[
+                {"planned_date": "2026-09-10", "workout_type": "tempo", "planned_distance_km": 8.0},
+                {"planned_date": "2026-09-13", "workout_type": "lsd", "planned_distance_km": 18.0},
+            ],
+        )
+        self.assertTrue(result["saved"])
+        self.assertEqual(result["count"], 2)
+
+        active = get_active_training_plan(_fake_ctx(self.conn))
+        self.assertEqual(len(active), 2)
+        self.assertTrue(all(row["plan_source"] == "external" for row in active))
+
+    def test_empty_list_is_rejected_without_writing(self):
+        result = save_external_workouts(_fake_ctx(self.conn), workouts=[])
+        self.assertFalse(result["saved"])
+        self.assertEqual(get_active_training_plan(_fake_ctx(self.conn)), [])
+
+    def test_invalid_workout_type_returns_reason_not_exception(self):
+        """課種非法時回傳可讀原因，讓 AI 能轉述給學員並改問，而不是拋例外。"""
+        result = save_external_workouts(
+            _fake_ctx(self.conn),
+            workouts=[{"planned_date": "2026-09-10", "workout_type": "配速跑"}],
+        )
+        self.assertFalse(result["saved"])
+        self.assertIn("workout_type", result["reason"])
+        self.assertEqual(get_active_training_plan(_fake_ctx(self.conn)), [])
+
+    def test_no_athlete_returns_reason(self):
+        conn = get_connection(":memory:")
+        result = save_external_workouts(
+            _fake_ctx(conn), workouts=[{"planned_date": "2026-09-10", "workout_type": "easy"}]
+        )
+        self.assertFalse(result["saved"])
+
+
+class TestContextNoteTools(unittest.TestCase):
+    """§7.5 軟性輸入的 MCP 介面。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.athlete_id = _build_athlete(self.conn)
+        self.conn.commit()
+
+    def test_add_then_get_roundtrip(self):
+        result = add_context_note(
+            _fake_ctx(self.conn), note="這週出差，睡不好", start_date="2026-09-01",
+            end_date="2026-09-05",
+        )
+        self.assertTrue(result["saved"])
+
+        notes = get_context_notes(
+            _fake_ctx(self.conn), start_date="2026-09-03", end_date="2026-09-03"
+        )
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0]["note"], "這週出差，睡不好")
+
+    def test_empty_note_returns_reason(self):
+        result = add_context_note(_fake_ctx(self.conn), note="  ", start_date="2026-09-01")
+        self.assertFalse(result["saved"])
+
+    def test_get_returns_empty_when_no_athlete(self):
+        conn = get_connection(":memory:")
+        self.assertEqual(
+            get_context_notes(_fake_ctx(conn), start_date="2026-09-01", end_date="2026-09-05"), []
+        )
+
+
+class TestCoachPromptMentionsNewTools(unittest.TestCase):
+    """行為約束須涵蓋新增的寫入型 tool——約束若沒跟上，等於描述了一個
+    與實際 tool 清單不符的世界（迴歸：先前寫著「唯一的寫入型 tool」）。"""
+
+    def test_constraints_cover_external_plan_and_context_notes(self):
+        text = _BEHAVIOR_CONSTRAINTS
+        self.assertIn("save_external_workouts", text)
+        self.assertIn("add_context_note", text)
+        self.assertNotIn("唯一的寫入型 tool", text)
