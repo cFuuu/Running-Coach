@@ -86,6 +86,12 @@ HRV_DROP_PCT_THRESHOLD = 0.15
 # 至少 3 個測量點才具效度。
 MIN_HRV_POINTS_PER_WEEK = 3
 
+# 充足度檢查回看的天數。⚠️ 查詢層必須據此往前多抓 wellness——本模組只看得到
+# 傳進來的 daily_wellness，若呼叫端只查 [start_date, end_date]，區間最前面
+# 幾天的回看視窗會落在資料之外，被誤判為「測量點不足」而不評。
+# 見 training_load_queries.compute_readiness_for_athlete() 的 warmup 處理。
+HRV_LOOKBACK_DAYS = 7
+
 # suggest_recovery_threshold() 用同一套 HRV 下降門檻判斷「該次連續訓練是否
 # 觀察到恢復訊號惡化」，與 _evaluate_hrv() 的判斷基準一致，避免兩套標準漂移。
 _SUGGESTION_HRV_DROP_PCT_THRESHOLD = HRV_DROP_PCT_THRESHOLD
@@ -331,7 +337,7 @@ def assess_readiness(
             hrv_weekly_avg_ms = wellness.get("hrv_weekly_avg_ms")
             recent_point_count = sum(
                 1
-                for offset in range(7)
+                for offset in range(HRV_LOOKBACK_DAYS)
                 if date - datetime.timedelta(days=offset) in hrv_dates
             )
             if not hrv_ms or not hrv_weekly_avg_ms:
