@@ -7,6 +7,7 @@ from src.main.python.models.db import get_connection
 from src.main.python.services.training_plan_store import (
     get_active_schedule,
     get_plan_history_for_date,
+    save_external_workouts,
     save_schedule,
 )
 
@@ -236,3 +237,190 @@ class TestGetPlanHistoryForDate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSaveExternalWorkouts(unittest.TestCase):
+    """N-2 最小版：外部（跑團）課表逐日落地。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.athlete_id = _build_athlete(self.conn)
+        self.conn.commit()
+
+    def test_writes_rows_marked_external(self):
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [
+                {"planned_date": START, "workout_type": "tempo", "planned_distance_km": 8.0},
+                {"planned_date": START + datetime.timedelta(days=3), "workout_type": "lsd"},
+            ],
+        )
+        rows = get_active_schedule(self.conn, self.athlete_id)
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row["plan_source"] == "external" for row in rows))
+
+    def test_accepts_iso_string_date(self):
+        """日期允許字串——呼叫端可能是 MCP tool，那裡拿到的是 JSON 字串。"""
+        save_external_workouts(
+            self.conn, self.athlete_id, [{"planned_date": "2026-08-01", "workout_type": "easy"}]
+        )
+        rows = get_active_schedule(self.conn, self.athlete_id)
+        self.assertEqual(rows[0]["planned_date"], "2026-08-01")
+
+    def test_notes_preserve_original_wording(self):
+        """課種對不上時原話須留存在 notes——不可為了整齊而丟棄。"""
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [
+                {
+                    "planned_date": START,
+                    "workout_type": "interval",
+                    "notes": "教練說：400 公尺 ×8，休 90 秒",
+                }
+            ],
+        )
+        rows = get_active_schedule(self.conn, self.athlete_id)
+        self.assertIn("400 公尺 ×8", rows[0]["notes"])
+
+    def test_rejects_unknown_workout_type(self):
+        """不在 CHECK 集合內的課種要當場擋下，而非讓 sqlite 丟出難懂的錯誤。"""
+        with self.assertRaises(ValueError):
+            save_external_workouts(
+                self.conn, self.athlete_id, [{"planned_date": START, "workout_type": "配速跑"}]
+            )
+
+    def test_supersedes_generated_plan_on_same_day(self):
+        """外部課表介入後即為唯一基準：同日的系統自產課表須被標記取代，
+        避免 get_active_schedule() 同一天回傳兩列讓教練不知該聽誰的。"""
+        save_schedule(self.conn, self.athlete_id, [_day(START, workout_type="easy")])
+        save_external_workouts(
+            self.conn, self.athlete_id, [{"planned_date": START, "workout_type": "tempo"}]
+        )
+
+        active = get_active_schedule(self.conn, self.athlete_id)
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0]["plan_source"], "external")
+
+        history = get_plan_history_for_date(self.conn, self.athlete_id, START)
+        self.assertEqual(len(history), 2)
+        superseded = [row for row in history if row["is_active"] == 0]
+        self.assertEqual(len(superseded), 1)
+        self.assertEqual(superseded[0]["plan_source"], "generated")
+        self.assertIsNotNone(superseded[0]["superseded_by"])
+
+    def test_generated_plan_never_overwrites_external(self):
+        """反向不成立：系統自產課表不得覆蓋教練排的那天（既有 save_schedule 行為的迴歸）。"""
+        save_external_workouts(
+            self.conn, self.athlete_id, [{"planned_date": START, "workout_type": "tempo"}]
+        )
+        save_schedule(self.conn, self.athlete_id, [_day(START, workout_type="easy")])
+
+        active = get_active_schedule(self.conn, self.athlete_id)
+        sources = sorted(row["plan_source"] for row in active)
+        self.assertEqual(sources, ["external", "generated"])
+        external_row = [r for r in active if r["plan_source"] == "external"][0]
+        self.assertEqual(external_row["is_active"], 1)
+        self.assertIsNone(external_row["superseded_by"])
+
+    def test_rerun_replaces_previous_external_version(self):
+        """教練改課時重跑同一批即可，不會留下兩列生效的外部課表。"""
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [{"planned_date": START, "workout_type": "tempo", "planned_distance_km": 8.0}],
+        )
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [{"planned_date": START, "workout_type": "easy", "planned_distance_km": 5.0}],
+        )
+        active = get_active_schedule(self.conn, self.athlete_id)
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0]["workout_type"], "easy")
+
+
+class TestSaveExternalWorkoutsClearsGaps(unittest.TestCase):
+    """跑團課表只排有練的日子，中間空檔不可留著系統自產的課
+    （§1：系統退居分析層，不在教練沒排的日子補課）。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.athlete_id = _build_athlete(self.conn)
+        self.conn.commit()
+        # 系統先產生連續 5 天的課表
+        save_schedule(
+            self.conn,
+            self.athlete_id,
+            [_day(START + datetime.timedelta(days=i)) for i in range(5)],
+        )
+
+    def test_gaps_are_deactivated_when_requested(self):
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [
+                {"planned_date": START, "workout_type": "tempo"},
+                {"planned_date": START + datetime.timedelta(days=4), "workout_type": "lsd"},
+            ],
+            deactivate_generated_between=True,
+        )
+        active = get_active_schedule(self.conn, self.athlete_id)
+        self.assertEqual(len(active), 2)
+        self.assertTrue(all(row["plan_source"] == "external" for row in active))
+
+    def test_gaps_are_kept_by_default(self):
+        """預設不動——只補登一兩天時不該清掉整段。"""
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [
+                {"planned_date": START, "workout_type": "tempo"},
+                {"planned_date": START + datetime.timedelta(days=4), "workout_type": "lsd"},
+            ],
+        )
+        active = get_active_schedule(self.conn, self.athlete_id)
+        self.assertEqual(len(active), 5)
+
+    def test_dates_outside_batch_range_are_untouched(self):
+        """只清本批日期範圍內的空檔，範圍外的自產課表不受影響。"""
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [
+                {"planned_date": START, "workout_type": "tempo"},
+                {"planned_date": START + datetime.timedelta(days=2), "workout_type": "lsd"},
+            ],
+            deactivate_generated_between=True,
+        )
+        active = get_active_schedule(self.conn, self.athlete_id)
+        remaining_generated = [r for r in active if r["plan_source"] == "generated"]
+        self.assertEqual(
+            sorted(r["planned_date"] for r in remaining_generated),
+            [
+                (START + datetime.timedelta(days=3)).isoformat(),
+                (START + datetime.timedelta(days=4)).isoformat(),
+            ],
+        )
+
+    def test_existing_external_rows_are_not_cleared(self):
+        """不動其他 external 列——先前落地的跑團課不該被新一批蓋掉。"""
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [{"planned_date": START + datetime.timedelta(days=2), "workout_type": "interval"}],
+        )
+        save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [
+                {"planned_date": START, "workout_type": "tempo"},
+                {"planned_date": START + datetime.timedelta(days=4), "workout_type": "lsd"},
+            ],
+            deactivate_generated_between=True,
+        )
+        active = get_active_schedule(self.conn, self.athlete_id)
+        kept = [r for r in active if r["planned_date"] == (START + datetime.timedelta(days=2)).isoformat()]
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]["workout_type"], "interval")
