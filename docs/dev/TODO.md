@@ -897,6 +897,11 @@
   - **為何這是缺陷而非設計**：違反本專案自己的「少評優於錯評」原則與 [PLAN.md §7.3](PLAN.md#73-定案框架事實--依據來源--信賴度) 三欄位契約（無信賴度標記不得輸出）。同一個問題 `assess_session_quality` **已經解掉了**——它有明確的 `not_assessed` 清單並附 `reason`；readiness 是早於該模式的實作、沒有跟上。
   - **實務風險具體**：Fu 在 9/5 問「今天能不能練」，教練拿到 `normal` 卻無從得知這是「查過了沒事」還是「根本沒得查」——而依 `@mcp.prompt("coach")` 約束 1，裸數字本應被當作不可信。
   - **建議修法**：對齊 `assess_session_quality` 的形狀——輸出加 `dimensions_evaluated` 與 `not_assessed`（附 reason），三維度全數不可評時 `readiness` 回 `None` 而非 `normal`。⚠️ 此為**行為變更**，會影響既有呼叫端與 Dashboard，須連同單元測試一起改。
+- **🟡 N-14 tempo／interval 的強度符合度用「整場平均」判斷，與手錶區間對不上（2026-09-07 提出，⚠️ 尚未修）**：[`session_quality.INTENSITY_RANGES_HRR`](../../src/main/python/services/session_quality.py) 的 easy／lsd 已於 2026-09-07 對齊 Fu 手錶實際設定的 Garmin Z2（%HRR 59–74%），但 tempo／interval／race **刻意維持原本的自訂寬區間**，與手錶的 Z3（74–83%）／Z4（83–88%）／Z5（88–100%）不一致。
+  - **為何不能直接對齊**：[`assess_intensity_fit()`](../../src/main/python/services/session_quality.py) 判斷的是**整場平均**心率（`avg_hr_bpm`）。tempo／interval 課含熱身與緩和，整場平均必然低於主課段強度——若把 tempo 門檻改成 Z4 的 83–88%，幾乎每場 tempo 都會被判成「強度不足」，是系統性誤判而非真實發現。easy／lsd 沒有這個問題，因為全程強度均勻，平均即代表該場強度。
+  - **正解方向**：改成抓**主課段**而非整場平均——逐秒資料（`activity_records`）已有，需要一套切分邏輯把熱身／主課／緩和分開，再拿主課段的平均去比對區間。切分方式（用 lap 資料？用心率穩態偵測？）尚未設計。
+  - **在那之前的正確行為**：維持現況的寬區間，並讓 `intensity_range_custom` 這個 bias 標記照常帶出去——判斷層看得到「這組區間是自訂的」，不會把 tempo 的判讀當精確值。
+  - **與手錶設定的關係**：Fu 手錶的完整設定為 Z1 54–59／Z2 59–74／Z3 74–83／Z4 83–88／Z5 88–100（Based On %HRR）。日後若 Fu 改動手錶區間，easy／lsd 這組需同步更新，否則 App 判讀與他跑步當下看到的區間會互相矛盾。
 - **🟡 N-11 Dashboard 呈現層重整（2026-09-05 提出，⚠️ 僅為參照筆記，尚未決策）**：現行 Dashboard 的三區塊是**依資料粒度**分（單場分析→跨場趨勢→每日身體狀況），而非**依使用者要回答的問題**分。Fu 打開頁面時腦中的問題是「今天要不要跑」，不是「我想看跨場趨勢」。動機是介面好用、資訊查得方便，Fu 才會願意每天打開。
   - **觀察筆記已記於 [DASHBOARD_TASKS.md](DASHBOARD_TASKS.md) 的「可參照的外部作品」章節**（含三項具體做法：今日決策卡／準備度評分卡／訓練工具箱，以及若採納時仍適用的既有約束、明確不值得抄的部分）。來源為 [running-dashboard](https://works.lifehacker.tw/works/running-dashboard.html)（品捷）。
   - **⚠️ 狀態是「可參照」而非「要做」**：採不採納、採哪幾項、做成什麼樣子都尚未決定，需先與 Fu 確認後才另立正式規格。
