@@ -32,12 +32,23 @@ from . import data_confidence
 # 各課種預期的心率強度區間（%HRR）。
 # 🔴 工程實務決策：Daniels 的區間定義在**配速**上，而配速受地形、天候、
 # 交通號誌影響大；改用 %HRR 是為了讓低量跑者的日常訓練也能判讀。
-# 區間邊界參考常見的心率區間劃分，非直接引用單一文獻，未來應以本學員
-# 自己的資料校正。見 docs/research/physiological-thresholds.md 的立場：
-# 查不到出處就標明是自訂，不假託文獻。
+#
+# easy／lsd 的邊界（2026-09-07 起）直接對齊學員手錶上實際設定的 Garmin
+# Z2（Based On %HRR，59–74%），讓 App 的判讀與他跑步當下看到的區間一致；
+# 兩邊不同步時，學員會拿到互相矛盾的兩個結論。
+#
+# ⚠️ tempo／interval／race **刻意不對齊**手錶的 Z3/Z4/Z5。本模組判斷的是
+# **整場平均**心率（見 assess_intensity_fit 用 avg_hr_bpm），而這幾種課含
+# 熱身與緩和，整場平均必然低於主課段強度；照搬 Z4 的 83–88% 當 tempo 門檻，
+# 會讓幾乎每場 tempo 都被誤判成「強度不足」。正解是改抓主課段而非平均，
+# 見 TODO.md N-14。在那之前這幾個維持原本的自訂寬區間。
+#
+# 邊界非直接引用單一文獻，未來應以本學員自己的資料校正。見
+# docs/research/physiological-thresholds.md 的立場：查不到出處就標明是自訂，
+# 不假託文獻。
 INTENSITY_RANGES_HRR: dict[str, tuple[float, float]] = {
-    "easy": (0.55, 0.75),
-    "lsd": (0.55, 0.75),
+    "easy": (0.59, 0.74),
+    "lsd": (0.59, 0.74),
     "tempo": (0.75, 0.88),
     "interval": (0.85, 0.95),
     "race": (0.85, 1.00),
