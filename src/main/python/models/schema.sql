@@ -439,6 +439,41 @@ CREATE TABLE IF NOT EXISTS context_notes (
     CHECK (end_date IS NULL OR end_date >= start_date)
 );
 
+-- coach_conversations / coach_messages：AI 教練面板（dashboard 右側）的聊天紀錄。
+-- 承 DASHBOARD_TASKS.md D.0 決策 3（2026-09-08 Fu 拍板）。
+--
+-- ⚠️ 硬邊界：**這兩張表只存原始對話，永不進事實層、規則引擎不讀。**
+-- 它不是 TODO.md N-8 的「跨對話結構化記憶」，只是其日後的原料——
+-- 現在就把對話結構化（抽出「學員說他膝蓋痛」之類的欄位）等於在還不知道
+-- 該記什麼的時候先訂 schema，與 context_notes 拒絕加類型／嚴重度欄位是同一個理由。
+--
+-- content_json 存 Anthropic content blocks 的 JSON 陣列**原文**（含 thinking
+-- 區塊與其 signature、tool_use、tool_result）。刻意不拆成結構化欄位：
+-- 存下來的序列**就是**下一回合要送回 API 的 messages，任何改寫都會讓重播失真
+-- （signature 被動過的 thinking 區塊會被 API 拒絕）。
+--
+-- seq 由呼叫端在同一交易內指定（0 起算），UNIQUE (conversation_id, seq)
+-- 確保同一對話不會出現重號。一回合（user 提問 → assistant tool_use →
+-- user tool_result → assistant 回覆）的所有列必須同一交易寫入：**絕不落地
+-- 沒有對應 tool_result 的 tool_use**，否則下一回合送 API 會 400。
+CREATE TABLE IF NOT EXISTS coach_conversations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id      INTEGER NOT NULL REFERENCES athlete_profile(id),
+    title           TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS coach_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL REFERENCES coach_conversations(id),
+    seq             INTEGER NOT NULL,
+    role            TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content_json    TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE (conversation_id, seq)
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_weather_activity
     ON activity_weather (activity_id, hour_local);
 CREATE INDEX IF NOT EXISTS idx_activity_laps_activity ON activity_laps (activity_id);
@@ -452,3 +487,5 @@ CREATE INDEX IF NOT EXISTS idx_athlete_source_identity_athlete ON athlete_source
 CREATE INDEX IF NOT EXISTS idx_metric_coverage_athlete ON metric_coverage (athlete_id, metric_name);
 CREATE INDEX IF NOT EXISTS idx_context_notes_athlete_date
     ON context_notes (athlete_id, start_date);
+CREATE INDEX IF NOT EXISTS idx_coach_messages_conversation
+    ON coach_messages (conversation_id, seq);
