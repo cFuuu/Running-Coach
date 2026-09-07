@@ -106,7 +106,7 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 
 願景、架構、決策記錄、課表模板等穩定內容見 [docs/dev/PLAN.md](docs/dev/PLAN.md)；目前待辦與 Phase 進度見 [docs/dev/TODO.md](docs/dev/TODO.md)。
 
-## 🎯 開發進度（2026-09-05）
+## 🎯 開發進度（2026-09-07）
 
 | Phase | 狀態 |
 |---|---|
@@ -114,9 +114,9 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 | Phase 1A/1C 歷史資料匯入＋統一資料模型 | ✅ 完成 |
 | Phase 1E FIT 解析 | ✅ 完成 |
 | Phase 1B 即時同步（Garmin 匯入器）| ✅ 主體完成（剩 1B-6 Strava 備援層）|
-| Phase 1.5 本機 Dashboard | 🔵 進行中（Phase 6 行事曆檢視未開始）|
+| Phase 1.5 本機 Dashboard | ✅ 主體完成（今日卡／行事曆／訓練負荷面板已上，剩手機實機測試）|
 | Phase 2 訓練科學規則引擎 | 🔵 進行中（⚠️ 課表週跑量曲線倒掛，見 TODO N-12）|
-| Phase 3 AI Coach（★ 專案主目標）| 🔵 進行中（MCP server 與行為約束層已可用，缺口為 N-7 課表調整粒度、N-8 跨對話記憶）|
+| Phase 3 AI Coach（★ 專案主目標）| 🔵 進行中（14 個 MCP tools 與行為約束層已可用；外部課表與軟性輸入已落地。**剩 N-7 課表調整粒度、N-8 跨對話記憶兩個缺口，皆需先決策**）|
 
 ⚠️ **此表為粗略概況，會落後於實際進度。**
 **進度的單一真實來源是 [docs/dev/TODO.md](docs/dev/TODO.md) 的進度總覽表**，
