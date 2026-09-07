@@ -414,6 +414,31 @@ CREATE TABLE IF NOT EXISTS training_plan (
     created_at                  TEXT NOT NULL
 );
 
+-- context_notes：學員的軟性輸入（出差、睡眠不足、工作壓力、心情、
+-- 「腳有點緊」等規則算不出的情境）。承 PLAN.md §7.5（2026-08-25 grill 定案）。
+--
+-- ⚠️ 硬邊界：**軟性輸入永不進事實層，僅作判斷層（AI 教練）的補充輸入。**
+-- 它無法驗證（學員自述睡不好，系統無從查證），若讓它參與規則計算，等於在
+-- 事實層開一個沒有信賴度可標的洞，直接違反 §7.3 三欄位契約的硬規則。
+-- 故本表刻意**不被** readiness.py／training_load.py／session_quality.py 讀取。
+--
+-- ⚠️ 刻意**不設**類型（type）與嚴重度（severity）等結構化欄位：現階段尚不
+-- 知「嚴重度」該如何分級，硬訂 schema 是在假設上建構（與「外部課表本輪僅
+-- 預留欄位」同一個拒絕理由）。自由文字讓 AI 讀得懂、日期範圍讓查詢層能與
+-- activities／daily_wellness 對齊；累積數十筆後回看實際內容，再決定是否結構化。
+--
+-- 日期範圍：start_date 為必要，end_date 可為 NULL（表示單日，或影響仍在
+-- 持續、結束日未知）。查詢時 COALESCE(end_date, start_date) 即為涵蓋區間末日。
+CREATE TABLE IF NOT EXISTS context_notes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id      INTEGER NOT NULL REFERENCES athlete_profile(id),
+    start_date      TEXT NOT NULL,
+    end_date        TEXT,
+    note            TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    CHECK (end_date IS NULL OR end_date >= start_date)
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_weather_activity
     ON activity_weather (activity_id, hour_local);
 CREATE INDEX IF NOT EXISTS idx_activity_laps_activity ON activity_laps (activity_id);
@@ -425,3 +450,5 @@ CREATE INDEX IF NOT EXISTS idx_performance_metrics_athlete_date ON performance_m
 CREATE INDEX IF NOT EXISTS idx_training_plan_athlete_date ON training_plan (athlete_id, planned_date);
 CREATE INDEX IF NOT EXISTS idx_athlete_source_identity_athlete ON athlete_source_identity (athlete_id);
 CREATE INDEX IF NOT EXISTS idx_metric_coverage_athlete ON metric_coverage (athlete_id, metric_name);
+CREATE INDEX IF NOT EXISTS idx_context_notes_athlete_date
+    ON context_notes (athlete_id, start_date);
