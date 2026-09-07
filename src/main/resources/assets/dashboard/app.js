@@ -675,10 +675,18 @@
     if (!data) { showLoading(node, '載入今日狀態'); return; }
 
     if (data.freshness) {
-      var days = data.freshness.days_behind;
-      var freshText = data.freshness.wellness_latest
-        ? '資料最後同步：' + (data.freshness.activity_latest || data.freshness.wellness_latest)
-          + (days > 0 ? '（' + days + ' 天前）' : '（今天）')
+      var f = data.freshness;
+      var days = f.days_behind;
+      // days_behind 是拿 wellness_latest 與 activity_latest 兩者中較新的
+      // 日期去算的（見後端 get_today() 的 most_recent），故顯示文字必須
+      // 分開列出兩者，不能只挑其中一個日期配這個天數——挑錯就會出現
+      // 「顯示活動日 09-04 卻標『今天』」這種自相矛盾的畫面（曾經發生過）。
+      var parts = [];
+      if (f.activity_latest) parts.push('活動 ' + f.activity_latest);
+      if (f.wellness_latest) parts.push('身體數據 ' + f.wellness_latest);
+      var freshText = parts.length > 0
+        ? '資料最後同步：' + parts.join('　·　')
+          + (days === null || days === undefined ? '' : (days > 0 ? '（' + days + ' 天前）' : '（今天）'))
         : '尚無同步資料';
       node.appendChild(h('div', 'today-freshness', freshText));
     }
