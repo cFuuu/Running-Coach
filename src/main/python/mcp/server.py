@@ -108,6 +108,40 @@ def _conn(ctx: Context[AppContext]) -> sqlite3.Connection:
     return ctx.request_context.lifespan_context.db
 
 
+# --- 工具分類（唯讀／寫入）：單一真實來源 ---
+#
+# dashboard 的 AI 教練面板（DASHBOARD_TASKS.md D.3）只把唯讀工具餵給模型：
+# 「呈現不等於決策、頁面無寫入路徑」的硬約束延伸到聊天——同步 Garmin、
+# 產課表、記軟性輸入、落地外部課表一律仍走 Claude Code／Desktop 的 MCP 路徑。
+#
+# 分類寫在這裡而不是聊天層，是為了讓「新增一個 tool 卻忘記分類」變成可測的
+# 錯誤：test_mcp_tool_classification.py 斷言 list_tools() 的名稱集合恰好等於
+# 兩者的聯集、且兩者不相交。任何新 tool 沒被列進來，測試就會紅。
+READ_ONLY_TOOL_NAMES = frozenset(
+    {
+        "get_athlete_meta",
+        "list_running_sessions",
+        "get_session_detail",
+        "get_wellness_trend",
+        "assess_session_quality",
+        "get_recovery_impact",
+        "get_readiness_status",
+        "get_active_training_plan",
+        "get_today",
+        "get_context_notes",
+    }
+)
+
+WRITE_TOOL_NAMES = frozenset(
+    {
+        "sync_garmin_data",
+        "generate_training_plan",
+        "add_context_note",
+        "save_external_workouts",
+    }
+)
+
+
 # --- Tools（讀取型） ---
 
 
