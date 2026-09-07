@@ -15,8 +15,10 @@ AI 對話可呼叫的 tools（Phase 3 第一步）。
 athlete_id 慣例沿用 dashboard_queries.resolve_athlete_id()：tool 參數
 athlete_id 為 optional，未提供時預設取資料庫中第一位 athlete（單人自用情境）。
 
-寫入型 tool 有兩個：generate_training_plan（產生課表）與
-sync_garmin_data（從 Garmin Connect 增量同步資料）。其餘皆為唯讀查詢，
+寫入型 tool 有四個：generate_training_plan（產生課表）、
+sync_garmin_data（從 Garmin Connect 增量同步資料）、
+save_external_workouts（落地跑團／實體教練的課表，N-2）與
+add_context_note（記錄學員的軟性輸入，§7.5）。其餘皆為唯讀查詢，
 description 已明確標示副作用。
 
 ⚠️ 刻意**不**提供直接查 Garmin API 的查詢型 tool（如 get_hrv_status）：
@@ -43,6 +45,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 
 from src.main.python.models.db import get_connection
+from src.main.python.services import context_notes_store
 from src.main.python.services import dashboard_queries
 from src.main.python.services import garmin_sync_runner
 from src.main.python.services import session_quality
@@ -296,6 +299,36 @@ def get_active_training_plan(ctx: Context[AppContext], athlete_id: int | None = 
     return _serialize(training_plan_store.get_active_schedule(_conn(ctx), resolved_athlete_id))
 
 
+@mcp.tool()
+def get_today(ctx: Context[AppContext], athlete_id: int | None = None) -> dict:
+    """一次取得回答「今天該練什麼」所需的全部事實：今日／明日課表、
+    今日準備度判讀（含最近一次真正可評的日子）、訓練負荷 ATL/CTL/TSB、
+    今日 HRV 與相對 7 日均值的變化、連續訓練天數、最近一場活動，
+    以及資料新鮮度（最後同步到哪一天、落後幾天）。
+
+    這是既有唯讀 tools 的**聚合**，不新增任何規則判斷——同樣的數字也能
+    用 get_readiness_status／get_active_training_plan／get_wellness_trend
+    ／list_running_sessions 分別問到，本工具只是省下多次往返並確保它們
+    錨定同一個「今天」。
+
+    ⚠️ 每個數值都依 §7.3 三欄位契約包成 {value, source, confidence}，
+    回答時必須一併讀 confidence——`level: low` 代表該數字有已知偏誤，
+    `biases` 裡寫明錯在哪。**值為 None 代表「無法評估」而非 0 或正常**，
+    此時應明說該項不可評與原因，不可自行填補。
+
+    ⚠️ `readiness.today` 為 None 代表今天尚未同步到任何資料（不是「狀態
+    正常」）；此時 `readiness.latest_evaluable` 提供最近一次真正評過的
+    那天供參考，但那是**過去某一天**的判讀，不可當成今天的狀態直接引用，
+    引用時須說明是哪一天。
+
+    ⚠️ `freshness.days_behind` 大於 0 時，代表 Garmin 尚未同步到今天，
+    以下所有判讀都建立在較舊的資料上，須主動告知使用者。
+
+    athlete_id 省略時預設取資料庫中第一位學員。
+    """
+    return _serialize(dashboard_queries.get_today(_conn(ctx), athlete_id))
+
+
 # --- Tools（寫入型，會修改資料庫） ---
 
 
@@ -390,6 +423,142 @@ def generate_training_plan(
     return _serialize(result)
 
 
+@mcp.tool()
+def get_context_notes(
+    ctx: Context[AppContext],
+    start_date: str,
+    end_date: str,
+    athlete_id: int | None = None,
+) -> list[dict]:
+    """取得指定日期區間內學員記錄過的**軟性輸入**（出差、睡眠不足、工作壓力、
+    「腳有點緊」等規則算不出、只有學員本人知道的情境）。
+
+    用途是解釋訓練偏差的**原因**——規則層看得到「這週漏了三課」，看不到
+    「因為出差」。回答近況、解釋落差、或給建議前，值得先查這段期間有沒有
+    相關脈絡。
+
+    ⚠️ **這些不是事實層資料，永遠不進任何計算**。它們無法驗證（學員自述
+    睡不好，系統無從查證），只能作為你判讀時的補充脈絡。不可拿它推算任何
+    數值，也不可把它當成降低或提高某個判讀門檻的依據。
+
+    ⚠️ 回述事實清單（行為約束第 4 條）時，軟性輸入應與事實層數據**分開列出**，
+    標明它來自學員自述而非量測。
+
+    與 [start_date, end_date] 有任何**重疊**的紀錄都會回傳（例如一筆
+    09-01~09-10 的出差，查 09-05 時會出現）。日期格式為 YYYY-MM-DD。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return []
+    return _serialize(
+        context_notes_store.get_notes_in_range(
+            _conn(ctx), resolved_athlete_id, start_date, end_date
+        )
+    )
+
+
+@mcp.tool()
+def add_context_note(
+    ctx: Context[AppContext],
+    note: str,
+    start_date: str,
+    end_date: str | None = None,
+    athlete_id: int | None = None,
+) -> dict:
+    """⚠️ 會寫入資料庫：記錄一筆學員的**軟性輸入**，供日後回看訓練偏差的原因。
+
+    適用情境：學員在對話中提到規則算不出的狀況——「這週出差」「最近睡很差」
+    「工作很忙」「左腳有點緊」「心情不好不想跑」。
+
+    ⚠️ **請記錄學員的原話，不要代為摘要、分類或判斷嚴重程度。**
+    這份文字的價值正在於它未經處理——三個月後回看時，「腳有點緊」與
+    「腳痛」是不同的資訊，摘要會抹掉這個差別。本表刻意沒有類型與嚴重度
+    欄位，就是為了避免過早結構化。
+
+    start_date：影響起始日（YYYY-MM-DD）。
+    end_date：影響結束日，省略代表單日、或影響仍在持續且結束日未知。
+
+    ⚠️ 寫入前先向學員確認你要記什麼、涵蓋哪幾天。不要把學員的每一句閒聊
+    都記下來——只記**會影響訓練解讀**的情境。
+
+    ⚠️ 記錄下來的內容永遠不進事實層、不參與任何計算（見 get_context_notes）。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return {"saved": False, "reason": "資料庫中沒有任何學員資料"}
+    try:
+        note_id = context_notes_store.add_note(
+            _conn(ctx), resolved_athlete_id, note, start_date, end_date
+        )
+    except ValueError as exc:
+        return {"saved": False, "reason": str(exc)}
+    return {"saved": True, "note_id": note_id, "start_date": start_date, "end_date": end_date}
+
+
+@mcp.tool()
+def save_external_workouts(
+    ctx: Context[AppContext],
+    workouts: list[dict],
+    clear_generated_between: bool = False,
+    athlete_id: int | None = None,
+) -> dict:
+    """⚠️ 會寫入資料庫：把**外部來源**（跑團／實體教練）的課表逐日寫入
+    training_plan，標記 plan_source='external'。
+
+    用途是讓學員把教練給的課表告訴你，由你整理成逐日結構後寫入。適用情境
+    例如學員說「教練說這週三 tempo 8K、週日長跑 18K」。
+
+    workouts：每筆為 dict，必要欄位
+        - "planned_date"：YYYY-MM-DD
+        - "workout_type"：easy／tempo／interval／lsd／race／rest／strength／
+          cross_training 其中之一
+      選填 "planned_distance_km"／"planned_duration_sec"／
+      "planned_pace_sec_per_km"／"notes"。
+
+    ⚠️ **課種對不上時不要自行發明**：跑團的說法（如「配速跑」「山路」
+    「400 間歇 ×8」）不保證落在上述 8 種內。請挑最接近的一種，**並把學員
+    的原話完整放進 notes**，不要為了讓它「看起來整齊」而丟棄原始描述。
+    不確定該歸哪一類時，直接問學員，不要猜。
+
+    ⚠️ **這是寫入型操作，須經學員明確指示才呼叫**。同一天已有生效課表時，
+    舊列會被標記為已取代（保留版本歷史、不刪除），**包含系統自產的課表**
+    ——這是刻意的：外部課表介入後即為唯一基準，系統退居分析層。
+    寫入前應先向學員複述你整理出的逐日內容並取得確認。
+
+    clear_generated_between：跑團課表通常只排有練的日子，中間空檔不會出現在
+    workouts 裡。設為 True 會把本批日期範圍內其餘系統自產的排程一併標記失效
+    （保留歷史、不刪除），避免課表混著「跑團課 + 系統補的課」。
+    **當學員給的是一整週／一整期的完整課表時應設為 True**；只補登單獨一兩天
+    時維持 False。設定前先向學員說明這會讓那段期間只剩教練排的課。
+
+    ⚠️ 寫入後不要自行重排或補課。教練沒排的日子就是沒排，
+    系統不得在空檔自動補課（那會破壞教練的週期設計）。
+
+    athlete_id 省略時預設取資料庫中第一位學員。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return {"saved": False, "reason": "資料庫中沒有任何學員資料"}
+    if not workouts:
+        return {"saved": False, "reason": "workouts 為空，未寫入任何資料"}
+
+    try:
+        new_ids = training_plan_store.save_external_workouts(
+            _conn(ctx),
+            resolved_athlete_id,
+            workouts,
+            deactivate_generated_between=clear_generated_between,
+        )
+    except (KeyError, ValueError) as exc:
+        return {"saved": False, "reason": str(exc)}
+
+    return {
+        "saved": True,
+        "count": len(new_ids),
+        "dates": _serialize([w["planned_date"] for w in workouts]),
+    }
+
+
 # --- Prompt（行為約束層／教練人設）---
 #
 # 兩層人設結構見 PLAN.md §7.6：**行為約束層**（本區塊，不可覆寫）與
@@ -448,6 +617,9 @@ _BEHAVIOR_CONSTRAINTS = """\
 - 查不到就明說查不到，不臆測、不用「一般來說」填補空白。
 - 學員提到的主觀狀態（睡不好、工作累、腳有點緊）屬軟性輸入，可作為你判讀的
   補充脈絡，但**永遠不進事實層**，也不可拿來推算任何數值。
+- 這類情境可用 `add_context_note` 記下來（記原話、不要代為摘要或分級），
+  日後用 `get_context_notes` 查回，用來解釋訓練偏差的原因。回述事實清單時
+  須與量測數據**分開列出**，標明它來自學員自述。
 
 ### 6. 不給醫療建議
 涉及疼痛、傷病症狀時，不做診斷、不給治療建議。說明數據上看到什麼，
@@ -457,8 +629,12 @@ _BEHAVIOR_CONSTRAINTS = """\
 規則層與判斷層都只輸出建議，**改不改由學員決定**。
 - 可以說「這週建議把週三的課降為 easy」，不可以自行呼叫
   `generate_training_plan` 把課表改掉。
-- `generate_training_plan` 是唯一的寫入型 tool，會取代現行生效課表。
-  **只有在學員明確要求產生新課表時才呼叫**，呼叫前先說明它會取代舊排程。
+- `generate_training_plan` 會取代現行生效課表。**只有在學員明確要求產生
+  新課表時才呼叫**，呼叫前先說明它會取代舊排程。
+- `save_external_workouts` 用於落地跑團／實體教練給的課表，同樣須經學員
+  明確指示，寫入前先複述你整理出的逐日內容。**一旦有外部課表，它就是唯一
+  基準**——不要並列建議自己的課表，也不要在教練沒排的日子自動補課。
+- `add_context_note` 只記錄學員自述的情境，不改動任何訓練安排。
 """
 
 _OUTPUT_SHAPE = """\
