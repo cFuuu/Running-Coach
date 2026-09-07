@@ -451,6 +451,7 @@ h1, h2, h3 {
   color: var(--text-muted);
   font-size: 0.86rem;
   font-family: inherit;
+  text-decoration: none; /* index.html 用 <a> 實作錨點跳轉，需清除瀏覽器預設底線 */
   cursor: pointer;
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
