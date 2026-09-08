@@ -5,10 +5,12 @@ import unittest
 
 from src.main.python.services.periodization_scheduler import (
     PEAK_MAX_LONG_RUN_KM,
+    QUALITY_WORKOUT_MIN_KM,
     STEP_BACK_RATIO_HIGH,
     STEP_BACK_RATIO_LOW,
     WEEKLY_VOLUME_INCREASE_CAP,
     _is_step_back_week,
+    _meets_quality_floor,
     _split_weeks_into_phases,
     generate_schedule,
 )
@@ -624,6 +626,73 @@ class TestCombinatorialInvariants(unittest.TestCase):
         )
         rehearsal_days = [day for day in schedule if day["fueling_rehearsal"]]
         self.assertGreaterEqual(len(rehearsal_days), 1)
+
+
+class TestQualityWorkoutFloor(unittest.TestCase):
+    """品質課絕對下限：太短的品質課不排，該課種降級為 easy。"""
+
+    def test_distance_alone_satisfies_floor(self):
+        # 3K 達標，即使配速快到 12 分鐘跑不滿也照排（兩門檻取「或」）。
+        self.assertTrue(
+            _meets_quality_floor(QUALITY_WORKOUT_MIN_KM, {"slow_sec_per_km": 200.0})
+        )
+
+    def test_duration_alone_satisfies_floor(self):
+        # 2.5K 未達距離門檻，但慢端配速 300 s/km 需 12.5 分鐘，時間達標。
+        self.assertTrue(_meets_quality_floor(2.5, {"slow_sec_per_km": 300.0}))
+
+    def test_below_both_thresholds_fails(self):
+        # 2.0K 且慢端僅需 10 分鐘，兩個門檻都不到。
+        self.assertFalse(_meets_quality_floor(2.0, {"slow_sec_per_km": 300.0}))
+
+    def test_falls_back_to_distance_when_pace_zone_missing(self):
+        self.assertFalse(_meets_quality_floor(2.0, None))
+        self.assertTrue(_meets_quality_floor(QUALITY_WORKOUT_MIN_KM, None))
+
+    def test_low_weekly_volume_drops_quality_workout(self):
+        # 週 8K、3 天/週 → 品質課僅 1.96K、慢端約 11.3 分鐘，兩門檻皆不到。
+        schedule = generate_schedule(
+            _config(total_weeks=1, days_per_week=3, starting_weekly_km=8.0)
+        )
+        workout_types = {day["workout_type"] for day in schedule}
+        self.assertNotIn("tempo", workout_types)
+        self.assertNotIn("interval", workout_types)
+        # 降級後仍維持 3 個訓練日（easy ×2 + lsd），不是整週休息。
+        training_days = [day for day in schedule if day["workout_type"] != "rest"]
+        self.assertEqual(len(training_days), 3)
+        self.assertEqual(
+            [day["workout_type"] for day in training_days].count("easy"), 2
+        )
+
+    def test_normal_weekly_volume_keeps_quality_workout(self):
+        schedule = generate_schedule(
+            _config(total_weeks=1, days_per_week=3, starting_weekly_km=30.0)
+        )
+        workout_types = [day["workout_type"] for day in schedule]
+        self.assertEqual(workout_types.count("tempo"), 1)
+
+    def test_weekly_volume_preserved_after_downgrade(self):
+        """降級只改課種，該週總量原封不動由 easy 承接。"""
+        weekly_km = 8.0
+        schedule = generate_schedule(
+            _config(total_weeks=1, days_per_week=3, starting_weekly_km=weekly_km)
+        )
+        total = sum(day["target_distance_km"] for day in schedule)
+        self.assertAlmostEqual(total, weekly_km, places=6)
+
+    def test_only_the_failing_workout_type_is_downgraded(self):
+        """同週 tempo 達標、interval 未達標時，只降級 interval。
+
+        週 17.55K、5 天/週 → 兩個品質課日各 2.15K：
+        tempo 慢端 345 s/km 需 12.4 分鐘（達標）、interval 慢端 315 s/km
+        僅 11.3 分鐘（未達標）。
+        """
+        schedule = generate_schedule(
+            _config(total_weeks=1, days_per_week=5, starting_weekly_km=17.55)
+        )
+        workout_types = [day["workout_type"] for day in schedule]
+        self.assertEqual(workout_types.count("tempo"), 1)
+        self.assertEqual(workout_types.count("interval"), 0)
 
 
 if __name__ == "__main__":

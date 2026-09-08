@@ -7,10 +7,11 @@
 不做課表對照、不算遵從度——使用者選擇讓 AI 只分析實際練的內容，
 不拿計畫課表比對（遵從度屬獨立的行為指標，見 PLAN.md §1）。
 
-三個維度：
+四個維度：
   1. 強度符合度（intensity_fit）：實際心率強度是否落在該課種應有的區間
-  2. 配速穩定度（pace_consistency）：前後半配速差異，反映節奏控制
-  3. 心率漂移（hr_drift）：透傳 fit_parser 的計算結果
+  2. 配速執行度（pace_execution）：整場平均配速對該課種的 VDOT 配速區間
+  3. 配速穩定度（pace_consistency）：前後半配速差異，反映節奏控制
+  4. 心率漂移（hr_drift）：透傳 fit_parser 的計算結果
 
 **每個維度都帶信賴度標記**（PLAN.md §7.3 三欄位契約），且：
   - `workout_type` 為 unknown/NULL 時，需要課種前提的維度直接不評
@@ -57,6 +58,14 @@ INTENSITY_RANGES_HRR: dict[str, tuple[float, float]] = {
 # 配速前後半差異超過此比例，視為節奏控制不穩（正值代表後半變慢）。
 # 🔴 工程實務決策，無文獻依據——文獻不存在「配速偏差多少算沒執行」的定義。
 PACE_FADE_PCT_THRESHOLD = 0.05
+
+# 配速執行度只評這兩種課種。
+# ⚠️ 這是**資料模型限制，不是遺漏**：easy/lsd 全程都在同一個強度帶，整場平均
+# 配速就代表該課的目標配速；tempo/interval 的整場平均含暖身、緩和與間歇之間的
+# 休息段，會系統性地看起來「偏慢」——那是課的結構，不是沒執行。要評這兩者
+# 得先能標出「主段」是哪幾圈，本專案目前沒有這個概念（見 TODO N-10）。
+# 缺前提時不評，與 workout_type 為 unknown 時不評是同一條原則。
+PACE_EXECUTION_ASSESSABLE_TYPES = frozenset({"easy", "lsd"})
 
 # 配速穩定度與心率漂移都需要足夠長度才有意義（指標假設已進入穩態）。
 MIN_DURATION_SEC_FOR_PACING = 20 * 60
@@ -120,6 +129,99 @@ def assess_intensity_fit(
     }
 
 
+def _format_pace(sec_per_km: float) -> str:
+    """把秒/公里格式化成 m:ss，供給判斷層閱讀的說明字串使用。"""
+    minutes, seconds = divmod(round(sec_per_km), 60)
+    return f"{minutes}:{seconds:02d}/km"
+
+
+def assess_pace_execution(
+    activity: dict[str, Any], pace_zones: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """比對整場平均配速與該課種的目標配速區間。
+
+    ⚠️ 比較基準是 **VDOT 推算的配速區間**，不是 `training_plan` 的課表——
+    本模組維持「只分析實際練的內容、不算遵從度」的範圍（2026-09-01 決定）。
+    問的是「這場 easy 跑得像不像 easy」，不是「有沒有照課表跑」。
+
+    只評 PACE_EXECUTION_ASSESSABLE_TYPES 內的課種；其餘回傳 None。
+
+    **只有偏快才是需要提示的方向**（承 N-3 查證）：低強度日跑太快會讓這天
+    既沒有恢復效果、也構不成品質課刺激，是 80/20 分配最常見的失效模式；
+    跑得比區間慢則不視為未執行，僅回報數值。
+    """
+    workout_type = activity.get("workout_type")
+    if workout_type not in PACE_EXECUTION_ASSESSABLE_TYPES:
+        return None
+    zone = (pace_zones or {}).get(workout_type)
+    if not zone:
+        return None
+    actual = activity.get("avg_pace_sec_per_km")
+    if not actual:
+        return None
+
+    fast = zone["fast_sec_per_km"]
+    slow = zone["slow_sec_per_km"]
+    # 配速數字越大越慢：小於快端＝跑得比區間更快。
+    if actual < fast:
+        verdict = "too_fast"
+        deviation_pct = (actual - fast) / fast * 100
+        detail = (
+            f"整場平均 {_format_pace(actual)}，比 {workout_type} 區間的快端 "
+            f"{_format_pace(fast)} 再快 {abs(deviation_pct):.1f}%——"
+            "低強度日跑太快，這天既達不到恢復效果，也構不成品質課的刺激"
+        )
+    elif actual > slow:
+        verdict = "slower_than_zone"
+        deviation_pct = (actual - slow) / slow * 100
+        detail = (
+            f"整場平均 {_format_pace(actual)}，比 {workout_type} 區間的慢端 "
+            f"{_format_pace(slow)} 再慢 {deviation_pct:.1f}%。"
+            "低強度日跑得更慢**不視為未執行**，此處僅回報數值"
+        )
+    else:
+        verdict = "within"
+        deviation_pct = 0.0
+        detail = (
+            f"整場平均 {_format_pace(actual)}，落在 {workout_type} 區間 "
+            f"{_format_pace(fast)}–{_format_pace(slow)} 內"
+        )
+
+    return {
+        "dimension": "pace_execution",
+        "verdict": verdict,
+        "actual_pace_sec_per_km": round(actual),
+        "target_range_sec_per_km": [round(fast), round(slow)],
+        "deviation_pct": round(deviation_pct, 1),
+        "detail": detail,
+        "confidence": {
+            "level": data_confidence.combine_level(["pace_execution_zone_estimated"]),
+            "biases": [data_confidence.describe_bias("pace_execution_zone_estimated")],
+        },
+    }
+
+
+def _pace_execution_reason(
+    activity: dict[str, Any], pace_zones: dict[str, Any] | None
+) -> str:
+    """assess_pace_execution() 回傳 None 時，說明為何不可評。"""
+    workout_type = activity.get("workout_type")
+    codes = data_confidence.workout_type_bias_codes(workout_type)
+    if codes:
+        return data_confidence.describe_bias(codes[0])["detail"]
+    if workout_type not in PACE_EXECUTION_ASSESSABLE_TYPES:
+        return (
+            f"{workout_type} 不在可評的課種內（本維度僅評 easy／lsd）："
+            "其餘課種的整場平均配速代表不了該課的目標配速——tempo/interval "
+            "含暖身、緩和與間歇之間的休息段，會系統性地看起來偏慢。"
+            "要評得先能標出「主段」，本專案尚未建模；這是資料模型的限制，"
+            "不是這場資料有缺"
+        )
+    if not (pace_zones or {}).get(workout_type):
+        return "無 VDOT 推算的配速區間可作比較基準（需有可推算 VDOT 的歷史成績）"
+    return "該場活動無平均配速資料"
+
+
 def assess_pace_consistency(records: list[dict[str, Any]]) -> dict[str, Any] | None:
     """比較前後半的平均配速，判斷節奏是否穩定。
 
@@ -180,8 +282,12 @@ def assess_session(
     max_hr_bpm: float | None,
     resting_hr_bpm: float | None,
     max_hr_source: str | None = None,
+    pace_zones: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """評估單場訓練，回傳各維度的判讀結果。
+
+    pace_zones：vdot_engine.compute_pace_zones() 的輸出，供配速執行度維度
+        作為比較基準。未提供時該維度列為不可評（不猜、不用預設區間）。
 
     回傳：
         {
@@ -205,6 +311,17 @@ def assess_session(
             else "缺少心率、HRmax 或靜止心率，無法計算心率強度"
         )
         not_assessed.append({"dimension": "intensity_fit", "reason": reason})
+
+    pace_execution = assess_pace_execution(activity, pace_zones)
+    if pace_execution is not None:
+        dimensions.append(pace_execution)
+    else:
+        not_assessed.append(
+            {
+                "dimension": "pace_execution",
+                "reason": _pace_execution_reason(activity, pace_zones),
+            }
+        )
 
     pacing = assess_pace_consistency(records)
     if pacing is not None:

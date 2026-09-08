@@ -181,11 +181,12 @@ def assess_session_quality(
     session_id: int,
     athlete_id: int | None = None,
 ) -> dict | None:
-    """評估單場訓練的執行品質，回傳三個生理維度的判讀：強度符合度
-    （實際心率強度是否落在該課種應有區間）、配速穩定度（前後半配速差異）、
-    心率漂移。查無此活動時回傳 None。
+    """評估單場訓練的執行品質，回傳四個生理維度的判讀：強度符合度
+    （實際心率強度是否落在該課種應有區間）、配速執行度（整場平均配速對該
+    課種的 VDOT 配速區間）、配速穩定度（前後半配速差異）、心率漂移。
+    查無此活動時回傳 None。
 
-    ⚠️ **本工具刻意不輸出總分或等第**。三個維度分開呈現，權衡與結論屬於你
+    ⚠️ **本工具刻意不輸出總分或等第**。各維度分開呈現，權衡與結論屬於你
     （判斷層）的職責——把它們合成單一分數等於把判斷偷渡進事實層。
 
     ⚠️ **每個維度都帶 `confidence` 標記，回答時必須一併考量**：
@@ -199,7 +200,15 @@ def assess_session_quality(
     （最常見是課種為 unknown——那是分類器失敗，該場可能是任何課種）。
     此時應明說「這項無法評估」，而非自行猜測後照評。
 
-    本工具只分析實際練的內容，**不與計畫課表對照、不計算遵從度**。
+    ⚠️ **配速執行度只評 easy/lsd**。tempo/interval 的整場平均配速含暖身、
+    緩和與間歇之間的休息段，會系統性地看起來「偏慢」——那是課的結構，
+    不是沒執行；本專案尚未建模「主段」，故這兩種課直接列為不可評。
+    另外此維度**只有偏快才算需要提示**：低強度日跑太快會讓這天既無恢復效果、
+    也構不成刺激；跑得比區間慢不視為未執行，回報數值即可。
+
+    本工具只分析實際練的內容，**不與計畫課表對照、不計算遵從度**——
+    配速執行度比的是 VDOT 推算的該課種配速區間，不是 `training_plan` 的課表，
+    問的是「這場 easy 跑得像不像 easy」，不是「有沒有照課表跑」。
     """
     conn = _conn(ctx)
     resolved = dashboard_queries.resolve_athlete_id(conn, athlete_id)
@@ -210,7 +219,9 @@ def assess_session_quality(
         return None
 
     activity = conn.execute(
-        "SELECT workout_type, avg_hr_bpm FROM activities WHERE id = ?", (session_id,)
+        "SELECT workout_type, avg_hr_bpm, avg_pace_sec_per_km, date(started_at) AS started_on "
+        "FROM activities WHERE id = ?",
+        (session_id,),
     ).fetchone()
     records = [
         dict(row)
@@ -225,6 +236,14 @@ def assess_session_quality(
         "SELECT max_hr_source FROM athlete_profile WHERE id = ?", (resolved,)
     ).fetchone()
 
+    # 配速執行度的比較基準取「這場活動當天」的 VDOT，而非今天的——
+    # 評估一場兩年前的訓練不該拿現在的體能當標準。
+    pace_zones = training_plan_generator.get_pace_zones(
+        conn,
+        resolved,
+        reference_date=datetime.date.fromisoformat(activity["started_on"]),
+    )
+
     result = session_quality.assess_session(
         dict(activity),
         records,
@@ -232,6 +251,7 @@ def assess_session_quality(
         max_hr_bpm,
         resting_hr_bpm,
         source_row["max_hr_source"] if source_row else None,
+        pace_zones=pace_zones,
     )
     result["session"] = {
         "id": detail["id"],

@@ -6,15 +6,27 @@ from src.main.python.services.session_quality import (
     MIN_DURATION_SEC_FOR_PACING,
     assess_intensity_fit,
     assess_pace_consistency,
+    assess_pace_execution,
     assess_session,
 )
 
 MAX_HR = 200.0
 RHR = 50.0  # HRR 儲備 150 → 心率 x 的 %HRR = (x-50)/150
 
+FAKE_PACE_ZONES = {
+    "easy": {"fast_sec_per_km": 350.0, "slow_sec_per_km": 380.0},
+    "tempo": {"fast_sec_per_km": 275.0, "slow_sec_per_km": 290.0},
+    "interval": {"fast_sec_per_km": 250.0, "slow_sec_per_km": 265.0},
+    "lsd": {"fast_sec_per_km": 350.0, "slow_sec_per_km": 380.0},
+}
 
-def _act(workout_type="easy", avg_hr=None):
-    return {"workout_type": workout_type, "avg_hr_bpm": avg_hr}
+
+def _act(workout_type="easy", avg_hr=None, avg_pace=None):
+    return {
+        "workout_type": workout_type,
+        "avg_hr_bpm": avg_hr,
+        "avg_pace_sec_per_km": avg_pace,
+    }
 
 
 def _records(first_pace, second_pace, duration=MIN_DURATION_SEC_FOR_PACING + 600):
@@ -88,18 +100,22 @@ class PaceConsistencyTest(unittest.TestCase):
 class AssessSessionTest(unittest.TestCase):
     def _full(self):
         return assess_session(
-            _act("easy", 140.0),
+            _act("easy", 140.0, avg_pace=365.0),
             _records(360, 365),
             {"available": True, "drift_pct": 4.0, "first_half_avg_hr": 140.0, "second_half_avg_hr": 145.6},
             MAX_HR,
             RHR,
             "watch_display",
+            pace_zones=FAKE_PACE_ZONES,
         )
 
-    def test_all_three_dimensions_present(self):
+    def test_all_four_dimensions_present(self):
         got = self._full()
         names = {d["dimension"] for d in got["dimensions"]}
-        self.assertEqual(names, {"intensity_fit", "pace_consistency", "hr_drift"})
+        self.assertEqual(
+            names,
+            {"intensity_fit", "pace_execution", "pace_consistency", "hr_drift"},
+        )
         self.assertEqual(got["not_assessed"], [])
 
     def test_every_dimension_carries_confidence(self):
@@ -130,7 +146,67 @@ class AssessSessionTest(unittest.TestCase):
     def test_missing_everything_still_returns_structure(self):
         got = assess_session(_act(None), [], None, None, None)
         self.assertEqual(got["dimensions"], [])
-        self.assertEqual(len(got["not_assessed"]), 3)
+        self.assertEqual(len(got["not_assessed"]), 4)
+
+    def test_pace_execution_without_zones_reports_reason(self):
+        """沒有 VDOT 配速區間時列為不可評，而不是套一個預設區間硬評。"""
+        got = assess_session(_act("easy", 140.0, avg_pace=365.0), [], None, MAX_HR, RHR)
+        blocked = {d["dimension"] for d in got["not_assessed"]}
+        self.assertIn("pace_execution", blocked)
+
+
+class PaceExecutionTest(unittest.TestCase):
+    def test_within_zone(self):
+        got = assess_pace_execution(_act("easy", avg_pace=365.0), FAKE_PACE_ZONES)
+        self.assertEqual(got["verdict"], "within")
+        self.assertEqual(got["deviation_pct"], 0.0)
+        self.assertEqual(got["target_range_sec_per_km"], [350, 380])
+
+    def test_faster_than_zone_is_flagged(self):
+        # 335 s/km 比快端 350 再快 4.3%——easy 日跑太快是要提示的方向。
+        got = assess_pace_execution(_act("easy", avg_pace=335.0), FAKE_PACE_ZONES)
+        self.assertEqual(got["verdict"], "too_fast")
+        self.assertLess(got["deviation_pct"], 0)
+
+    def test_slower_than_zone_is_reported_but_not_treated_as_failure(self):
+        """低強度日跑得比區間慢不算沒執行——只回報數值，verdict 與偏快不同。"""
+        got = assess_pace_execution(_act("easy", avg_pace=420.0), FAKE_PACE_ZONES)
+        self.assertEqual(got["verdict"], "slower_than_zone")
+        self.assertGreater(got["deviation_pct"], 0)
+
+    def test_lsd_uses_its_own_zone(self):
+        got = assess_pace_execution(_act("lsd", avg_pace=365.0), FAKE_PACE_ZONES)
+        self.assertEqual(got["verdict"], "within")
+
+    def test_tempo_and_interval_are_not_assessed(self):
+        """整場平均含暖身/緩和/休息段，代表不了主段配速——缺前提就不評。"""
+        for workout_type in ("tempo", "interval"):
+            with self.subTest(workout_type=workout_type):
+                self.assertIsNone(
+                    assess_pace_execution(
+                        _act(workout_type, avg_pace=282.0), FAKE_PACE_ZONES
+                    )
+                )
+
+    def test_unknown_workout_type_is_not_assessed(self):
+        for workout_type in ("unknown", None, ""):
+            with self.subTest(workout_type=workout_type):
+                self.assertIsNone(
+                    assess_pace_execution(
+                        _act(workout_type, avg_pace=365.0), FAKE_PACE_ZONES
+                    )
+                )
+
+    def test_missing_pace_or_zones_returns_none(self):
+        self.assertIsNone(assess_pace_execution(_act("easy"), FAKE_PACE_ZONES))
+        self.assertIsNone(assess_pace_execution(_act("easy", avg_pace=365.0), None))
+        self.assertIsNone(assess_pace_execution(_act("easy", avg_pace=365.0), {}))
+
+    def test_carries_estimated_zone_bias(self):
+        got = assess_pace_execution(_act("easy", avg_pace=335.0), FAKE_PACE_ZONES)
+        codes = {b["code"] for b in got["confidence"]["biases"]}
+        self.assertIn("pace_execution_zone_estimated", codes)
+        self.assertEqual(got["confidence"]["level"], "low")
 
 
 if __name__ == "__main__":

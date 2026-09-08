@@ -84,6 +84,16 @@ _LOW_FREQUENCY_QUALITY_WORKOUT_BY_PHASE: dict[str, str] = {
     "taper": "tempo",
 }
 
+# 品質課（tempo/interval）的絕對下限——承 N-6 分層選用結論的補充。
+# 🔴 **純工程實務決策，無文獻出處**：Daniels/Higdon/Pfitzinger/Hansons 四派
+# 都只給品質課的「量的上限」（如 Daniels 的 T 配速不超過週跑量 10%），
+# 沒有任何一派定義「短到多少就不值得排」。低週量時上限規則會算出荒謬的結果
+# ——週跑量 15K 時 T 上限僅 1.5K，比暖身還短。
+# 兩個門檻取「或」：距離達標或時間達標即成立，因為配速慢的跑者跑同樣距離
+# 花的時間較長，單用距離會對慢跑者過嚴。
+QUALITY_WORKOUT_MIN_KM = 3.0
+QUALITY_WORKOUT_MIN_SEC = 12 * 60
+
 # 課種對應的心率區間標籤（沿用 vdot_engine 配速區間的課種命名）。
 # LSD 沿用 easy 的心率區間（vdot_engine.compute_pace_zones() 對 LSD 亦如此處理）。
 _WORKOUT_TYPE_TO_PACE_ZONE: dict[str, str] = {
@@ -208,6 +218,57 @@ def _distribute_week_distance(
 def _quality_workout_for_phase(phase: str) -> str:
     """依當週所屬期別，決定低頻率樣板中 "quality" 佔位符要展開成哪個實際課種。"""
     return _LOW_FREQUENCY_QUALITY_WORKOUT_BY_PHASE.get(phase, "tempo")
+
+
+def _meets_quality_floor(distance_km: float, pace_zone: dict[str, Any] | None) -> bool:
+    """該品質課的量是否達到絕對下限（≥ 3K 或 ≥ 12 分鐘，滿足其一即可）。
+
+    時間以配速區間的**慢端**估算，即最寬鬆的判定——只有連該課種允許的最慢
+    配速都跑不滿 12 分鐘，才判定這堂課短到不構成刺激。用中點或快端會把
+    「跑得慢但時間夠長」的課誤刪掉，與門檻要防的情況（量太小）無關。
+    缺配速區間時只能用距離判定。
+    """
+    if distance_km >= QUALITY_WORKOUT_MIN_KM:
+        return True
+    if pace_zone is None:
+        return False
+    return distance_km * pace_zone["slow_sec_per_km"] >= QUALITY_WORKOUT_MIN_SEC
+
+
+def _apply_quality_floor(
+    day_pattern: tuple[str, ...],
+    weekly_km: float,
+    phase: str,
+    pace_zones: dict[str, Any],
+) -> tuple[tuple[str, ...], dict[str, float]]:
+    """把該週未達絕對下限的品質課降級為 easy，並重新分配該週距離。
+
+    回傳（可能已降級的課種樣板, 對應的距離分配）。逐個品質課日各自判定，
+    因為同樣距離下 interval 配速較快、時間較短，可能 tempo 達標而 interval
+    不達標——「不排該課種」是針對個別課種，不是整週一起砍。
+
+    降級後重算距離：樣板長度不變（訓練日數與星期分配不動），只是原本分給
+    品質課的量改由 easy 承接，該週總量維持不變。
+    """
+    distances = _distribute_week_distance(day_pattern, weekly_km)
+
+    downgraded: list[str] = []
+    any_downgrade = False
+    for slot in day_pattern:
+        if slot in _QUALITY_WORKOUT_PLACEHOLDERS:
+            workout_type = _quality_workout_for_phase(phase) if slot == "quality" else slot
+            pace_zone = _pace_zone_for_workout(workout_type, pace_zones)
+            if not _meets_quality_floor(distances[slot], pace_zone):
+                downgraded.append("easy")
+                any_downgrade = True
+                continue
+        downgraded.append(slot)
+
+    if not any_downgrade:
+        return day_pattern, distances
+
+    new_pattern = tuple(downgraded)
+    return new_pattern, _distribute_week_distance(new_pattern, weekly_km)
 
 
 def _apply_first_marathon_buffer(pace_zones: dict[str, Any]) -> dict[str, Any]:
@@ -358,6 +419,10 @@ def generate_schedule(config: dict[str, Any]) -> list[dict[str, Any]]:
             "fueling_rehearsal": bool,  # 是否為首馬補給演練日（非首馬恆為 False）
             "constraint_level": "skip"/"reduced"/"flexible" | None,  # 落在哪個限制窗口
         }
+    ⚠️ 週跑量低到品質課不足 QUALITY_WORKOUT_MIN_KM／QUALITY_WORKOUT_MIN_SEC 時，
+    該週的該課種降級為 easy（見 _apply_quality_floor()），故低量週可能整週皆為
+    easy + lsd。這是刻意的：太短的品質課不構成訓練刺激，卻仍佔掉一個訓練日。
+
     非訓練日（週內未被 day_pattern 涵蓋的日子）workout_type 為 "rest"，
     target_distance_km 為 0.0，pace_zone 為 None。已標記 external 的日期
     完全不會出現在回傳清單中。
@@ -394,7 +459,9 @@ def generate_schedule(config: dict[str, Any]) -> list[dict[str, Any]]:
             day_pattern = _LOW_FREQUENCY_DAY_PATTERN
         else:
             day_pattern = _STANDARD_DAY_PATTERNS[days_per_week]
-        distances = _distribute_week_distance(day_pattern, weekly_km)
+        day_pattern, distances = _apply_quality_floor(
+            day_pattern, weekly_km, phase, pace_zones
+        )
         training_weekdays = _weekdays_for_pattern(day_pattern)
         weekday_to_workout = dict(zip(training_weekdays, day_pattern))
 

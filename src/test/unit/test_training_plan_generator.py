@@ -10,6 +10,7 @@ import unittest
 from src.main.python.models.db import get_connection
 from src.main.python.services.training_plan_generator import (
     generate_and_save_plan,
+    get_pace_zones,
     get_vdot_candidate_activities,
 )
 from src.main.python.services.training_plan_store import get_active_schedule
@@ -104,6 +105,42 @@ class TestGetVdotCandidateActivities(unittest.TestCase):
 
         candidates = get_vdot_candidate_activities(self.conn, self.athlete_id)
         self.assertEqual(candidates, [])
+
+
+class TestGetPaceZones(unittest.TestCase):
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.athlete_id = _build_athlete(self.conn)
+
+    def test_returns_zones_when_candidate_available(self):
+        _insert_activity(
+            self.conn, self.athlete_id, REFERENCE_DATE,
+            distance_km=10.0, avg_pace_sec_per_km=300, workout_type="race",
+        )
+        self.conn.commit()
+
+        zones = get_pace_zones(self.conn, self.athlete_id, reference_date=REFERENCE_DATE)
+        self.assertIsNotNone(zones)
+        self.assertIn("easy", zones)
+        self.assertLess(zones["easy"]["fast_sec_per_km"], zones["easy"]["slow_sec_per_km"])
+
+    def test_returns_none_when_no_candidate(self):
+        self.conn.commit()
+        self.assertIsNone(
+            get_pace_zones(self.conn, self.athlete_id, reference_date=REFERENCE_DATE)
+        )
+
+    def test_activities_after_reference_date_are_excluded(self):
+        """評估過去的訓練時不該拿之後才跑出來的成績當基準。"""
+        _insert_activity(
+            self.conn, self.athlete_id, REFERENCE_DATE + datetime.timedelta(days=30),
+            distance_km=10.0, avg_pace_sec_per_km=300, workout_type="race",
+        )
+        self.conn.commit()
+
+        self.assertIsNone(
+            get_pace_zones(self.conn, self.athlete_id, reference_date=REFERENCE_DATE)
+        )
 
 
 class TestGenerateAndSavePlanUnavailable(unittest.TestCase):
