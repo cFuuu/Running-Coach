@@ -15,6 +15,7 @@ from src.main.python.mcp.server import (
     _ROLE,
     _serialize,
     add_context_note,
+    assess_session_quality,
     coach,
     generate_training_plan,
     get_active_training_plan,
@@ -130,6 +131,43 @@ class TestReadOnlyTools(unittest.TestCase):
     def test_get_recovery_impact_returns_dict_with_impacts(self):
         result = get_recovery_impact(_fake_ctx(self.conn), range_key="all")
         self.assertIn("impacts", result)
+
+    def test_assess_session_quality_wires_pace_zones_into_pace_execution(self):
+        """VDOT 配速區間確實從資料庫接到配速執行度維度（本工具的接線點）。"""
+        self.conn.execute(
+            "UPDATE athlete_profile SET max_hr_bpm = 200, resting_hr_bpm = 50 WHERE id = ?",
+            (self.athlete_id,),
+        )
+        # 一場 10K 比賽成績讓 VDOT 推得出來，另一場 easy 作為被評估的對象。
+        self.conn.execute(
+            """
+            INSERT INTO activities
+                (athlete_id, activity_type, started_at, distance_km, duration_sec,
+                 avg_hr_bpm, avg_pace_sec_per_km, workout_type, source, fetched_at)
+            VALUES (?, 'running', ?, 10.0, 3000, 175, 300, 'race', 'fit_manual', ?)
+            """,
+            (self.athlete_id, f"{START.isoformat()}T07:00:00", f"{START.isoformat()}T07:00:00"),
+        )
+        easy_date = START + datetime.timedelta(days=7)
+        cursor = self.conn.execute(
+            """
+            INSERT INTO activities
+                (athlete_id, activity_type, started_at, distance_km, duration_sec,
+                 avg_hr_bpm, avg_pace_sec_per_km, workout_type, source, fetched_at)
+            VALUES (?, 'running', ?, 8.0, 3200, 140, 400, 'easy', 'fit_manual', ?)
+            """,
+            (self.athlete_id, f"{easy_date.isoformat()}T07:00:00", f"{easy_date.isoformat()}T07:00:00"),
+        )
+        self.conn.commit()
+
+        result = assess_session_quality(_fake_ctx(self.conn), session_id=cursor.lastrowid)
+
+        assessed = {d["dimension"] for d in result["dimensions"]}
+        self.assertIn("pace_execution", assessed)
+        pace_execution = next(
+            d for d in result["dimensions"] if d["dimension"] == "pace_execution"
+        )
+        self.assertEqual(pace_execution["actual_pace_sec_per_km"], 400)
 
     def test_get_readiness_status_returns_serialized_dates(self):
         _insert_activity(self.conn, self.athlete_id, START)

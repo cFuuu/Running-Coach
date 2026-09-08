@@ -110,6 +110,43 @@ def get_vdot_candidate_activities(
     return candidates
 
 
+def _get_hr_profile(
+    conn: sqlite3.Connection, athlete_id: int
+) -> tuple[float | None, str | None]:
+    """取出 VDOT 推算需要的 (max_hr_bpm, max_hr_source)。查無此人時皆為 None。"""
+    row = conn.execute(
+        "SELECT max_hr_bpm, max_hr_source FROM athlete_profile WHERE id = ?",
+        (athlete_id,),
+    ).fetchone()
+    if row is None:
+        return None, None
+    return row["max_hr_bpm"], row["max_hr_source"]
+
+
+def get_pace_zones(
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    reference_date: datetime.date | None = None,
+) -> dict[str, Any] | None:
+    """取得該學員的 VDOT 配速區間；無可用候選成績而推不出時回傳 None。
+
+    reference_date：新鮮度的基準日，同時**排除該日之後的活動**——評估一場
+        兩年前的訓練時，不該拿今天的體能當比較基準。未提供時等同「現在」，
+        沿用 vdot_engine 預設（以今天為基準、不排除任何活動）。
+    """
+    max_hr_bpm, max_hr_source = _get_hr_profile(conn, athlete_id)
+    candidates = get_vdot_candidate_activities(conn, athlete_id)
+    if reference_date is not None:
+        candidates = [c for c in candidates if c["date"] <= reference_date]
+    result = estimate_vdot_and_paces(
+        candidates,
+        max_hr_bpm=max_hr_bpm,
+        max_hr_source=max_hr_source,
+        reference_date=reference_date,
+    )
+    return result["pace_zones"] if result["available"] else None
+
+
 def generate_and_save_plan(
     conn: sqlite3.Connection,
     athlete_id: int,
@@ -139,12 +176,7 @@ def generate_and_save_plan(
     未寫入任何資料庫列即代表失敗——VDOT 無法推算時本函式在呼叫
     periodization_scheduler／training_plan_store 之前就明確中止。
     """
-    profile_row = conn.execute(
-        "SELECT max_hr_bpm, max_hr_source FROM athlete_profile WHERE id = ?",
-        (athlete_id,),
-    ).fetchone()
-    max_hr_bpm = profile_row["max_hr_bpm"] if profile_row else None
-    max_hr_source = profile_row["max_hr_source"] if profile_row else None
+    max_hr_bpm, max_hr_source = _get_hr_profile(conn, athlete_id)
 
     candidate_activities = get_vdot_candidate_activities(conn, athlete_id)
     vdot_result = estimate_vdot_and_paces(
