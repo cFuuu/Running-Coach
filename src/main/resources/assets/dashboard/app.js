@@ -47,15 +47,16 @@
     dirty: { sessions: false, load: false, wellness: false, calendar: false }
   };
 
-  // 五個 view 的定義：路由 key → 標題、是否吃 range。
+  // view 的定義：路由 key → 標題、是否吃 range。
   // 「吃 range」決定內容頂列的區間切換要不要顯示（D.2：只有訓練紀錄／
-  // 訓練負荷／身體狀況 三個 view 顯示，今日與行事曆不受區間影響）。
+  // 訓練負荷／身體狀況 三個 view 顯示，今日、行事曆與系統設定不受區間影響）。
   var VIEWS = {
     today:    { title: '今日',         hasRange: false },
     calendar: { title: '行事曆',       hasRange: false },
     sessions: { title: '訓練紀錄',     hasRange: true },
     load:     { title: '訓練負荷',     hasRange: true },
-    wellness: { title: '身體狀況',     hasRange: true }
+    wellness: { title: '身體狀況',     hasRange: true },
+    settings: { title: '系統設定',     hasRange: false }
   };
   var DEFAULT_VIEW = 'today';
 
@@ -692,12 +693,18 @@
   }
 
   /**
-   * 側邊列底部的「最後同步」（D.2）。取 /api/today 的 freshness，
-   * 只顯示較新的那個日期與落後天數——側邊列空間窄，完整的兩個日期
-   * 留在今日卡（見 renderToday 中對 days_behind 的說明）。
+   * 「最後同步」的共用渲染。取 /api/today 的 freshness，只顯示較新的那個
+   * 日期與落後天數——側邊列空間窄，完整的兩個日期留在今日卡（見 renderToday
+   * 中對 days_behind 的說明）。
+   *
+   * 側邊列底部（D.2）與設定頁的資料同步區都用這一份，兩處因此不可能顯示
+   * 不一致的值；`showLabel` 只差在設定頁已有「最後同步」的欄位名，不必再
+   * 重複一次。
+   * @param {string} nodeId 容器 id
+   * @param {boolean} showLabel 是否附上「最後同步」字樣
    */
-  function renderSidebarSync() {
-    var node = $('sidebar-sync');
+  function renderSyncFreshness(nodeId, showLabel) {
+    var node = $(nodeId);
     if (!node) return;
     clear(node);
     var f = state.today && state.today.freshness;
@@ -705,12 +712,16 @@
     var latest = [f.activity_latest, f.wellness_latest].filter(Boolean).sort().pop();
     if (!latest) { node.appendChild(h('span', 'sync-label', '尚無同步資料')); return; }
     var days = f.days_behind;
-    node.appendChild(h('span', 'sync-label', '最後同步'));
-    node.appendChild(h('span', 'sync-value', latest.slice(5)));
+    if (showLabel) node.appendChild(h('span', 'sync-label', '最後同步'));
+    node.appendChild(h('span', 'sync-value', showLabel ? latest.slice(5) : latest));
     // 落後天數獨立成一個元素：72px 圖示欄放不下，由 CSS 隱藏（日期仍看得見）
     if (days !== null && days !== undefined) {
       node.appendChild(h('span', 'sync-behind', days > 0 ? days + ' 天前' : '今天'));
     }
+  }
+
+  function renderSidebarSync() {
+    renderSyncFreshness('sidebar-sync', true);
   }
 
   function renderToday() {
@@ -816,6 +827,9 @@
     api('/api/today').then(function (data) {
       state.today = data;
       renderToday();
+      // 設定頁的「最後同步」與側邊列同源，資料回來時一併更新（設定頁此刻
+      // 可能不在畫面上，但它沒有圖表、不吃容器寬度，直接寫入即可）
+      renderSettingsSync();
     }).catch(function (err) {
       showError($('today-body'), err.message);
     });
@@ -2005,6 +2019,41 @@
     });
   }
 
+  // ------------------------------------------------------------ 系統設定 view
+  //
+  // N-19 §4。所有設定都存在 theme.js 的 `rc-dashboard-settings` 這一個
+  // localStorage key 裡（透過 getSettings/saveSettings），不另開新 key。
+  // 主題三選一與「與系統同步」開關由 theme.js 自己綁定與連動，本節只處理
+  // AI 教練面板預設與資料同步兩塊。
+
+  function renderSettingsSync() {
+    renderSyncFreshness('settings-sync', false);
+  }
+
+  /**
+   * 「面板預設開啟」開關。與面板目前的開合狀態共用 settings.coachPanel
+   * 一個欄位（§4.2 指定），所以兩邊必須雙向連動：
+   *   - 從設定頁切換 → 立刻套用到面板，否則開關說「預設開啟」但面板沒反應
+   *   - 從面板收合／展開 → 由 setCoachPanel 呼叫 syncCoachSettingToggle 回寫勾選狀態
+   * 只用一個欄位而不另開「預設值」欄位，是因為使用者最後一次的開合本來就是
+   * 他要的預設；分成兩個欄位反而會出現「設定說開、實際記住關」的矛盾。
+   */
+  function bindCoachSetting() {
+    var toggle = $('setting-coach-open');
+    if (!toggle) return;
+    syncCoachSettingToggle();
+    toggle.addEventListener('change', function () {
+      setCoachPanel(toggle.checked, true);
+    });
+  }
+
+  function syncCoachSettingToggle() {
+    var toggle = $('setting-coach-open');
+    if (!toggle) return;
+    var settings = (window.Theme && window.Theme.getSettings) ? window.Theme.getSettings() : null;
+    toggle.checked = !(settings && settings.coachPanel === 'collapsed');
+  }
+
   function bindRouter() {
     window.addEventListener('hashchange', applyRoute);
     var back = $('session-back');
@@ -2034,6 +2083,7 @@
     if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (persist && window.Theme && window.Theme.saveSettings) {
       window.Theme.saveSettings({ coachPanel: open ? 'open' : 'collapsed' });
+      syncCoachSettingToggle(); // 設定頁的開關與面板共用同一個欄位，不可各記一份
     }
   }
 
@@ -2126,6 +2176,7 @@
     bindTooltipDelegation();
     bindCustomRangePanel();
     bindCoachPanel();
+    bindCoachSetting();
     bindSyncButtons();
     bindRouter();
     renderCalendarLegend();
