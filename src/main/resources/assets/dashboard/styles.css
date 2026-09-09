@@ -19,10 +19,16 @@
   --border: #dfe3e8;
   --text: #1f2933;
   --text-muted: #66727f;
-  --accent: #2f6f4f;
-  --accent-soft: #e3f0e8;
-  --accent-border: #bcd9c8;
-  --accent-text: #1f5238;
+  /* 強調色（品牌藍）。這六個 accent 相關 token 的色號是 WCAG 相對亮度公式的
+     實測結果，不是目測挑的——目測會出錯（深色版原先憑感覺選的邊框色實測對
+     卡片底只有 1.76:1，遠低於非文字元件的 3:1 門檻）。調整前請先確認
+     src/test/unit/test_dashboard_theme_contrast.py 仍然通過，該測試直接解析
+     本檔算對比度，不是比對硬編碼字串。
+     正文／背景／圖表色刻意都不染藍，理由見該測試與深色區塊的說明。 */
+  --accent: #2563a8;
+  --accent-soft: #e4eef8;
+  --accent-border: #bcd4ea;
+  --accent-text: #1b4a7a;
   --on-accent: #fff;
 
   /* 圖表色（同時考慮色盲友善與列印可辨識度） */
@@ -64,7 +70,7 @@
   --up: #b03a2e;
   --down: #2f6f4f;
 
-  --focus-ring: rgba(47, 111, 79, 0.4);
+  --focus-ring: rgba(37, 99, 168, 0.4);
 
   --notice-bg: #fdf6e0;
   --notice-border: #f0e2b8;
@@ -2280,11 +2286,15 @@ body.coach-open .coach-fab {
   --border: #333c44;
   --text: #e4e8eb;
   --text-muted: #99a3ac;
-  --accent: #4f9e73;
-  --accent-soft: #1f3128;
-  --accent-border: #35543f;
-  --accent-text: #8fd6ac;
-  --on-accent: #0d1411;
+  /* 深色版強調色：見 :root 的說明。深色的 --on-accent 必須是深色字——
+     accent 在此是亮藍 #6aa9dd，白字疊上去只有 2.52:1，不可用（改深色字後 7.47:1）。
+     --accent-soft 對頁面底只有 1.44:1 是刻意的：它是「看得出有上色」的淡底，
+     不承載文字，文字一律用 --accent-text（對頁面底 10.36:1）。 */
+  --accent: #6aa9dd;
+  --accent-soft: #233648;
+  --accent-border: #4e7aa0;
+  --accent-text: #9ccbee;
+  --on-accent: #0b1219;
 
   --c-pace: #4f9e73;
   --c-hr: #e0725a;
@@ -2326,7 +2336,7 @@ body.coach-open .coach-fab {
   --up: #e0725a;
   --down: #4f9e73;
 
-  --focus-ring: rgba(79, 158, 115, 0.5);
+  --focus-ring: rgba(106, 169, 221, 0.5);
 
   --notice-bg: #3a3320;
   --notice-border: #5c4f2a;
