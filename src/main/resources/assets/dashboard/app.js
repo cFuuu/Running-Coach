@@ -13,8 +13,8 @@
  *   一律用相對路徑（後端會把靜態檔掛在 /，API 在 /api/*），不寫死絕對網址。
  *
  * 【假資料】
- *   若 window.MOCK_API 存在且未被 ?mock=0 停用，所有請求改走假資料（見 mock-data.js）。
- *   整合真實後端時，刪掉 index.html 內 mock-data.js 的 <script> 即可。
+ *   預設走真實 API。mock-data.js 已於 2026-09-08 停止預設載入，僅在網址帶
+ *   ?mock=1 時由 index.html 動態插入（見該檔結尾），此時所有請求改走假資料。
  */
 (function () {
   'use strict';
@@ -197,7 +197,7 @@
     var flag = params.get('mock');
     if (flag === '0') return false;              // 強制走真實 API
     if (flag === '1') return !!window.MOCK_API;  // 強制走假資料
-    return !!window.MOCK_API;                    // 預設：有假資料就用假資料
+    return !!window.MOCK_API;                    // 預設：真實 API（mock-data.js 不再預設載入）
   })();
 
   /**
