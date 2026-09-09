@@ -107,6 +107,12 @@
   --radius: 10px;
   --gap: 16px;
 
+  /* AI 教練面板寬度。桌機三欄的第三欄、平板抽屜、以及平板時 .content 為了
+     不讓右上角工具列被面板蓋住而加的 padding-right，三者都由這一個變數驅動，
+     不在三個地方各寫一次數值（見 CLAUDE.md「絕不複製貼上」）。
+     clamp：小桌機不至於把內容欄擠爆，2K/4K 上面板才有餘裕。 */
+  --coach-panel-w: clamp(360px, 40vw, 640px);
+
   /* 信賴度 badge（PLAN.md §7.3 三欄位契約）：high 用中性色（不強調，
      因為「可信」是預期狀態，不需要視覺提醒）；low 用與 badge-clipped
      同色系的警示色（提醒有已知偏誤但仍可用）；unusable／未評用最弱化
@@ -229,40 +235,6 @@ h1, h2, h3 {
   outline-offset: 1px;
 }
 
-/* 主題切換：淺色／深色／跟隨系統，三顆一組，樣式與 range-btn 一致但更窄 */
-.theme-switch {
-  display: flex;
-  gap: 4px;
-}
-
-.theme-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.theme-btn:hover {
-  border-color: var(--accent);
-}
-
-.theme-btn[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.theme-btn:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-
 /* 自訂區間：切換鈕本身複用 .range-btn 樣式，面板絕對定位於切換鈕之下。
    position:relative 只放在這個小容器上（而非整個 .site-header），
    避免影響 header 其餘元素既有的 flex 排版脈絡。 */
@@ -344,6 +316,13 @@ h1, h2, h3 {
 
 .state-error-inline {
   color: var(--error-text);
+}
+
+/* 共用 icon 精靈圖的容器：只提供 <symbol> 給 <use> 引用，本身不佔版面。
+   用 display:none 而非 hidden 屬性，是因為部分瀏覽器對帶 hidden 的 <svg>
+   會連同 <symbol> 一起不解析，導致所有 <use> 變成空白。 */
+.icon-sprite {
+  display: none;
 }
 
 /* ------------------------------------------------------------ App 殼
@@ -499,6 +478,75 @@ h1, h2, h3 {
 
 .topbar-controls[hidden] {
   display: none;
+}
+
+/*
+ * 右上角工具列。三顆鈕都是 44x44 的觸控目標；:has 不可用的舊瀏覽器也只是
+ * 少了 hover 效果，不影響操作。
+ *
+ * z-index 130 高於 AI 面板的 120：平板寬度下面板是 fixed 抽屜，工具列若被
+ * 蓋住就按不到。單靠 z-index 只保證「畫在上層」，不保證「看得到」——真正
+ * 把工具列推到面板左邊的是下面平板斷點裡 .content 的 padding-right。
+ */
+.topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  z-index: 130;
+}
+
+.tool-btn {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tool-btn:hover {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.tool-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* 同步鈕在後端接上前是 disabled：保留在版面上（讓使用者知道有這個功能，
+   title 說明為何按不動），但要看得出不能按。 */
+.tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tool-btn:disabled:hover {
+  background: none;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+/* 主題循環鈕：三個 icon 都在 DOM 裡，只顯示與目前狀態相符的那一個。
+   由 theme.js 設 data-theme-state（見該檔 updateButtons）。 */
+.theme-icon {
+  display: none;
+}
+
+#theme-cycle-btn[data-theme-state="light"] .theme-icon[data-icon="light"],
+#theme-cycle-btn[data-theme-state="dark"] .theme-icon[data-icon="dark"],
+#theme-cycle-btn[data-theme-state="system"] .theme-icon[data-icon="system"] {
+  display: flex;
 }
 
 /* ---- view ---- */
@@ -821,12 +869,6 @@ body.coach-open .coach-fab {
     display: none;
   }
 
-  /* 三顆 44px 主題鈕（含間距約 140px）塞不進 72px 欄，改成自動換行 */
-  .theme-switch {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
   /* 72px 欄放不下「日期＋落後天數」，只留日期（天數在今日卡看得到） */
   .sidebar-sync .sync-behind {
     display: none;
@@ -840,7 +882,7 @@ body.coach-open .coach-fab {
     bottom: 0;
     left: auto;
     z-index: 120;
-    width: 360px;
+    width: var(--coach-panel-w);
     max-width: 100%;
     height: 100vh;
     box-shadow: -2px 0 12px var(--panel-shadow);
@@ -853,6 +895,21 @@ body.coach-open .coach-fab {
   .view-split {
     grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
     align-items: start;
+  }
+}
+
+/* ---- 平板 768~1279px：AI 面板開啟時，內容避開抽屜 ----
+ *
+ * 這個寬度的面板是 fixed 抽屜（z-index 120），會蓋住內容的右側，右上角
+ * 工具列首當其衝。把 .content 的右內距撐到面板寬度，工具列就落在面板左邊。
+ *
+ * 只在這個區間需要：≥1280px 面板是 grid 第三欄，本來就在內容欄右邊，天然
+ * 不重疊；<768px 面板是全螢幕 sheet，整條頂列本來就看不到，那是正確行為。
+ * 寬度沿用 --coach-panel-w，與面板同一個來源。
+ */
+@media (min-width: 768px) and (max-width: 1279px) {
+  body.coach-open .content {
+    padding-right: calc(var(--coach-panel-w) + var(--gap));
   }
 }
 
@@ -901,7 +958,7 @@ body.coach-open .coach-fab {
     position: sticky;
     inset: auto;
     top: 0;
-    width: 360px;
+    width: var(--coach-panel-w);
     box-shadow: none;
   }
 

@@ -59,6 +59,11 @@
   };
   var DEFAULT_VIEW = 'today';
 
+  // 產品名。分頁標題組成 `<view 標題>｜Running Coach`，<title> 的初始值
+  // （index.html）是完整的「Running Coach 訓練儀表板」——前者要短，因為
+  // 瀏覽器分頁很窄，view 標題才是使用者在一排分頁裡真正要分辨的東西。
+  var APP_NAME = 'Running Coach';
+
   // range 的合法值改由 /api/meta 的 ranges 動態提供（後端 RANGE_LABELS
   // 是唯一真實來源），這裡只留一個防禦性 fallback：若 meta 還沒回來前
   // 使用者就想操作（理論上不會發生，因為按鈕本身也是 meta 回來後才產生），
@@ -1885,7 +1890,7 @@
     if (titleEl) titleEl.textContent = VIEWS[view].title;
     var controls = $('topbar-controls');
     if (controls) controls.hidden = !VIEWS[view].hasRange;
-    document.title = VIEWS[view].title + '｜Running Coach 訓練儀表板';
+    document.title = VIEWS[view].title + '｜' + APP_NAME;
 
     // 路由參數
     if (view === 'sessions') {
@@ -1978,6 +1983,26 @@
     if (showDetail && !wasDetail && state.sessionDetail && window.innerWidth < 768) {
       renderSessionDetail();
     }
+  }
+
+  /**
+   * 同步鈕（右上角工具列與設定頁各一顆，都標了 data-action="sync"）。
+   *
+   * N-19 §2.2／§7：本次只做 UI 外殼，後端 POST /api/sync 留待地端實作
+   * （需要 Garmin OAuth token，不可進雲端環境）。兩顆鈕目前都是 disabled，
+   * 這裡先接上呼叫點，後端接上後只要補 DashboardApp.requestSync 並移除
+   * disabled 即可，不必再回頭改綁定。
+   * requestSync 目前不存在，所以呼叫前先檢查——不用 ?. 是因為本檔通篇 ES5。
+   */
+  function bindSyncButtons() {
+    var btns = document.querySelectorAll('[data-action="sync"]');
+    Array.prototype.forEach.call(btns, function (btn) {
+      btn.addEventListener('click', function () {
+        if (window.DashboardApp && window.DashboardApp.requestSync) {
+          window.DashboardApp.requestSync();
+        }
+      });
+    });
   }
 
   function bindRouter() {
@@ -2101,6 +2126,7 @@
     bindTooltipDelegation();
     bindCustomRangePanel();
     bindCoachPanel();
+    bindSyncButtons();
     bindRouter();
     renderCalendarLegend();
 

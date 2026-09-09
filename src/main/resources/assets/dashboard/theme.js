@@ -14,13 +14,36 @@
  * 【對外介面】window.Theme
  *   getSettings() / saveSettings(patch)  — 設定的讀寫（自動處理版本與防禦性解析）
  *   init()                                — 綁定切換鈕、套用初始主題、監聽系統主題變化
+ *   CHOICES                               — [{value, label}]，供設定頁產生選項用的唯一來源
+ *   getChoice() / setChoice(choice)       — 目前主題選擇的讀寫（會連動所有 UI）
+ *
+ * 【主題 UI 的兩種形態】
+ *   右上角工具列的循環鈕（#theme-cycle-btn）與設定頁的三選一是同一份狀態的
+ *   兩個視圖，updateButtons() 一次更新兩邊，因此不論從哪邊改都會即時連動。
+ *   選項鈕用 data-theme-choice（「這顆代表哪個選項」）、循環鈕用 data-theme-state
+ *   （「目前是哪個狀態」）——語意不同故屬性名不同，否則選擇器會把循環鈕
+ *   誤認成一個選項鈕。
  */
 window.Theme = (function () {
   'use strict';
 
   var STORAGE_KEY = 'rc-dashboard-settings';
   var SETTINGS_VERSION = 1;
-  var VALID_THEME_CHOICES = ['light', 'dark', 'system'];
+  // 循環鈕依這個順序輪替：淺色 → 深色 → 跟隨系統 → 淺色。
+  // label 是設定頁選項文字的唯一來源，不讓 index.html 或 app.js 各寫一份。
+  var CHOICES = [
+    { value: 'light', label: '淺色' },
+    { value: 'dark', label: '深色' },
+    { value: 'system', label: '跟隨系統' }
+  ];
+  var VALID_THEME_CHOICES = CHOICES.map(function (c) { return c.value; });
+
+  function labelOf(choice) {
+    for (var i = 0; i < CHOICES.length; i += 1) {
+      if (CHOICES[i].value === choice) return CHOICES[i].label;
+    }
+    return choice;
+  }
 
   function defaults() {
     return { v: SETTINGS_VERSION, theme: 'system' };
@@ -71,12 +94,36 @@ window.Theme = (function () {
     updateButtons(choice);
   }
 
+  function nextChoice(choice) {
+    var i = VALID_THEME_CHOICES.indexOf(choice);
+    return VALID_THEME_CHOICES[(i + 1) % VALID_THEME_CHOICES.length];
+  }
+
+  /**
+   * 把目前選擇同步到所有主題 UI：設定頁的三選一、右上角循環鈕、
+   * 以及設定頁的「與系統同步」開關。任何一邊改動最後都會走到這裡，
+   * 三者因此不會各自記一份狀態而漂移。
+   */
   function updateButtons(choice) {
-    var btns = document.querySelectorAll('.theme-btn');
+    var btns = document.querySelectorAll('[data-theme-choice]');
     for (var i = 0; i < btns.length; i += 1) {
       var isActive = btns[i].getAttribute('data-theme-choice') === choice;
       btns[i].setAttribute('aria-pressed', isActive ? 'true' : 'false');
     }
+
+    // 循環鈕：CSS 依 data-theme-state 決定顯示哪個 icon（見 styles.css .theme-icon）。
+    // aria-label 說明的是「按下去會變成什麼」，不是目前狀態——純 icon 鈕沒有
+    // 可見文字，使用者需要知道的是這一按的後果。
+    var cycle = document.getElementById('theme-cycle-btn');
+    if (cycle) {
+      var next = nextChoice(choice);
+      cycle.setAttribute('data-theme-state', choice);
+      cycle.setAttribute('aria-label', '切換到' + labelOf(next) + '模式');
+      cycle.setAttribute('title', '主題：' + labelOf(choice) + '（切換到' + labelOf(next) + '）');
+    }
+
+    var follow = document.getElementById('setting-theme-system');
+    if (follow) follow.checked = (choice === 'system');
   }
 
   function setChoice(choice) {
@@ -85,12 +132,31 @@ window.Theme = (function () {
     apply(choice);
   }
 
+  function getChoice() {
+    return getSettings().theme;
+  }
+
   function bindButtons() {
-    var btns = document.querySelectorAll('.theme-btn');
+    var btns = document.querySelectorAll('[data-theme-choice]');
     for (var i = 0; i < btns.length; i += 1) {
       btns[i].addEventListener('click', (function (btn) {
         return function () { setChoice(btn.getAttribute('data-theme-choice')); };
       })(btns[i]));
+    }
+
+    var cycle = document.getElementById('theme-cycle-btn');
+    if (cycle) {
+      cycle.addEventListener('click', function () { setChoice(nextChoice(getChoice())); });
+    }
+
+    // 「與系統同步」開關是 system 選項的明確版本：關掉時不能留在 system，
+    // 要落到目前實際顯示的那一個，否則畫面會在關掉開關的瞬間毫無變化，
+    // 使用者會以為開關壞了。
+    var follow = document.getElementById('setting-theme-system');
+    if (follow) {
+      follow.addEventListener('change', function () {
+        setChoice(follow.checked ? 'system' : resolve(getChoice()));
+      });
     }
   }
 
@@ -115,8 +181,11 @@ window.Theme = (function () {
   }
 
   return {
+    CHOICES: CHOICES,
     getSettings: getSettings,
     saveSettings: saveSettings,
+    getChoice: getChoice,
+    setChoice: setChoice,
     init: init
   };
 })();
