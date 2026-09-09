@@ -19,10 +19,16 @@
   --border: #dfe3e8;
   --text: #1f2933;
   --text-muted: #66727f;
-  --accent: #2f6f4f;
-  --accent-soft: #e3f0e8;
-  --accent-border: #bcd9c8;
-  --accent-text: #1f5238;
+  /* 強調色（品牌藍）。這六個 accent 相關 token 的色號是 WCAG 相對亮度公式的
+     實測結果，不是目測挑的——目測會出錯（深色版原先憑感覺選的邊框色實測對
+     卡片底只有 1.76:1，遠低於非文字元件的 3:1 門檻）。調整前請先確認
+     src/test/unit/test_dashboard_theme_contrast.py 仍然通過，該測試直接解析
+     本檔算對比度，不是比對硬編碼字串。
+     正文／背景／圖表色刻意都不染藍，理由見該測試與深色區塊的說明。 */
+  --accent: #2563a8;
+  --accent-soft: #e4eef8;
+  --accent-border: #bcd4ea;
+  --accent-text: #1b4a7a;
   --on-accent: #fff;
 
   /* 圖表色（同時考慮色盲友善與列印可辨識度） */
@@ -64,7 +70,7 @@
   --up: #b03a2e;
   --down: #2f6f4f;
 
-  --focus-ring: rgba(47, 111, 79, 0.4);
+  --focus-ring: rgba(37, 99, 168, 0.4);
 
   --notice-bg: #fdf6e0;
   --notice-border: #f0e2b8;
@@ -100,6 +106,12 @@
 
   --radius: 10px;
   --gap: 16px;
+
+  /* AI 教練面板寬度。桌機三欄的第三欄、平板抽屜、以及平板時 .content 為了
+     不讓右上角工具列被面板蓋住而加的 padding-right，三者都由這一個變數驅動，
+     不在三個地方各寫一次數值（見 CLAUDE.md「絕不複製貼上」）。
+     clamp：小桌機不至於把內容欄擠爆，2K/4K 上面板才有餘裕。 */
+  --coach-panel-w: clamp(360px, 40vw, 640px);
 
   /* 信賴度 badge（PLAN.md §7.3 三欄位契約）：high 用中性色（不強調，
      因為「可信」是預期狀態，不需要視覺提醒）；low 用與 badge-clipped
@@ -223,40 +235,6 @@ h1, h2, h3 {
   outline-offset: 1px;
 }
 
-/* 主題切換：淺色／深色／跟隨系統，三顆一組，樣式與 range-btn 一致但更窄 */
-.theme-switch {
-  display: flex;
-  gap: 4px;
-}
-
-.theme-btn {
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.theme-btn:hover {
-  border-color: var(--accent);
-}
-
-.theme-btn[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.theme-btn:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-
 /* 自訂區間：切換鈕本身複用 .range-btn 樣式，面板絕對定位於切換鈕之下。
    position:relative 只放在這個小容器上（而非整個 .site-header），
    避免影響 header 其餘元素既有的 flex 排版脈絡。 */
@@ -338,6 +316,13 @@ h1, h2, h3 {
 
 .state-error-inline {
   color: var(--error-text);
+}
+
+/* 共用 icon 精靈圖的容器：只提供 <symbol> 給 <use> 引用，本身不佔版面。
+   用 display:none 而非 hidden 屬性，是因為部分瀏覽器對帶 hidden 的 <svg>
+   會連同 <symbol> 一起不解析，導致所有 <use> 變成空白。 */
+.icon-sprite {
+  display: none;
 }
 
 /* ------------------------------------------------------------ App 殼
@@ -495,6 +480,75 @@ h1, h2, h3 {
   display: none;
 }
 
+/*
+ * 右上角工具列。三顆鈕都是 44x44 的觸控目標；:has 不可用的舊瀏覽器也只是
+ * 少了 hover 效果，不影響操作。
+ *
+ * z-index 130 高於 AI 面板的 120：平板寬度下面板是 fixed 抽屜，工具列若被
+ * 蓋住就按不到。單靠 z-index 只保證「畫在上層」，不保證「看得到」——真正
+ * 把工具列推到面板左邊的是下面平板斷點裡 .content 的 padding-right。
+ */
+.topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  z-index: 130;
+}
+
+.tool-btn {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tool-btn:hover {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.tool-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* 同步鈕在後端接上前是 disabled：保留在版面上（讓使用者知道有這個功能，
+   title 說明為何按不動），但要看得出不能按。 */
+.tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tool-btn:disabled:hover {
+  background: none;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+/* 主題循環鈕：三個 icon 都在 DOM 裡，只顯示與目前狀態相符的那一個。
+   由 theme.js 設 data-theme-state（見該檔 updateButtons）。 */
+.theme-icon {
+  display: none;
+}
+
+#theme-cycle-btn[data-theme-state="light"] .theme-icon[data-icon="light"],
+#theme-cycle-btn[data-theme-state="dark"] .theme-icon[data-icon="dark"],
+#theme-cycle-btn[data-theme-state="system"] .theme-icon[data-icon="system"] {
+  display: flex;
+}
+
 /* ---- view ---- */
 
 .view {
@@ -606,16 +660,23 @@ body.coach-open .coach-panel {
 }
 
 .coach-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: none;
   color: var(--text-muted);
-  font-family: inherit;
-  font-size: 1rem;
-  line-height: 1;
   cursor: pointer;
+}
+
+.coach-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .coach-btn:hover {
@@ -635,34 +696,51 @@ body.coach-open .coach-panel {
   font-size: 0.84rem;
 }
 
-/* 收合後的直條（桌機） */
+/* 面板收合後的重新展開入口（桌機）。
+ *
+ * 原本是佔滿版面高度、48px 寬的直排文字灰長條，改成貼齊右緣的圓形浮動按鈕，
+ * 視覺語言與手機 FAB 一致（同一個對話泡泡符號、同樣的圓形與強調色底）。
+ *
+ * 放在右下角而非垂直置中：與手機 FAB 同一個位置語言（該 FAB 也是右下角），
+ * 且置中時會壓在圖表中段上——面板收合的用意就是把版面讓給內容，浮動鈕
+ * 不該再蓋回去。
+ *
+ * position: fixed 讓它脫離 .app-shell 的 grid 流：≥1280px 的第三欄是 auto，
+ * 沒有在流內的子元素時寬度為 0，內容欄因此能正確佔滿整個寬度——原本那 48px
+ * 的欄位就是這樣消失的，不需要另外改 grid-template-columns。
+ * z-index 低於面板的 120：兩者不會同時出現（面板開啟時本鈕是 hidden），
+ * 但萬一狀態不同步時該被蓋住的是這顆鈕。
+ */
 .coach-rail {
   display: none;
+  position: fixed;
+  right: var(--gap);
+  bottom: var(--gap);
+  z-index: 115;
   width: 48px;
-  border: none;
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 0.84rem;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--accent-border);
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
   cursor: pointer;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  box-shadow: 0 2px 8px var(--panel-shadow);
 }
 
-.coach-rail-text {
-  writing-mode: vertical-rl;
-  letter-spacing: 0.1em;
+.coach-rail:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
-.coach-rail:hover {
-  color: var(--text);
-}
-
-/* 內容頂列的 AI 教練開關：桌機不需要（面板常駐或用直條展開） */
+/* 內容頂列的 AI 教練開關：桌機不需要（面板常駐或用圓鈕展開） */
 .coach-toggle {
   min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -675,6 +753,18 @@ body.coach-open .coach-panel {
 
 .coach-toggle:hover {
   border-color: var(--accent-border);
+}
+
+/* 面板已開啟時帶強調底色：這顆鈕是 toggle，使用者要看得出目前是開還是關 */
+.coach-toggle[aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.coach-toggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .coach-scrim {
@@ -815,12 +905,6 @@ body.coach-open .coach-fab {
     display: none;
   }
 
-  /* 三顆 44px 主題鈕（含間距約 140px）塞不進 72px 欄，改成自動換行 */
-  .theme-switch {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
   /* 72px 欄放不下「日期＋落後天數」，只留日期（天數在今日卡看得到） */
   .sidebar-sync .sync-behind {
     display: none;
@@ -834,7 +918,7 @@ body.coach-open .coach-fab {
     bottom: 0;
     left: auto;
     z-index: 120;
-    width: 360px;
+    width: var(--coach-panel-w);
     max-width: 100%;
     height: 100vh;
     box-shadow: -2px 0 12px var(--panel-shadow);
@@ -847,6 +931,21 @@ body.coach-open .coach-fab {
   .view-split {
     grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
     align-items: start;
+  }
+}
+
+/* ---- 平板 768~1279px：AI 面板開啟時，內容避開抽屜 ----
+ *
+ * 這個寬度的面板是 fixed 抽屜（z-index 120），會蓋住內容的右側，右上角
+ * 工具列首當其衝。把 .content 的右內距撐到面板寬度，工具列就落在面板左邊。
+ *
+ * 只在這個區間需要：≥1280px 面板是 grid 第三欄，本來就在內容欄右邊，天然
+ * 不重疊；<768px 面板是全螢幕 sheet，整條頂列本來就看不到，那是正確行為。
+ * 寬度沿用 --coach-panel-w，與面板同一個來源。
+ */
+@media (min-width: 768px) and (max-width: 1279px) {
+  body.coach-open .content {
+    padding-right: calc(var(--coach-panel-w) + var(--gap));
   }
 }
 
@@ -895,7 +994,7 @@ body.coach-open .coach-fab {
     position: sticky;
     inset: auto;
     top: 0;
-    width: 360px;
+    width: var(--coach-panel-w);
     box-shadow: none;
   }
 
@@ -907,8 +1006,11 @@ body.coach-open .coach-fab {
     display: none;
   }
 
-  body:not(.coach-open) .coach-rail {
-    display: block;
+  /* 圓鈕要 flex 才能把 icon 置中。:not([hidden]) 讓 app.js 設的 hidden 屬性
+     仍然有效——這條規則的特異性高於瀏覽器預設的 [hidden]{display:none}，
+     不排除掉的話 JS 收合狀態與 CSS 會打架，且首屏在 JS 執行前會閃一下。 */
+  body:not(.coach-open) .coach-rail:not([hidden]) {
+    display: flex;
   }
 
   .view-split {
@@ -2261,6 +2363,213 @@ body.coach-open .coach-fab {
   }
 }
 
+/* ------------------------------------------------------------ 系統設定 view
+ *
+ * N-19 §4。設定頁只呈現可操作的控制項與說明，不放任何訓練建議或結論句
+ * （D.1 硬約束：圖表／卡片只呈現數據，不做文字解讀——設定頁同理）。
+ * 顏色一律引用既有 token，深色模式因此自動成立。
+ */
+
+.setting-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px var(--gap);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.setting-name {
+  font-size: 0.9rem;
+}
+
+.setting-hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.setting-control {
+  flex: 0 0 auto;
+}
+
+/* 主題三選一：分段控制。與右上角的循環鈕是同一份狀態的兩個視圖，
+   aria-pressed 由 theme.js 的 updateButtons() 一併更新。 */
+.theme-choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.theme-choice {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-choice:hover {
+  border-color: var(--accent-border);
+}
+
+.theme-choice[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.theme-choice:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* 開關。原生 checkbox 只是視覺隱藏而非移除，鍵盤操作與表單語意都保留
+   （focus 樣式因此要畫在相鄰的 .switch-track 上）。 */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.switch-track {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--bar-track);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px var(--panel-shadow);
+  transition: transform 0.15s ease;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 設定頁的一般按鈕（目前只有同步鈕，disabled 直到後端接上） */
+.setting-btn {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.setting-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.setting-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.setting-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.settings-sync {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+/* 尚未開放的區塊：說明目前的實際行為，不做假的勾選清單 */
+.setting-placeholder,
+.setting-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.setting-note {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* 窄螢幕：標籤與控制項改上下堆疊，控制項靠左（並排會把說明文字擠成單字寬） */
+@media (max-width: 520px) {
+  .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+    /* 改直向後 space-between 會把控制項推到列底，必須一起改掉 */
+    justify-content: flex-start;
+  }
+
+  /* 直向排列時 flex-basis 量的是高度，並排用的 240px 會把每一列撐成
+     240px 高的空白。改為由內容決定高度。 */
+  .setting-label {
+    flex: 0 0 auto;
+  }
+
+  .setting-control {
+    align-self: flex-start;
+  }
+}
+
 /* ------------------------------------------------------------ 深色模式
  *
  * 只有一份深色定義（[data-theme="dark"]），不额外寫 @media (prefers-color-scheme)。
@@ -2280,11 +2589,15 @@ body.coach-open .coach-fab {
   --border: #333c44;
   --text: #e4e8eb;
   --text-muted: #99a3ac;
-  --accent: #4f9e73;
-  --accent-soft: #1f3128;
-  --accent-border: #35543f;
-  --accent-text: #8fd6ac;
-  --on-accent: #0d1411;
+  /* 深色版強調色：見 :root 的說明。深色的 --on-accent 必須是深色字——
+     accent 在此是亮藍 #6aa9dd，白字疊上去只有 2.52:1，不可用（改深色字後 7.47:1）。
+     --accent-soft 對頁面底只有 1.44:1 是刻意的：它是「看得出有上色」的淡底，
+     不承載文字，文字一律用 --accent-text（對頁面底 10.36:1）。 */
+  --accent: #6aa9dd;
+  --accent-soft: #233648;
+  --accent-border: #4e7aa0;
+  --accent-text: #9ccbee;
+  --on-accent: #0b1219;
 
   --c-pace: #4f9e73;
   --c-hr: #e0725a;
@@ -2326,7 +2639,7 @@ body.coach-open .coach-fab {
   --up: #e0725a;
   --down: #4f9e73;
 
-  --focus-ring: rgba(79, 158, 115, 0.5);
+  --focus-ring: rgba(106, 169, 221, 0.5);
 
   --notice-bg: #3a3320;
   --notice-border: #5c4f2a;
