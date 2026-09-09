@@ -701,6 +701,10 @@ body.coach-open .coach-panel {
  * 原本是佔滿版面高度、48px 寬的直排文字灰長條，改成貼齊右緣的圓形浮動按鈕，
  * 視覺語言與手機 FAB 一致（同一個對話泡泡符號、同樣的圓形與強調色底）。
  *
+ * 放在右下角而非垂直置中：與手機 FAB 同一個位置語言（該 FAB 也是右下角），
+ * 且置中時會壓在圖表中段上——面板收合的用意就是把版面讓給內容，浮動鈕
+ * 不該再蓋回去。
+ *
  * position: fixed 讓它脫離 .app-shell 的 grid 流：≥1280px 的第三欄是 auto，
  * 沒有在流內的子元素時寬度為 0，內容欄因此能正確佔滿整個寬度——原本那 48px
  * 的欄位就是這樣消失的，不需要另外改 grid-template-columns。
@@ -711,8 +715,7 @@ body.coach-open .coach-panel {
   display: none;
   position: fixed;
   right: var(--gap);
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: var(--gap);
   z-index: 115;
   width: 48px;
   height: 48px;
