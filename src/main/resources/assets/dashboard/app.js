@@ -35,11 +35,29 @@
     meta: null,
     today: null,
     loadSeries: null,
-    calendarExpanded: false,
     calendarMonth: null,   // 'YYYY-MM'，展開月曆時才需要，預設當月
     calendarData: null,    // /api/calendar 回傳的月曆資料（展開後才載入）
-    weekDays: null         // /api/calendar 的本週資料（週條用）
+    weekDays: null,        // /api/calendar 的本週資料（週條用）
+
+    view: 'today',         // 目前 view：today|calendar|sessions|load|wellness
+
+    // render-on-activate 的髒標記。widthOf() 對 display:none 的容器回 0，
+    // 在隱藏的 view 裡畫圖會得到寬度 0 的空 SVG，所以資料回來時若該 view
+    // 不在畫面上就只標髒、不畫；切過去時才補畫（見 renderDirtyView）。
+    dirty: { sessions: false, load: false, wellness: false, calendar: false }
   };
+
+  // 五個 view 的定義：路由 key → 標題、是否吃 range。
+  // 「吃 range」決定內容頂列的區間切換要不要顯示（D.2：只有訓練紀錄／
+  // 訓練負荷／身體狀況 三個 view 顯示，今日與行事曆不受區間影響）。
+  var VIEWS = {
+    today:    { title: '今日',         hasRange: false },
+    calendar: { title: '行事曆',       hasRange: false },
+    sessions: { title: '訓練紀錄',     hasRange: true },
+    load:     { title: '訓練負荷',     hasRange: true },
+    wellness: { title: '身體狀況',     hasRange: true }
+  };
+  var DEFAULT_VIEW = 'today';
 
   // range 的合法值改由 /api/meta 的 ranges 動態提供（後端 RANGE_LABELS
   // 是唯一真實來源），這裡只留一個防禦性 fallback：若 meta 還沒回來前
@@ -668,6 +686,28 @@
     return block;
   }
 
+  /**
+   * 側邊列底部的「最後同步」（D.2）。取 /api/today 的 freshness，
+   * 只顯示較新的那個日期與落後天數——側邊列空間窄，完整的兩個日期
+   * 留在今日卡（見 renderToday 中對 days_behind 的說明）。
+   */
+  function renderSidebarSync() {
+    var node = $('sidebar-sync');
+    if (!node) return;
+    clear(node);
+    var f = state.today && state.today.freshness;
+    if (!f) return;
+    var latest = [f.activity_latest, f.wellness_latest].filter(Boolean).sort().pop();
+    if (!latest) { node.appendChild(h('span', 'sync-label', '尚無同步資料')); return; }
+    var days = f.days_behind;
+    node.appendChild(h('span', 'sync-label', '最後同步'));
+    node.appendChild(h('span', 'sync-value', latest.slice(5)));
+    // 落後天數獨立成一個元素：72px 圖示欄放不下，由 CSS 隱藏（日期仍看得見）
+    if (days !== null && days !== undefined) {
+      node.appendChild(h('span', 'sync-behind', days > 0 ? days + ' 天前' : '今天'));
+    }
+  }
+
   function renderToday() {
     var node = $('today-body');
     clear(node);
@@ -690,6 +730,8 @@
         : '尚無同步資料';
       node.appendChild(h('div', 'today-freshness', freshText));
     }
+
+    renderSidebarSync();
 
     var grid = h('div', 'today-grid');
 
@@ -740,14 +782,14 @@
       lastBlock.appendChild(h('div', 'state-msg state-unavailable', '尚無活動紀錄'));
     } else {
       var la = data.last_activity;
-      var btn = h('button', 'session-card', null);
+      var btn = h('button', 'session-card session-card-inline', null);
       btn.type = 'button';
       var text = la.date + '　' + (ACTIVITY_TYPE_LABEL[la.activity_type] || la.activity_type);
       if (la.distance_km) text += '　' + C.formatNumber(la.distance_km, 1) + ' km';
       if (la.avg_pace_sec_per_km) text += '　' + C.formatPace(la.avg_pace_sec_per_km) + '/km';
       btn.textContent = text;
       if (la.activity_type && RUNNING_ACTIVITY_TYPES_CLIENT.indexOf(la.activity_type) !== -1) {
-        btn.addEventListener('click', function () { selectSession(la.id); scrollToSection('panel-session'); });
+        btn.addEventListener('click', function () { navigate('sessions', la.id); });
       } else {
         btn.disabled = true;
         btn.title = '非跑步活動，無單場分析頁可跳轉';
@@ -763,11 +805,6 @@
   // 僅用於「今日卡的最近一場是否可跳轉單場分析」這個 UI 判斷，不影響
   // 任何資料篩選（篩選邏輯仍在後端 /api/sessions 完成）。
   var RUNNING_ACTIVITY_TYPES_CLIENT = ['running', 'treadmill_running', 'track_running', 'trail_running'];
-
-  function scrollToSection(id) {
-    var el = $(id);
-    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
 
   function loadToday() {
     showLoading($('today-body'), '載入今日狀態');
@@ -1066,8 +1103,7 @@
       if (runnable) {
         cell.classList.add('is-clickable');
         cell.addEventListener('click', function () {
-          selectSession(runnable.id);
-          scrollToSection('panel-session');
+          navigate('sessions', runnable.id);
         });
       }
       cell.appendChild(h('span', 'week-cell-dow', dowLabel(day.date)));
@@ -1116,7 +1152,6 @@
   function renderCalendarBody() {
     var node = $('calendar-body');
     clear(node);
-    if (!state.calendarExpanded) return;
     if (!state.calendarData) { showLoading(node, '載入月曆'); return; }
 
     var range = monthGridRange(state.calendarMonth);
@@ -1148,7 +1183,7 @@
         if (runnable) {
           cell.classList.add('is-clickable');
           cell.addEventListener('click', function (id) {
-            return function () { selectSession(id); scrollToSection('panel-session'); };
+            return function () { navigate('sessions', id); };
           }(runnable.id));
         }
         if (day.activities.length > 0) cell.appendChild(activityDots(day.activities));
@@ -1164,7 +1199,7 @@
     var range = monthGridRange(state.calendarMonth);
     api('/api/calendar?start=' + range.start + '&end=' + range.end).then(function (data) {
       state.calendarData = data;
-      renderCalendarBody();
+      renderOrDefer('calendar', renderCalendarBody);
     }).catch(function (err) {
       showError($('calendar-body'), err.message);
     });
@@ -1173,8 +1208,7 @@
   function shiftCalendarMonth(delta) {
     var d = new Date(state.calendarMonth + '-01T00:00:00Z');
     d.setUTCMonth(d.getUTCMonth() + delta);
-    state.calendarMonth = d.toISOString().slice(0, 7);
-    loadCalendarBody();
+    navigate('calendar', d.toISOString().slice(0, 7));
   }
 
   function renderCalendarLegend() {
@@ -1186,26 +1220,6 @@
       item.appendChild(h('span', 'legend-swatch day-' + key));
       item.appendChild(document.createTextNode(DAY_STATE_LABEL[key]));
       node.appendChild(item);
-    });
-  }
-
-  function bindCalendarToggle() {
-    var toggle = $('calendar-toggle');
-    if (!toggle) return;
-    toggle.addEventListener('click', function () {
-      state.calendarExpanded = !state.calendarExpanded;
-      toggle.textContent = state.calendarExpanded ? '收合月曆 ▴' : '展開月曆 ▾';
-      toggle.setAttribute('aria-expanded', state.calendarExpanded ? 'true' : 'false');
-      var body = $('calendar-body');
-      body.hidden = !state.calendarExpanded;
-      if (state.calendarExpanded && !state.calendarMonth) {
-        state.calendarMonth = todayISO().slice(0, 7);
-      }
-      if (state.calendarExpanded && !state.calendarData) {
-        loadCalendarBody();
-      } else {
-        renderCalendarBody();
-      }
     });
   }
 
@@ -1263,7 +1277,7 @@
     showLoading($('load-chart'), '載入訓練負荷');
     api('/api/training-load?range=' + state.range).then(function (data) {
       state.loadSeries = data;
-      renderLoad();
+      renderOrDefer('load', renderLoad);
     }).catch(function (err) {
       showError($('load-chart'), err.message);
     });
@@ -1345,8 +1359,6 @@
       })));
     }
     node.appendChild(volumeCard);
-
-    renderSessionList();
   }
 
   /**
@@ -1621,7 +1633,8 @@
       state.sessions = (res[0] && res[0].sessions) ? res[0].sessions : [];
       state.recoveryImpacts = (res[1] && res[1].impacts) ? res[1].impacts : [];
       renderSessionPicker();
-      renderTrends();
+      renderOrDefer('sessions', renderSessionList);
+      renderOrDefer('load', renderTrends);
 
       // 預設選最近一場（sessions 由新到舊）
       var keep = state.sessions.some(function (s) { return s.id === state.selectedSessionId; });
@@ -1643,7 +1656,7 @@
     Promise.all([wellnessP, trainingP]).then(function (res) {
       state.wellness = res[0];
       state.trainingDays = (res[1] && res[1].training_days) ? res[1].training_days : [];
-      renderWellness();
+      renderOrDefer('wellness', renderWellness);
     }).catch(function (err) {
       showError(wellnessNode, err.message);
     });
@@ -1663,8 +1676,10 @@
 
     api('/api/sessions/' + id).then(function (detail) {
       state.sessionDetail = detail;
-      renderSessionDetail();
-      renderSessionList(); // 更新選取樣式
+      renderOrDefer('sessions', function () {
+        renderSessionDetail();
+        renderSessionList(); // 更新選取樣式
+      });
     }).catch(function (err) {
       clear(body);
       showError(body, err.message);
@@ -1710,11 +1725,7 @@
    */
   function selectSession(id) {
     if (id === null || id === undefined || isNaN(id)) return;
-    state.selectedSessionId = id;
-    renderSessionPicker();
-    renderSessionList();
-    renderRecoveryImpact();
-    loadSessionDetail(id);
+    navigate('sessions', id);
   }
 
   function updateRangeButtons() {
@@ -1798,61 +1809,263 @@
     });
   }
 
-  /**
-   * 導覽列高亮：用 IntersectionObserver 追蹤哪個區塊目前在可視範圍內
-   * 最靠近頁首，對應的導覽連結加上 is-active。純視覺輔助，不影響任何
-   * 資料載入或狀態——找不到 IntersectionObserver（極舊瀏覽器）時直接
-   * 跳過，導覽列仍可正常點擊跳轉，只是不會高亮目前區塊。
-   */
-  function bindSectionNav() {
-    var nav = $('section-nav');
-    if (!nav) return;
-    var links = nav.querySelectorAll('.section-nav-link');
+  // ------------------------------------------------------------ 路由（App 殼）
+  //
+  // hash 路由 `#/view[/arg]`：
+  //   #/today  #/calendar  #/calendar/2026-09  #/sessions  #/sessions/1083
+  //   #/load   #/wellness
+  // 五個 view 是 <section class="view" hidden>，切換只動 hidden——不重建 DOM，
+  // 圖表與既有容器 id 都原地保留。
+  //
+  // 為什麼不在切換時無條件重畫：widthOf() 對 display:none 的容器回 0，
+  // 隱藏 view 內畫出來的 SVG 寬度會是 0。所以資料載入只渲染「目前」view，
+  // 其餘標髒（state.dirty），切過去時才補畫。
 
-    Array.prototype.forEach.call(links, function (link) {
-      link.addEventListener('click', function (evt) {
-        var targetId = link.getAttribute('data-nav-target');
-        var target = $(targetId);
-        if (target) {
-          evt.preventDefault();
-          scrollToSection(targetId);
-        }
-      });
+  /** 解析 location.hash → {view, arg}。無效或空的 hash 一律回預設 view。 */
+  function parseHash() {
+    var raw = (window.location.hash || '').replace(/^#/, '');
+    if (raw.indexOf('/') !== 0) return { view: DEFAULT_VIEW, arg: null };
+    var parts = raw.slice(1).split('/');
+    var view = parts[0];
+    if (!VIEWS[view]) return { view: DEFAULT_VIEW, arg: null };
+    return { view: view, arg: parts.length > 1 && parts[1] !== '' ? parts[1] : null };
+  }
+
+  /**
+   * 切到指定 view（寫 hash，實際切換由 hashchange 統一處理，
+   * 確保「點導覽」與「直接改網址／上一頁」走同一條路徑）。
+   * @param {string} view VIEWS 的 key
+   * @param {string|number} [arg] sessions 用 session id、calendar 用 'YYYY-MM'
+   */
+  function navigate(view, arg) {
+    if (!VIEWS[view]) return;
+    var hash = '#/' + view + (arg !== null && arg !== undefined && arg !== '' ? '/' + arg : '');
+    if (window.location.hash === hash) {
+      applyRoute(); // hash 沒變不會觸發 hashchange，直接套用（例如重選同一場）
+      return;
+    }
+    window.location.hash = hash;
+  }
+
+  /** 讀目前 hash 並套用到畫面：顯示對應 view、更新導覽高亮、處理參數。 */
+  function applyRoute() {
+    var route = parseHash();
+    var view = route.view;
+
+    // 網址沒有（或帶著無效的）hash 時補上正規形式，讓網址永遠反映目前
+    // 位置——否則首頁複製出去的連結會失去 view，重新整理也回不到原處。
+    // 用 replaceState 不留下多餘的上一頁紀錄；它不觸發 hashchange，
+    // 所以下面照常繼續套用。
+    var canonical = '#/' + view + (route.arg ? '/' + route.arg : '');
+    if (window.location.hash !== canonical && window.history && window.history.replaceState) {
+      var url = new URL(window.location.href);
+      url.hash = canonical;
+      window.history.replaceState(null, '', url.toString());
+    }
+
+    state.view = view;
+
+    // 只動 hidden，不重建 DOM
+    Object.keys(VIEWS).forEach(function (key) {
+      var section = $('view-' + key);
+      if (section) section.hidden = (key !== view);
     });
 
-    if (typeof IntersectionObserver === 'undefined') return;
+    // 導覽高亮（側邊列與底部分頁列共用 data-view）
+    var links = document.querySelectorAll('.nav-link, .tab-link');
+    Array.prototype.forEach.call(links, function (link) {
+      var active = link.getAttribute('data-view') === view;
+      link.classList.toggle('is-active', active);
+      if (active) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    });
 
-    function setActive(id) {
-      Array.prototype.forEach.call(links, function (link) {
-        link.classList.toggle('is-active', link.getAttribute('data-nav-target') === id);
+    // 頂列：標題與 range 切換（只有吃 range 的 view 顯示區間切換）
+    var titleEl = $('content-title');
+    if (titleEl) titleEl.textContent = VIEWS[view].title;
+    var controls = $('topbar-controls');
+    if (controls) controls.hidden = !VIEWS[view].hasRange;
+    document.title = VIEWS[view].title + '｜Running Coach 訓練儀表板';
+
+    // 路由參數
+    if (view === 'sessions') {
+      applySessionRouteArg(route.arg);
+    } else if (view === 'calendar' && route.arg && /^\d{4}-\d{2}$/.test(route.arg)) {
+      if (state.calendarMonth !== route.arg) {
+        state.calendarMonth = route.arg;
+        state.calendarData = null;
+        state.dirty.calendar = true;
+      }
+    }
+
+    // 切 view 時內容區捲回頂端（各 view 是獨立畫面，不該沿用上一個的捲動位置）
+    var content = $('content');
+    if (content && content.scrollTo) content.scrollTo(0, 0);
+
+    // 行事曆是唯一「進來才載入」的 view（月曆資料量大且與 range 無關），
+    // 首次進入或換月時都由這裡觸發。
+    if (view === 'calendar' && !state.calendarData) state.dirty.calendar = true;
+
+    renderDirtyView(view);
+    updateSessionsMobileStage();
+  }
+
+  /**
+   * `#/sessions/<id>` 的參數處理。深連結（重新整理後直接開這個網址）時
+   * state.sessions 可能還沒回來，此時只先記住 id，等 loadRangeData 完成
+   * 後的既有「保留已選場次」邏輯會接手載入明細。
+   */
+  function applySessionRouteArg(arg) {
+    if (arg === null) return;
+    var id = parseInt(arg, 10);
+    if (isNaN(id)) return;
+    if (state.selectedSessionId === id && state.sessionDetail) return;
+    state.selectedSessionId = id;
+    if (state.sessions.length > 0) {
+      renderSessionPicker();
+      renderSessionList();
+      renderRecoveryImpact();
+    }
+    loadSessionDetail(id);
+  }
+
+  /** 切到某 view 時，若它的圖表在隱藏期間被標髒就補畫。 */
+  function renderDirtyView(view) {
+    if (view === 'sessions' && state.dirty.sessions) {
+      state.dirty.sessions = false;
+      if (state.sessions.length > 0) renderSessionList();
+      if (state.sessionDetail) renderSessionDetail();
+    } else if (view === 'load' && state.dirty.load) {
+      state.dirty.load = false;
+      if (state.loadSeries) renderLoad();
+      if (state.sessions.length > 0) renderTrends();
+    } else if (view === 'wellness' && state.dirty.wellness) {
+      state.dirty.wellness = false;
+      if (state.wellness) renderWellness();
+    } else if (view === 'calendar' && state.dirty.calendar) {
+      state.dirty.calendar = false;
+      if (!state.calendarMonth) state.calendarMonth = todayISO().slice(0, 7);
+      if (!state.calendarData) loadCalendarBody(); else renderCalendarBody();
+    }
+  }
+
+  /**
+   * 標記某個 view 的圖表需要重畫。若它正好是目前的 view 就立刻畫，
+   * 否則只標髒——這是所有「資料回來了要重繪」路徑的統一入口。
+   * @param {string} key dirty 的 key（sessions|load|wellness|calendar）
+   * @param {Function} renderFn 真正的渲染函式
+   */
+  function renderOrDefer(key, renderFn) {
+    if (state.view === key) renderFn();
+    else state.dirty[key] = true;
+  }
+
+  /**
+   * 手機的訓練紀錄「清單 → 明細」兩段式：有選定場次時顯示明細、否則
+   * 顯示清單。桌機兩欄並存，這個 class 在 CSS 的手機斷點才生效。
+   */
+  function updateSessionsMobileStage() {
+    var view = $('view-sessions');
+    if (!view) return;
+    var route = parseHash();
+    var showDetail = state.view === 'sessions' && route.arg !== null;
+    var wasDetail = view.classList.contains('stage-detail');
+    view.classList.toggle('stage-detail', showDetail);
+    view.classList.toggle('stage-list', !showDetail);
+
+    // 手機清單階段時明細是 display:none，其中的圖表寬度為 0。切到明細
+    // 階段等於「容器從隱藏變可見」，和切 view 是同一種情況，必須重畫。
+    if (showDetail && !wasDetail && state.sessionDetail && window.innerWidth < 768) {
+      renderSessionDetail();
+    }
+  }
+
+  function bindRouter() {
+    window.addEventListener('hashchange', applyRoute);
+    var back = $('session-back');
+    if (back) back.addEventListener('click', function () { navigate('sessions'); });
+  }
+
+  // ------------------------------------------------------------ AI 教練面板（S1 殼）
+  //
+  // S1 只負責「殼」：三種寬度的形態（桌機常駐欄／平板抽屜／手機全螢幕 sheet）
+  // 與收合狀態的存讀。對話、串流、工具 chip 屬 S2／S3 的 coach.js，這裡不碰。
+  // 收合偏好沿用既有的 Theme.saveSettings，不另開 localStorage key。
+
+  /**
+   * 設定面板展開狀態。
+   * @param {boolean} open
+   * @param {boolean} [persist] 是否寫入偏好（程式啟動時的還原不需重寫）
+   */
+  function setCoachPanel(open, persist) {
+    document.body.classList.toggle('coach-open', open);
+    var panel = $('coach-panel');
+    var rail = $('coach-rail');
+    var scrim = $('coach-scrim');
+    var toggle = $('coach-toggle');
+    if (panel) panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (rail) rail.hidden = open;
+    if (scrim) scrim.hidden = !open;
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (persist && window.Theme && window.Theme.saveSettings) {
+      window.Theme.saveSettings({ coachPanel: open ? 'open' : 'collapsed' });
+    }
+  }
+
+  function bindCoachPanel() {
+    var settings = (window.Theme && window.Theme.getSettings) ? window.Theme.getSettings() : null;
+    // 桌機預設展開（三欄常駐是本次改版的重點之一），只有明確收合過才記住收合。
+    // 平板／手機的面板是覆蓋在內容上的抽屜／全螢幕 sheet，預設展開會把整個
+    // 儀表板蓋掉，所以一律預設收起、由使用者按開關或 FAB 開啟。
+    var wide = window.innerWidth >= 1280;
+    setCoachPanel(wide && !(settings && settings.coachPanel === 'collapsed'), false);
+
+    [['coach-collapse', false], ['coach-close', false], ['coach-rail', true],
+     ['coach-fab', true], ['coach-scrim', false]].forEach(function (pair) {
+      var el = $(pair[0]);
+      if (el) el.addEventListener('click', function () { setCoachPanel(pair[1], true); });
+    });
+
+    var toggle = $('coach-toggle');
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        setCoachPanel(!document.body.classList.contains('coach-open'), true);
       });
     }
 
-    var navHeight = nav.offsetHeight || 44;
-    var observer = new IntersectionObserver(function (entries) {
-      var visible = entries.filter(function (e) { return e.isIntersecting; });
-      if (visible.length === 0) return;
-      // 取最靠近頁首（top 最小）的可見區塊
-      visible.sort(function (a, b) { return a.boundingClientRect.top - b.boundingClientRect.top; });
-      setActive(visible[0].target.id);
-    }, { rootMargin: '-' + (navHeight + 4) + 'px 0px -70% 0px' });
-
-    ['panel-today', 'panel-calendar', 'panel-session', 'panel-load', 'panel-wellness'].forEach(function (id) {
-      var el = $(id);
-      if (el) observer.observe(el);
+    // 平板／手機的覆蓋層形態下，Esc 關閉面板
+    document.addEventListener('keydown', function (evt) {
+      if (evt.key !== 'Escape') return;
+      if (window.innerWidth >= 1280) return;
+      if (document.body.classList.contains('coach-open')) setCoachPanel(false, true);
     });
   }
 
   // 視窗尺寸改變時重繪（X 軸刻度數量依容器寬度決定，需重算）
+  // 只重繪目前 view——隱藏的 view 寬度為 0，畫了也是空的，改標髒等切過去再畫。
   var resizeTimer = null;
   function bindResize() {
     window.addEventListener('resize', function () {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(function () {
-        if (state.sessionDetail) renderSessionDetail();
-        if (state.sessions.length > 0) renderTrends();
-        if (state.wellness) renderWellness();
-        if (state.loadSeries) renderLoad();
+        if (state.view === 'sessions') {
+          if (state.sessionDetail) renderSessionDetail();
+        } else if (state.view === 'load') {
+          if (state.loadSeries) renderLoad();
+          if (state.sessions.length > 0) renderTrends();
+        } else if (state.view === 'wellness') {
+          if (state.wellness) renderWellness();
+        }
+        // 非目前 view 的圖表在隱藏狀態下寬度為 0，畫了也是空的：標髒等切過去再畫
+        state.dirty.sessions = state.dirty.sessions || state.view !== 'sessions';
+        state.dirty.load = state.dirty.load || state.view !== 'load';
+        state.dirty.wellness = state.dirty.wellness || state.view !== 'wellness';
+
+        // 縮到 1280px 以下時，常駐欄變成覆蓋式抽屜／sheet：若維持展開會蓋住
+        // 內容，故自動收起（不寫入偏好——這是版面因應，不是使用者的選擇）。
+        if (window.innerWidth < 1280 && document.body.classList.contains('coach-open')) {
+          setCoachPanel(false, false);
+        }
       }, 200);
     });
   }
@@ -1887,9 +2100,13 @@
     bindResize();
     bindTooltipDelegation();
     bindCustomRangePanel();
-    bindCalendarToggle();
-    bindSectionNav();
+    bindCoachPanel();
+    bindRouter();
     renderCalendarLegend();
+
+    // 先套路由再發請求：資料回來時 state.view 已經正確，render-on-activate
+    // 才知道該立刻畫還是標髒。反過來會讓首屏的圖表全部畫在隱藏容器裡（寬度 0）。
+    applyRoute();
 
     api('/api/meta').then(function (meta) {
       state.meta = meta;
@@ -1914,7 +2131,26 @@
   window.DashboardApp = {
     setRange: setRange,
     selectSession: selectSession,
-    getState: function () { return state; }
+    navigate: navigate,
+    getState: function () { return state; },
+
+    /**
+     * 目前的檢視脈絡，供 AI 教練面板（S3 的 coach.js）產生「問這一頁」
+     * 的建議問題、並在送出時附上〔檢視脈絡〕行。
+     *
+     * 刻意只回「使用者在看什麼」，不回任何數據——面板不在前端拼數據餵
+     * 模型，模型自己呼叫 MCP 工具拿含信賴度的事實（D.1 §7.3 三欄位契約）。
+     * @returns {{view:string, range:string, sessionId:?number, month:?string, date:?string}}
+     */
+    getViewContext: function () {
+      return {
+        view: state.view,
+        range: state.range,
+        sessionId: state.view === 'sessions' ? state.selectedSessionId : null,
+        month: state.view === 'calendar' ? state.calendarMonth : null,
+        date: state.today ? state.today.date : null
+      };
+    }
   };
 
   if (document.readyState === 'loading') {
