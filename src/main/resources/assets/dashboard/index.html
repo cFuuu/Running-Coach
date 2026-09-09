@@ -176,11 +176,18 @@
   </footer>
 
   <!--
-    開發用假資料（DEV ONLY，內容為虛構）。
-    整合真實 API 時：刪除下面這一行 <script> 即可，app.js 會自動改打 /api/*。
-    也可在網址加 ?mock=0 暫時強制走真實 API。
+    開發用假資料（DEV ONLY，內容為虛構）已於 2026-09-08 停止預設載入——
+    後端 /api/* 已接上真實資料庫，預設一律走真實 API。
+    檔案 mock-data.js 保留備用（前端改版、或無資料庫環境要 demo 時）：
+    在網址加 ?mock=1 即會動態載入並改走假資料。
   -->
-  <script src="mock-data.js"></script>
+  <script>
+    // ?mock=1 時才把 mock-data.js 插進來。用 document.write 是為了保持同步載入
+    // ——app.js 在頂層就讀 window.MOCK_API 判定要不要走假資料，非同步載入會來不及。
+    if (new URLSearchParams(window.location.search).get('mock') === '1') {
+      document.write('<script src="mock-data.js"><\/script>');
+    }
+  </script>
 
   <script src="theme.js"></script>
   <script src="charts.js"></script>
