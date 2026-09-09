@@ -20,6 +20,11 @@
     只在你信任的家用區網裡使用。要讓外部存取，必須先實作身分驗證與 HTTPS，
     不能只是改個 host 參數。
 
+    ⚠️ 例外：`/api/chat/*`（AI 教練）**另加來源限制**，預設只接受本機。
+    它會花錢、也會把個人健康資料送出這台機器，所以不套用上面那個「區網放行」
+    的取捨。要讓區網裝置使用，須明確設 `RC_CHAT_ALLOW_PRIVATE_NETWORK=1`。
+    見 api/routes_chat.py。上面「不可對外網開放」的紅線不因此改變。
+
 不 hardcode 任何路徑或個人識別資訊：--db-path 必填，athlete 從資料庫查
 （見 dashboard_queries.resolve_athlete_id）。
 """
@@ -32,7 +37,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from src.main.python.api import routes_chat
 from src.main.python.api import routes_dashboard
+from src.main.python.models.db import get_connection
+from src.main.python.services.coach_chat import ChatConfig
 
 # 前端靜態檔（Task B 的產出）。用相對於本檔案的路徑推導，
 # 因此從任何工作目錄啟動都能找到。
@@ -44,8 +52,17 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 
 
-def create_app(db_path: str, assets_dir: Path | None = None) -> FastAPI:
-    """建立 FastAPI 應用程式。db_path 由呼叫端提供，不預設任何路徑。"""
+def create_app(
+    db_path: str,
+    assets_dir: Path | None = None,
+    chat_config: ChatConfig | None = None,
+) -> FastAPI:
+    """建立 FastAPI 應用程式。db_path 由呼叫端提供，不預設任何路徑。
+
+    chat_config 省略時從環境變數讀（見 services/coach_chat.py 的設定表）。
+    未設 ANTHROPIC_API_KEY 時 app 仍正常啟動，只有 /api/chat/* 回 503——
+    dashboard 的其餘功能不該因為沒設聊天金鑰就整個掛掉。
+    """
     app = FastAPI(
         title="Running Coach Dashboard API",
         description=(
@@ -53,11 +70,19 @@ def create_app(db_path: str, assets_dir: Path | None = None) -> FastAPI:
             "無身分驗證，僅供本機或受信任區網使用，切勿對外網開放。"
         ),
     )
+    # 確保聊天用的兩張表存在：本進程原本從不執行 schema.sql（各請求用裸
+    # sqlite3.connect），資料庫是 CLI 匯入器建的，新表不會自己長出來。
+    # get_connection() 會套用 schema.sql 與欄位遷移，開一次關掉即可。
+    get_connection(db_path).close()
+
     app.include_router(routes_dashboard.router)
+    app.include_router(routes_chat.router)
     # 路由層宣告的預設 dependency 只是佔位，這裡換成真正連到 db_path 的版本
     app.dependency_overrides[routes_dashboard.get_conn] = (
         routes_dashboard.make_connection_dependency(db_path)
     )
+    config = chat_config if chat_config is not None else ChatConfig.from_env()
+    app.dependency_overrides[routes_chat.get_chat_config] = lambda: config
 
     # 靜態前端掛在根路徑，必須在 /api 路由之後掛載才不會蓋掉它們。
     # Task B 尚未建立目錄時就跳過，讓後端仍可單獨啟動測 API。
