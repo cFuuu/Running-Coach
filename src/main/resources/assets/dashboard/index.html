@@ -58,6 +58,20 @@
     <circle cx="12" cy="12" r="3"></circle>
     <path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47V21a2 2 0 0 1-4 0v-.11a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-.97H3a2 2 0 0 1 0-4h.11a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.6 1.6 0 0 0 1.77.32H9a1.6 1.6 0 0 0 .97-1.47V3a2 2 0 0 1 4 0v.11a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.6 1.6 0 0 0-.32 1.77V9a1.6 1.6 0 0 0 1.47.97H21a2 2 0 0 1 0 4h-.11a1.6 1.6 0 0 0-1.49.97z"></path>
   </symbol>
+  <!--
+    對話泡泡＝「AI 教練」在四種形態（面板收合圓鈕、手機 FAB、頂列開關、
+    未來的其他入口）共用的同一個符號。四處引用同一個 <symbol>，換 icon 只改這裡。
+  -->
+  <symbol id="icon-bubble" viewBox="0 0 24 24">
+    <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.3-.6L3 21l1.8-5.1A8.3 8.3 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0z"></path>
+  </symbol>
+  <!-- 指向右側的雙箭頭：語意是「收合到右邊」，比字元 — 明確 -->
+  <symbol id="icon-collapse-right" viewBox="0 0 24 24">
+    <path d="M6 6l6 6-6 6M13 6l6 6-6 6"></path>
+  </symbol>
+  <symbol id="icon-close" viewBox="0 0 24 24">
+    <path d="M6 6l12 12M18 6L6 18"></path>
+  </symbol>
 </defs></svg>
 
 <!--
@@ -198,7 +212,10 @@
       </div>
 
       <!-- 平板：內容頂列多一顆 AI 教練開關（桌機面板常駐、手機用 FAB） -->
-      <button type="button" class="coach-toggle" id="coach-toggle" aria-expanded="false">AI 教練</button>
+      <button type="button" class="coach-toggle" id="coach-toggle" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-bubble"></use></svg>
+        <span>AI 教練</span>
+      </button>
     </div>
 
     <!-- ======================================================== view：今日 -->
@@ -320,17 +337,25 @@
   <aside class="coach-panel" id="coach-panel" aria-label="AI 教練">
     <div class="coach-head">
       <h2 class="coach-title">AI 教練</h2>
-      <button type="button" class="coach-btn" id="coach-collapse" title="收合" aria-label="收合面板">—</button>
-      <button type="button" class="coach-btn" id="coach-close" title="關閉" aria-label="關閉面板">×</button>
+      <button type="button" class="coach-btn" id="coach-collapse" title="收合" aria-label="收合面板">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-collapse-right"></use></svg>
+      </button>
+      <button type="button" class="coach-btn" id="coach-close" title="關閉" aria-label="關閉面板">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-close"></use></svg>
+      </button>
     </div>
     <div class="coach-body" id="coach-body">
       <p class="coach-placeholder">載入 AI 教練…</p>
     </div>
   </aside>
 
-  <!-- 收合後的直條：點擊重新展開（桌機） -->
-  <button type="button" class="coach-rail" id="coach-rail" hidden aria-label="展開 AI 教練">
-    <span class="coach-rail-text">AI 教練</span>
+  <!--
+    面板收合後的重新展開入口（桌機）。原本是 48px 寬、直排文字的灰色長條，
+    改成貼齊右緣的圓形浮動按鈕，與手機 FAB／頂列開關共用同一個對話泡泡符號——
+    「AI 教練」在各種形態下因此是同一個視覺語言。
+  -->
+  <button type="button" class="coach-rail" id="coach-rail" hidden aria-label="展開 AI 教練" title="展開 AI 教練">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-bubble"></use></svg>
   </button>
 
 </div>
@@ -372,7 +397,7 @@
 
 <!-- AI 教練浮動按鈕（<768px 顯示，位於分頁列上方） -->
 <button type="button" class="coach-fab" id="coach-fab" aria-label="開啟 AI 教練">
-  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.3-.6L3 21l1.8-5.1A8.3 8.3 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0z"></path></svg>
+  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-bubble"></use></svg>
 </button>
 
 <!-- 平板／手機面板開啟時的遮罩 -->
