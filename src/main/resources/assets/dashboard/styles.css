@@ -2360,6 +2360,213 @@ body.coach-open .coach-fab {
   }
 }
 
+/* ------------------------------------------------------------ 系統設定 view
+ *
+ * N-19 §4。設定頁只呈現可操作的控制項與說明，不放任何訓練建議或結論句
+ * （D.1 硬約束：圖表／卡片只呈現數據，不做文字解讀——設定頁同理）。
+ * 顏色一律引用既有 token，深色模式因此自動成立。
+ */
+
+.setting-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px var(--gap);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.setting-name {
+  font-size: 0.9rem;
+}
+
+.setting-hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.setting-control {
+  flex: 0 0 auto;
+}
+
+/* 主題三選一：分段控制。與右上角的循環鈕是同一份狀態的兩個視圖，
+   aria-pressed 由 theme.js 的 updateButtons() 一併更新。 */
+.theme-choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.theme-choice {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-choice:hover {
+  border-color: var(--accent-border);
+}
+
+.theme-choice[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.theme-choice:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* 開關。原生 checkbox 只是視覺隱藏而非移除，鍵盤操作與表單語意都保留
+   （focus 樣式因此要畫在相鄰的 .switch-track 上）。 */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.switch-track {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--bar-track);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px var(--panel-shadow);
+  transition: transform 0.15s ease;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 設定頁的一般按鈕（目前只有同步鈕，disabled 直到後端接上） */
+.setting-btn {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.setting-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.setting-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.setting-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.settings-sync {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+/* 尚未開放的區塊：說明目前的實際行為，不做假的勾選清單 */
+.setting-placeholder,
+.setting-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.setting-note {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* 窄螢幕：標籤與控制項改上下堆疊，控制項靠左（並排會把說明文字擠成單字寬） */
+@media (max-width: 520px) {
+  .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+    /* 改直向後 space-between 會把控制項推到列底，必須一起改掉 */
+    justify-content: flex-start;
+  }
+
+  /* 直向排列時 flex-basis 量的是高度，並排用的 240px 會把每一列撐成
+     240px 高的空白。改為由內容決定高度。 */
+  .setting-label {
+    flex: 0 0 auto;
+  }
+
+  .setting-control {
+    align-self: flex-start;
+  }
+}
+
 /* ------------------------------------------------------------ 深色模式
  *
  * 只有一份深色定義（[data-theme="dark"]），不额外寫 @media (prefers-color-scheme)。
