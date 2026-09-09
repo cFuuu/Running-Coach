@@ -23,4 +23,13 @@ mcp[cli]>=2.0.0,<3
 # ⚠️ 不要加入 garth：已於 2026-03-28 deprecated，且 0.3.11 起已完全移除該依賴。
 garminconnect>=0.3.11
 
+# Anthropic API（Phase 3 / Dashboard D.3：AI 教練聊天面板的後端對話迴圈）
+# 金鑰只從環境變數 ANTHROPIC_API_KEY 讀，永不進版控（見 CLAUDE.md §🔐）。
+anthropic>=1.4.0
+
+# FastAPI 的 TestClient 需要 httpx（src/test/unit/test_routes_chat.py 要用）。
+# Starlette 偵測到 httpx2 時會優先用它（anthropic 會帶入），沒有才退回這個；
+# 兩條路徑都可行，此處列出保底的那個。
+httpx>=0.28.0
+
 # 註：資料庫用 Python 內建的 sqlite3，測試用內建的 unittest，皆無需額外安裝。

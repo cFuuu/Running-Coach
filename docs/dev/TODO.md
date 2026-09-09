@@ -959,7 +959,11 @@
   - **正式規格**：[DASHBOARD_TASKS.md](DASHBOARD_TASKS.md) **Task D**（取代該檔「版面」一節；S1～S4 的共同契約）。決策記錄：[PLAN.md §1](PLAN.md#1-決策記錄decisions-log) 2026-09-08。
   - **四項決策（Fu 拍板）**：① AI 面板是真正的聊天，後端直接呼叫 Anthropic API——**推翻 2026-09-01「不自行呼叫 Anthropic API」的部分**；行為約束層 `coach()` 與 MCP 工具定義原封重用、只開放唯讀工具，Claude Code 的 MCP 路徑保留。② 手機用底部分頁列（取代「不做 tab」）。③ 對話存 SQLite（不是 N-8 的結構化記憶，只是其原料）。④ 聊天端點預設只接受本機、環境變數可放行私有網段；未來要公開走 Tailscale／Cloudflare Access，不在 app 內做帳號系統。
   - **刻意不做**：參考作品的分數卡／雷達圖／「App 今日建議」結論句（沒有信賴度的黑盒分數，違反 §7.3）；解讀一律進對話面板。
-  - **分階段**：S0 規格入庫（✅ 2026-09-08）→ S1 App 殼 ∥ S2 聊天後端（檔案不重疊，可平行、可在雲端）→ S3 聊天面板 → S4 行事曆補完（`GET /api/plan`＋課表清單模式）→ S5 文件收尾。
+  - **分階段**：S0 規格入庫（✅ 2026-09-08）→ S1 App 殼 ∥ S2 聊天後端（✅ 2026-09-08 雲端完成，**待地端驗證**）→ S3 聊天面板 → S4 行事曆補完（`GET /api/plan`＋課表清單模式）→ S5 文件收尾。
+  - **✅ S2 聊天後端（2026-09-08 雲端完成）**：新增 `services/coach_chat.py`（對話迴圈＋體積控制＋`LLMBackend`／`AnthropicBackend`）、`services/coach_chat_store.py`（兩張表的 CRUD、一回合一交易）、`api/routes_chat.py`（`/api/chat/*`＋來源限制），改 `mcp/server.py`（只加 `READ_ONLY_TOOL_NAMES`／`WRITE_TOOL_NAMES`，工具與 prompt 零改動）、`models/schema.sql`、`api/app.py`、`requirements.txt`、`.env.example`。新增 4 支測試共 82 個 case（全專案 683 個通過）。
+    - **兩處超出 D.3 字面的決定**：① `coach_chat.MAX_TOOL_ROUNDS = 16` 是防無限工具迴圈的安全上限（撞到即以 error 收尾、不落地），刻意**不**做成環境變數，免得把安全閘當成調校旋鈕；② 對話標題取首則 user 訊息的**第一行**前 40 字，而非整段前 40 字——面板會在訊息末尾自動附一行〔檢視脈絡〕（D.4），照字面取會讓對話清單全是那行雜訊。
+    - **雲端已驗**：`unittest` 全綠；起真的 uvicorn 以假後端打 `curl -N`，確認 SSE 逐段抵達（不是一次吐完）、工具真的查到 fixture DB、四則訊息完整落地；Anthropic 串流事件解析另以 mock transport 餵真實格式的 SSE 位元組給已安裝的 SDK 驗過（thinking＋signature、分段累積的 tool input JSON、stop_reason）。
+    - **⚠️ 仍待地端**：真金鑰的煙霧測試（模型真的呼叫 `get_today` 並在回覆末尾列事實清單）、試打寫入工具名稱被拒、從另一台區網裝置打 → 403、問一場含 `records` 的 session 確認截斷不炸。**地端驗過才算數**（同 1B-9 的教訓）。
   - **雲端／地端分工**（Task D.6）：雲端只能用 fixture DB＋mock 模式，**不得有** `output/running_coach.db` 與 `ANTHROPIC_API_KEY`；真實 DB 的 Playwright、真實 API 的串流煙霧測試、Fu 親自瀏覽器確認一律地端。**雲端寫的 Anthropic 串流事件解析須地端驗過才算數**（同 1B-9 的教訓：fixture 與程式可能猜錯同一個方向）。
   - **新依賴**：`anthropic`（S2 時加入 `requirements.txt`）。
   - **與 N-8 的關係**：聊天表提供跨對話的原始紀錄，但 N-8 要的「教練記得自己上週建議過什麼」仍需另行規劃（粒度、誰寫、如何連到後續活動）。
