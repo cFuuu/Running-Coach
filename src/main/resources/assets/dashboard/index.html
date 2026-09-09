@@ -29,76 +29,155 @@
 </head>
 <body>
 
-  <header class="site-header">
-    <div class="header-inner">
-      <h1 class="site-title">訓練儀表板</h1>
+<!--
+  App 殼（DASHBOARD_TASKS.md Task D.2）：
+    桌機 ≥1280px  三欄  240px | minmax(0,1fr) | 360px（側邊列｜內容｜AI 教練）
+    平板 768~1279 側邊列縮成 72px 圖示欄；AI 面板改右側 overlay 抽屜
+    手機 <768px   側邊列消失，改底部分頁列；AI 面板為全螢幕 sheet
+  五個 view 各自是 <section class="view" hidden>，切換只動 hidden（見 app.js 路由）。
+  既有容器 id 全部保留，只是搬進對應 view——charts.js 與同步游標都靠 id 查找。
+-->
+<div class="app-shell">
+
+  <!-- ---------------------------------------------------------- 側邊列 -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="sidebar-brand-mark" aria-hidden="true">🏃</span>
+      <span class="sidebar-brand-text">跑步儀表板</span>
+    </div>
+
+    <!--
+      主導覽：href 是真的 hash 路由（非錨點捲動），app.js 監聽 hashchange。
+      不攔截點擊，讓瀏覽器自己改 hash——上一頁／下一頁因此自動可用。
+    -->
+    <nav class="sidebar-nav" id="sidebar-nav" aria-label="主導覽">
+      <a class="nav-link" href="#/today" data-view="today">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+        </span>
+        <span class="nav-text">今日</span>
+      </a>
+      <a class="nav-link" href="#/calendar" data-view="calendar">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>
+        </span>
+        <span class="nav-text">行事曆</span>
+      </a>
+      <a class="nav-link" href="#/sessions" data-view="sessions">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9M10 18V5M16 18v-6M22 18H2"></path></svg>
+        </span>
+        <span class="nav-text">訓練紀錄</span>
+      </a>
+      <a class="nav-link" href="#/load" data-view="load">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l5-6 4 4 5-7 4 5"></path></svg>
+        </span>
+        <span class="nav-text">訓練負荷</span>
+      </a>
+      <a class="nav-link" href="#/wellness" data-view="wellness">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 3 10 2-5h7"></path></svg>
+        </span>
+        <span class="nav-text">身體狀況</span>
+      </a>
+    </nav>
+
+    <!--
+      側邊列底部：最後同步（取自 /api/today 的 freshness）、meta 警語、
+      mock 徽章、主題切換。原本這些在頁首，D.2 要求搬到這裡。
+    -->
+    <div class="sidebar-foot">
+      <div class="sidebar-sync" id="sidebar-sync"></div>
       <div class="meta-info" id="meta-info"></div>
-      <!--
-        range 按鈕由 app.js 依 /api/meta 回傳的 ranges 動態產生（後端
-        RANGE_LABELS 是唯一真實來源），不在 HTML 寫死——避免這裡、
-        app.js、後端三處各自維護一份清單而漂移。
-      -->
-      <div class="range-switch" role="group" aria-label="時間區間切換" id="range-switch"></div>
-      <div class="custom-range" id="custom-range">
-        <button type="button" class="range-btn" id="custom-range-toggle" aria-expanded="false">自訂區間</button>
-        <div class="custom-range-panel" id="custom-range-panel" hidden>
-          <label class="custom-range-field">
-            起
-            <input type="date" id="custom-range-start">
-          </label>
-          <label class="custom-range-field">
-            訖
-            <input type="date" id="custom-range-end">
-          </label>
-          <button type="button" class="custom-range-apply" id="custom-range-apply">套用</button>
-        </div>
-      </div>
+      <div class="notice-bar" id="notice-bar"></div>
       <div class="theme-switch" role="group" aria-label="主題切換">
         <button type="button" class="theme-btn" data-theme-choice="light" aria-pressed="false" title="淺色">☀</button>
         <button type="button" class="theme-btn" data-theme-choice="dark" aria-pressed="false" title="深色">🌙</button>
         <button type="button" class="theme-btn" data-theme-choice="system" aria-pressed="true" title="跟隨系統">🖥</button>
       </div>
     </div>
-  </header>
+  </aside>
 
-  <div class="notice-bar" id="notice-bar"></div>
+  <!-- ---------------------------------------------------------- 內容區 -->
+  <main class="content" id="content">
 
-  <!--
-    導覽列：五個錨點按鈕，跳轉到下方對應區塊（不做 tab，仍是單頁）。
-    連結由 app.js 依 SECTION_NAV 常數產生 is-active 高亮，這裡先放好
-    固定的 5 個錨點與 aria-label，內容（is-active class）由 JS 接手。
-  -->
-  <nav class="section-nav" aria-label="區塊導覽" id="section-nav">
-    <div class="section-nav-inner">
-      <a class="section-nav-link" href="#panel-today" data-nav-target="panel-today">今日</a>
-      <a class="section-nav-link" href="#panel-calendar" data-nav-target="panel-calendar">本週與行事曆</a>
-      <a class="section-nav-link" href="#panel-session" data-nav-target="panel-session">單場分析</a>
-      <a class="section-nav-link" href="#panel-load" data-nav-target="panel-load">訓練負荷與趨勢</a>
-      <a class="section-nav-link" href="#panel-wellness" data-nav-target="panel-wellness">每日身體狀況</a>
+    <!--
+      內容頂列：view 標題 + range 切換。range 只在 訓練紀錄／訓練負荷／
+      身體狀況 三個 view 顯示（今日與行事曆不吃 range），由 app.js 切換 hidden。
+    -->
+    <div class="content-topbar">
+      <h1 class="content-title" id="content-title">今日</h1>
+
+      <div class="topbar-controls" id="topbar-controls" hidden>
+        <!--
+          range 按鈕由 app.js 依 /api/meta 回傳的 ranges 動態產生（後端
+          RANGE_LABELS 是唯一真實來源），不在 HTML 寫死——避免這裡、
+          app.js、後端三處各自維護一份清單而漂移。
+        -->
+        <div class="range-switch" role="group" aria-label="時間區間切換" id="range-switch"></div>
+        <div class="custom-range" id="custom-range">
+          <button type="button" class="range-btn" id="custom-range-toggle" aria-expanded="false">自訂區間</button>
+          <div class="custom-range-panel" id="custom-range-panel" hidden>
+            <label class="custom-range-field">
+              起
+              <input type="date" id="custom-range-start">
+            </label>
+            <label class="custom-range-field">
+              訖
+              <input type="date" id="custom-range-end">
+            </label>
+            <button type="button" class="custom-range-apply" id="custom-range-apply">套用</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 平板：內容頂列多一顆 AI 教練開關（桌機面板常駐、手機用 FAB） -->
+      <button type="button" class="coach-toggle" id="coach-toggle" aria-expanded="false">AI 教練</button>
     </div>
-  </nav>
 
-  <!--
-    版面：
-      手機（<768px）單欄堆疊，DOM 順序＝顯示順序：
-        今日 → 本週與行事曆 → 單場分析 → 訓練負荷與趨勢 → 每日身體狀況
-      桌機（≥768px）今日卡橫跨兩欄置頂；其下左欄＝單場分析(上)+訓練負荷與趨勢(下)，
-      右欄＝本週與行事曆(上)+每日身體狀況(下)
-  -->
-  <main class="layout">
+    <!-- ======================================================== view：今日 -->
+    <section class="view" id="view-today" hidden aria-labelledby="h-today">
+      <section class="panel panel-today" id="panel-today" aria-labelledby="h-today">
+        <h2 class="panel-title" id="h-today">
+          今日<span class="panel-hint">規則引擎輸出的事實與信賴度，不含判讀建議</span>
+        </h2>
+        <div id="today-body"></div>
+      </section>
 
-    <!-- 區塊一：今日（桌機橫跨兩欄，見 .panel-today 樣式） -->
-    <section class="panel panel-today" id="panel-today" aria-labelledby="h-today">
-      <h2 class="panel-title" id="h-today">
-        今日<span class="panel-hint">規則引擎輸出的事實與信賴度，不含判讀建議</span>
-      </h2>
-      <div id="today-body"></div>
+      <section class="panel" id="panel-week" aria-labelledby="h-week">
+        <h2 class="panel-title" id="h-week">本週</h2>
+        <div id="week-strip"></div>
+        <p class="view-link-row">
+          <a class="view-link" href="#/calendar">查看課表與行事曆 →</a>
+        </p>
+      </section>
     </section>
 
-    <div class="col-left">
+    <!-- ==================================================== view：行事曆 -->
+    <section class="view" id="view-calendar" hidden aria-labelledby="h-calendar">
+      <section class="panel" id="panel-calendar" aria-labelledby="content-title">
+        <!--
+          D.2：月曆預設展開、收合鈕刪除。「課表清單」子模式屬 S4，
+          此處先不放 chip，避免做出接不到資料的空殼。
+        -->
+        <div id="calendar-body"></div>
+        <div class="calendar-legend" id="calendar-legend"></div>
+      </section>
+    </section>
 
-      <!-- 區塊三：單場分析 -->
+    <!-- ================================================== view：訓練紀錄 -->
+    <section class="view view-split" id="view-sessions" hidden aria-labelledby="h-session">
+      <!-- 左：場次清單（原本在訓練負荷面板內，D.2 要求搬來這裡） -->
+      <section class="panel panel-session-list" id="panel-session-list" aria-labelledby="h-session-list">
+        <h2 class="panel-title" id="h-session-list">場次</h2>
+        <div id="session-list"></div>
+      </section>
+
+      <!-- 右：單場明細 -->
       <section class="panel" id="panel-session" aria-labelledby="h-session">
+        <!-- 手機兩段式的返回鍵（桌機隱藏），S1 先接路由，清單→明細見 app.js -->
+        <button type="button" class="detail-back" id="session-back">← 場次清單</button>
         <h2 class="panel-title" id="h-session">
           單場分析<span class="panel-hint">預設為區間內最近一場，可切換</span>
         </h2>
@@ -134,29 +213,24 @@
           </div>
         </div>
       </section>
+    </section>
 
-      <!-- 區塊四：訓練負荷與趨勢（原「跨場次趨勢」＋新增負荷曲線） -->
+    <!-- ================================================== view：訓練負荷 -->
+    <section class="view" id="view-load" hidden aria-labelledby="h-load">
+      <!--
+        #panel-load 必須保留為 #load-chart 與 #trend-charts 的祖先：
+        同步游標的 SYNC_GROUPS 以此 id 查找群組容器（app.js
+        findSyncGroupContainer）。搬動 DOM 時拆掉這層會讓游標同步靜默失效。
+      -->
       <section class="panel" id="panel-load" aria-labelledby="h-load">
         <h2 class="panel-title" id="h-load">訓練負荷與趨勢</h2>
         <div id="load-chart"></div>
         <div id="trend-charts"></div>
-        <div id="session-list"></div>
       </section>
+    </section>
 
-    </div>
-
-    <div class="col-right">
-
-      <!-- 區塊二：本週與行事曆 -->
-      <section class="panel" id="panel-calendar" aria-labelledby="h-calendar">
-        <h2 class="panel-title" id="h-calendar">本週與行事曆</h2>
-        <div id="week-strip"></div>
-        <button type="button" class="calendar-toggle" id="calendar-toggle" aria-expanded="false">展開月曆 ▾</button>
-        <div id="calendar-body" hidden></div>
-        <div class="calendar-legend" id="calendar-legend"></div>
-      </section>
-
-      <!-- 區塊五：每日身體狀況 -->
+    <!-- ================================================== view：身體狀況 -->
+    <section class="view" id="view-wellness" hidden aria-labelledby="h-wellness">
       <section class="panel" id="panel-wellness" aria-labelledby="h-wellness">
         <h2 class="panel-title" id="h-wellness">
           每日身體狀況<span class="panel-hint">淡色背景為訓練日</span>
@@ -166,14 +240,78 @@
         </div>
         <div id="wellness-charts"></div>
       </section>
+    </section>
 
-    </div>
-
+    <footer class="site-footer">
+      圖表僅呈現數據與趨勢，不含任何解讀或建議。
+    </footer>
   </main>
 
-  <footer class="site-footer">
-    圖表僅呈現數據與趨勢，不含任何解讀或建議。
-  </footer>
+  <!-- ------------------------------------------------------ AI 教練面板 -->
+  <!--
+    S1 只做殼：版面、收合／展開、三種寬度的形態切換。
+    對話、串流、工具 chip 屬 S2／S3（coach.js），此處不放假的對話 UI。
+  -->
+  <aside class="coach-panel" id="coach-panel" aria-label="AI 教練">
+    <div class="coach-head">
+      <h2 class="coach-title">AI 教練</h2>
+      <button type="button" class="coach-btn" id="coach-collapse" title="收合" aria-label="收合面板">—</button>
+      <button type="button" class="coach-btn" id="coach-close" title="關閉" aria-label="關閉面板">×</button>
+    </div>
+    <div class="coach-body" id="coach-body">
+      <p class="coach-placeholder">對話功能開發中（N-17 S2／S3）。</p>
+    </div>
+  </aside>
+
+  <!-- 收合後的直條：點擊重新展開（桌機） -->
+  <button type="button" class="coach-rail" id="coach-rail" hidden aria-label="展開 AI 教練">
+    <span class="coach-rail-text">AI 教練</span>
+  </button>
+
+</div>
+
+<!-- ------------------------------------------------------------ 手機 -->
+<!-- 底部分頁列（<768px 顯示）：5 格等寬、56px 高、圖示＋文字 -->
+<nav class="tabbar" id="tabbar" aria-label="主導覽（手機）">
+  <a class="tab-link" href="#/today" data-view="today">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+    </span>
+    <span class="tab-text">今日</span>
+  </a>
+  <a class="tab-link" href="#/calendar" data-view="calendar">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>
+    </span>
+    <span class="tab-text">行事曆</span>
+  </a>
+  <a class="tab-link" href="#/sessions" data-view="sessions">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9M10 18V5M16 18v-6M22 18H2"></path></svg>
+    </span>
+    <span class="tab-text">紀錄</span>
+  </a>
+  <a class="tab-link" href="#/load" data-view="load">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l5-6 4 4 5-7 4 5"></path></svg>
+    </span>
+    <span class="tab-text">負荷</span>
+  </a>
+  <a class="tab-link" href="#/wellness" data-view="wellness">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 3 10 2-5h7"></path></svg>
+    </span>
+    <span class="tab-text">身體</span>
+  </a>
+</nav>
+
+<!-- AI 教練浮動按鈕（<768px 顯示，位於分頁列上方） -->
+<button type="button" class="coach-fab" id="coach-fab" aria-label="開啟 AI 教練">
+  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.3-.6L3 21l1.8-5.1A8.3 8.3 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0z"></path></svg>
+</button>
+
+<!-- 平板／手機面板開啟時的遮罩 -->
+<div class="coach-scrim" id="coach-scrim" hidden></div>
 
   <!--
     開發用假資料（DEV ONLY，內容為虛構）已於 2026-09-08 停止預設載入——
