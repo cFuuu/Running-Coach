@@ -301,11 +301,17 @@ class TestSchemaIsEnsuredOnStartup(unittest.TestCase):
             create_app(str(db_path), assets_dir=assets_dir, chat_config=_disabled_config())
 
             conn = get_connection(db_path)
-            self.addCleanup(conn.close)
-            tables = {
-                row["name"]
-                for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-            }
+            try:
+                tables = {
+                    row["name"]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+            finally:
+                # ⚠️ 必須在 TemporaryDirectory 收掉之前關閉：Windows 不允許刪除
+                # 仍被開啟的檔案（WinError 32），用 addCleanup 會晚一步而爆掉。
+                conn.close()
         self.assertIn("coach_conversations", tables)
         self.assertIn("coach_messages", tables)
 
