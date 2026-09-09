@@ -30,6 +30,37 @@
 <body>
 
 <!--
+  共用 icon 精靈圖。同一個符號會出現在多個地方（齒輪在側邊列與右上角工具列各一、
+  對話泡泡在四種 AI 教練形態各一），path 只在這裡寫一次，其餘用 <use> 引用——
+  複製四份一模一樣的 path 會讓日後換 icon 得改四個地方（見 CLAUDE.md「絕不複製貼上」）。
+
+  線條樣式（fill/stroke/stroke-width/linecap）一律由引用端的 <svg> 屬性提供並繼承進來，
+  符號本身只定義幾何形狀，這樣同一個符號可以在不同尺寸與前景色下重複使用。
+-->
+<svg class="icon-sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="icon-sync" viewBox="0 0 24 24">
+    <polyline points="23 4 23 10 17 10"></polyline>
+    <polyline points="1 20 1 14 7 14"></polyline>
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+  </symbol>
+  <symbol id="icon-sun" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="5"></circle>
+    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+  </symbol>
+  <symbol id="icon-moon" viewBox="0 0 24 24">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+  </symbol>
+  <symbol id="icon-monitor" viewBox="0 0 24 24">
+    <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+    <path d="M8 21h8M12 17v4"></path>
+  </symbol>
+  <symbol id="icon-gear" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="3"></circle>
+    <path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47V21a2 2 0 0 1-4 0v-.11a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-.97H3a2 2 0 0 1 0-4h.11a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.6 1.6 0 0 0 1.77.32H9a1.6 1.6 0 0 0 .97-1.47V3a2 2 0 0 1 4 0v.11a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.6 1.6 0 0 0-.32 1.77V9a1.6 1.6 0 0 0 1.47.97H21a2 2 0 0 1 0 4h-.11a1.6 1.6 0 0 0-1.49.97z"></path>
+  </symbol>
+</defs></svg>
+
+<!--
   App 殼（DASHBOARD_TASKS.md Task D.2）：
     桌機 ≥1280px  三欄  240px | minmax(0,1fr) | 360px（側邊列｜內容｜AI 教練）
     平板 768~1279 側邊列縮成 72px 圖示欄；AI 面板改右側 overlay 抽屜
@@ -43,7 +74,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <span class="sidebar-brand-mark" aria-hidden="true">🏃</span>
-      <span class="sidebar-brand-text">跑步儀表板</span>
+      <span class="sidebar-brand-text">Running Coach</span>
     </div>
 
     <!--
@@ -91,11 +122,6 @@
       <div class="sidebar-sync" id="sidebar-sync"></div>
       <div class="meta-info" id="meta-info"></div>
       <div class="notice-bar" id="notice-bar"></div>
-      <div class="theme-switch" role="group" aria-label="主題切換">
-        <button type="button" class="theme-btn" data-theme-choice="light" aria-pressed="false" title="淺色">☀</button>
-        <button type="button" class="theme-btn" data-theme-choice="dark" aria-pressed="false" title="深色">🌙</button>
-        <button type="button" class="theme-btn" data-theme-choice="system" aria-pressed="true" title="跟隨系統">🖥</button>
-      </div>
     </div>
   </aside>
 
@@ -130,6 +156,45 @@
             <button type="button" class="custom-range-apply" id="custom-range-apply">套用</button>
           </div>
         </div>
+      </div>
+
+      <!--
+        右上角工具列。三顆 icon 鈕都是 44x44 觸控目標，且都有 title 與 aria-label
+        （純 icon 沒有可見文字，螢幕閱讀器只能靠 aria-label）。
+        z-index 與 .content 的 padding-right 讓它在平板寬度不被 AI 面板蓋住，見 styles.css。
+      -->
+      <div class="topbar-tools">
+        <!--
+          資料同步：本次只做 UI 外殼。後端 POST /api/sync 屬 N19 §7（地端實作，
+          需要 Garmin OAuth token，不可進雲端環境），故預設 disabled；
+          按鈕行為已接上 DashboardApp.requestSync，該函式目前不存在也不會報錯。
+        -->
+        <button type="button" class="tool-btn" id="sync-btn" data-action="sync" disabled
+                title="資料同步（後端尚未接上）" aria-label="資料同步（後端尚未接上）">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-sync"></use></svg>
+        </button>
+
+        <!--
+          主題切換：循環 淺色 → 深色 → 跟隨系統。三個 icon 都放在 DOM 裡，
+          由 theme.js 設 data-theme-choice、CSS 決定顯示哪一個——比用 JS
+          抽換 innerHTML 單純，也不必把 SVG 字串寫進 JS。
+          aria-label 由 theme.js 動態填「下一個」狀態（例：切換到深色模式）。
+        -->
+        <button type="button" class="tool-btn" id="theme-cycle-btn" data-theme-state="system">
+          <span class="theme-icon" data-icon="light">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-sun"></use></svg>
+          </span>
+          <span class="theme-icon" data-icon="dark">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-moon"></use></svg>
+          </span>
+          <span class="theme-icon" data-icon="system">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-monitor"></use></svg>
+          </span>
+        </button>
+
+        <a class="tool-btn" id="settings-btn" href="#/settings" title="系統設定" aria-label="系統設定">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-gear"></use></svg>
+        </a>
       </div>
 
       <!-- 平板：內容頂列多一顆 AI 教練開關（桌機面板常駐、手機用 FAB） -->
