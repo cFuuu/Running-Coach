@@ -660,16 +660,23 @@ body.coach-open .coach-panel {
 }
 
 .coach-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: none;
   color: var(--text-muted);
-  font-family: inherit;
-  font-size: 1rem;
-  line-height: 1;
   cursor: pointer;
+}
+
+.coach-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .coach-btn:hover {
@@ -689,34 +696,48 @@ body.coach-open .coach-panel {
   font-size: 0.84rem;
 }
 
-/* 收合後的直條（桌機） */
+/* 面板收合後的重新展開入口（桌機）。
+ *
+ * 原本是佔滿版面高度、48px 寬的直排文字灰長條，改成貼齊右緣的圓形浮動按鈕，
+ * 視覺語言與手機 FAB 一致（同一個對話泡泡符號、同樣的圓形與強調色底）。
+ *
+ * position: fixed 讓它脫離 .app-shell 的 grid 流：≥1280px 的第三欄是 auto，
+ * 沒有在流內的子元素時寬度為 0，內容欄因此能正確佔滿整個寬度——原本那 48px
+ * 的欄位就是這樣消失的，不需要另外改 grid-template-columns。
+ * z-index 低於面板的 120：兩者不會同時出現（面板開啟時本鈕是 hidden），
+ * 但萬一狀態不同步時該被蓋住的是這顆鈕。
+ */
 .coach-rail {
   display: none;
+  position: fixed;
+  right: var(--gap);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 115;
   width: 48px;
-  border: none;
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 0.84rem;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--accent-border);
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
   cursor: pointer;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  box-shadow: 0 2px 8px var(--panel-shadow);
 }
 
-.coach-rail-text {
-  writing-mode: vertical-rl;
-  letter-spacing: 0.1em;
+.coach-rail:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
-.coach-rail:hover {
-  color: var(--text);
-}
-
-/* 內容頂列的 AI 教練開關：桌機不需要（面板常駐或用直條展開） */
+/* 內容頂列的 AI 教練開關：桌機不需要（面板常駐或用圓鈕展開） */
 .coach-toggle {
   min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -729,6 +750,18 @@ body.coach-open .coach-panel {
 
 .coach-toggle:hover {
   border-color: var(--accent-border);
+}
+
+/* 面板已開啟時帶強調底色：這顆鈕是 toggle，使用者要看得出目前是開還是關 */
+.coach-toggle[aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.coach-toggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .coach-scrim {
@@ -970,8 +1003,11 @@ body.coach-open .coach-fab {
     display: none;
   }
 
-  body:not(.coach-open) .coach-rail {
-    display: block;
+  /* 圓鈕要 flex 才能把 icon 置中。:not([hidden]) 讓 app.js 設的 hidden 屬性
+     仍然有效——這條規則的特異性高於瀏覽器預設的 [hidden]{display:none}，
+     不排除掉的話 JS 收合狀態與 CSS 會打架，且首屏在 JS 執行前會閃一下。 */
+  body:not(.coach-open) .coach-rail:not([hidden]) {
+    display: flex;
   }
 
   .view-split {
