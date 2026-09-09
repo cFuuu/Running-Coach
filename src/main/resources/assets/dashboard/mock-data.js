@@ -582,8 +582,161 @@
           }
         }, 120);
       });
+    },
+
+    /**
+     * 聊天的非串流端點（coach.js 用）。
+     * @param {string} path
+     * @param {Object} options {method}
+     * @returns {Promise<Object|null>}
+     */
+    chatRequest: function (path, options) {
+      return new Promise(function (resolve, reject) {
+        setTimeout(function () {
+          try {
+            resolve(mockChatRoute(path, options));
+          } catch (err) {
+            reject(err);
+          }
+        }, 120);
+      });
+    },
+
+    /**
+     * 模擬 SSE 串流：逐字吐出教練回覆，中間插一次工具呼叫，
+     * 讓面板的 text／tool_use／tool_result／done 四種事件都被走到。
+     * @param {string} text 使用者送出的內容（含〔檢視脈絡〕行）
+     * @param {function(string, Object)} onEvent
+     * @returns {Promise<void>}
+     */
+    chatStream: function (text, onEvent) {
+      var reply = [
+        '這是**假資料**的教練回覆，用來驗證面板版面。',
+        '',
+        '- 逐字輸出正常',
+        '- 工具 chip 可以展開',
+        '- Markdown 清單有排版',
+        '',
+        '真實回覆需要設定 `ANTHROPIC_API_KEY`。'
+      ].join(String.fromCharCode(10));
+      var toolId = 'tu_mock_' + Date.now();
+
+      return new Promise(function (resolve) {
+        var steps = [];
+        steps.push([200, function () {
+          onEvent('tool_use', { id: toolId, name: 'get_today', input: {} });
+        }]);
+        steps.push([400, function () {
+          onEvent('tool_result', {
+            tool_use_id: toolId, name: 'get_today', is_error: false,
+            content: JSON.stringify({ date: BASE_DATE, note: '假資料' }, null, 2)
+          });
+        }]);
+        // 逐字（其實是逐小段，避免上千個 timer）
+        var chunkSize = 3;
+        for (var i = 0; i < reply.length; i += chunkSize) {
+          (function (slice) {
+            steps.push([18, function () { onEvent('text', { delta: slice }); }]);
+          })(reply.slice(i, i + chunkSize));
+        }
+        steps.push([80, function () {
+          onEvent('done', { message_id: null, stop_reason: 'end_turn' });
+          resolve();
+        }]);
+
+        var idx = 0;
+        function next() {
+          if (idx >= steps.length) return;
+          var step = steps[idx++];
+          setTimeout(function () { step[1](); next(); }, step[0]);
+        }
+        next();
+      });
     }
   };
+
+
+  // ---------------------------------------------------------------- AI 教練（假資料）
+  //
+  // 讓聊天面板（coach.js）可以在沒有 ANTHROPIC_API_KEY、甚至沒有後端的情況下
+  // 離線開發與驗證版面。串流用本地假產生器逐字吐字，並含一次假的工具呼叫，
+  // 好讓「工具 chip 可展開」這條 UI 行為也能被實際看到。
+
+  var MOCK_CONVERSATIONS = [
+    { id: 901, title: '今天該練嗎', created_at: BASE_DATE + 'T08:00:00+00:00',
+      updated_at: BASE_DATE + 'T08:03:00+00:00' }
+  ];
+  var mockNextConvId = 902;
+
+  // 對話 id → 已存的訊息（Anthropic content blocks 格式，與後端一致）
+  var MOCK_MESSAGES = {
+    901: [
+      { id: 1, seq: 1, role: 'user',
+        content: [{ type: 'text', text: '今天該練嗎？' }],
+        created_at: BASE_DATE + 'T08:00:00+00:00' },
+      { id: 2, seq: 2, role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'tu_mock_1', name: 'get_today', input: {} },
+          { type: 'text', text: '' }
+        ],
+        created_at: BASE_DATE + 'T08:01:00+00:00' },
+      { id: 3, seq: 3, role: 'user',
+        content: [{
+          type: 'tool_result', tool_use_id: 'tu_mock_1', is_error: false,
+          content: '{"date":"' + BASE_DATE + '","planned":{"workout_type":"tempo"}}'
+        }],
+        created_at: BASE_DATE + 'T08:01:30+00:00' },
+      { id: 4, seq: 4, role: 'assistant',
+        content: [{ type: 'text', text:
+          '我查到的事實：\n\n- 今天課表是**節奏跑** 5.4 km\n- 準備度：此日期無資料\n\n'
+          + '（這是開發用假資料，不是真實建議。）' }],
+        created_at: BASE_DATE + 'T08:03:00+00:00' }
+    ]
+  };
+
+  function mockChatRoute(path, options) {
+    var qIndex = path.indexOf('?');
+    var pathname = qIndex === -1 ? path : path.slice(0, qIndex);
+    var method = (options && options.method) || 'GET';
+
+    if (pathname === '/api/chat/status') {
+      return {
+        enabled: true, reason: null,
+        model: 'claude-sonnet-5（假資料）', client_allowed: true
+      };
+    }
+    if (pathname === '/api/chat/conversations') {
+      if (method === 'POST') {
+        var conv = {
+          id: mockNextConvId++, title: null,
+          created_at: BASE_DATE + 'T09:00:00+00:00',
+          updated_at: BASE_DATE + 'T09:00:00+00:00'
+        };
+        MOCK_CONVERSATIONS.unshift(conv);
+        MOCK_MESSAGES[conv.id] = [];
+        return conv;
+      }
+      return { conversations: MOCK_CONVERSATIONS };
+    }
+
+    var m = pathname.match(/^\/api\/chat\/conversations\/(\d+)$/);
+    if (m) {
+      var id = parseInt(m[1], 10);
+      if (method === 'DELETE') {
+        MOCK_CONVERSATIONS = MOCK_CONVERSATIONS.filter(function (c) { return c.id !== id; });
+        delete MOCK_MESSAGES[id];
+        return null;
+      }
+      var found = MOCK_CONVERSATIONS.filter(function (c) { return c.id === id; })[0];
+      if (!found) throw new Error('找不到此對話（假資料）');
+      var copy = {};
+      Object.keys(found).forEach(function (k) { copy[k] = found[k]; });
+      copy.messages = MOCK_MESSAGES[id] || [];
+      return copy;
+    }
+
+    throw new Error('假資料未實作此聊天路徑：' + pathname);
+  }
 
   function route(path) {
     var qIndex = path.indexOf('?');

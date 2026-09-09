@@ -259,7 +259,7 @@
       <button type="button" class="coach-btn" id="coach-close" title="關閉" aria-label="關閉面板">×</button>
     </div>
     <div class="coach-body" id="coach-body">
-      <p class="coach-placeholder">對話功能開發中（N-17 S2／S3）。</p>
+      <p class="coach-placeholder">載入 AI 教練…</p>
     </div>
   </aside>
 
@@ -330,5 +330,7 @@
   <script src="theme.js"></script>
   <script src="charts.js"></script>
   <script src="app.js"></script>
+  <!-- AI 教練面板（S3）：必須在 app.js 之後，它依賴 DashboardApp.getViewContext() -->
+  <script src="coach.js"></script>
 </body>
 </html>
