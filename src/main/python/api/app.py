@@ -20,10 +20,17 @@
     只在你信任的家用區網裡使用。要讓外部存取，必須先實作身分驗證與 HTTPS，
     不能只是改個 host 參數。
 
-    ⚠️ 例外：`/api/chat/*`（AI 教練）**另加來源限制**，預設只接受本機。
-    它會花錢、也會把個人健康資料送出這台機器，所以不套用上面那個「區網放行」
-    的取捨。要讓區網裝置使用，須明確設 `RC_CHAT_ALLOW_PRIVATE_NETWORK=1`。
-    見 api/routes_chat.py。上面「不可對外網開放」的紅線不因此改變。
+    ⚠️ 兩個例外**另加來源限制**，預設只接受本機——它們的代價不是「被看到」
+    而是「被觸發」，故不套用上面那個「區網放行」的取捨：
+
+        `/api/chat/*`  AI 教練。會花錢，也會把個人健康資料送出這台機器。
+                       放行私有網段須設 `RC_CHAT_ALLOW_PRIVATE_NETWORK=1`。
+        `/api/sync`    Garmin 同步。會打 Garmin 的 API，觸發過頻會撞上對方的
+                       rate limit 並把帳號推向被鎖。
+                       放行私有網段須設 `RC_SYNC_ALLOW_PRIVATE_NETWORK=1`。
+
+    兩者共用同一份來源判斷（見 api/client_access.py）。
+    上面「不可對外網開放」的紅線不因此改變。
 
 不 hardcode 任何路徑或個人識別資訊：--db-path 必填，athlete 從資料庫查
 （見 dashboard_queries.resolve_athlete_id）。
@@ -39,6 +46,7 @@ from fastapi.staticfiles import StaticFiles
 
 from src.main.python.api import routes_chat
 from src.main.python.api import routes_dashboard
+from src.main.python.api import routes_sync
 from src.main.python.models.db import get_connection
 from src.main.python.services.coach_chat import ChatConfig
 
@@ -77,6 +85,7 @@ def create_app(
 
     app.include_router(routes_dashboard.router)
     app.include_router(routes_chat.router)
+    app.include_router(routes_sync.router)
     # 路由層宣告的預設 dependency 只是佔位，這裡換成真正連到 db_path 的版本
     app.dependency_overrides[routes_dashboard.get_conn] = (
         routes_dashboard.make_connection_dependency(db_path)

@@ -362,7 +362,7 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 |---|---|
 | 圖表／卡片只呈現數據，不做文字解讀 | 解讀**只**出現在 AI 面板的對話裡。**不做**「87/100 準備度」「速度評分」「今日建議」那類卡片——沒有信賴度的黑盒分數與結論句違反 §7.3 |
 | §7.3 三欄位契約 | 面板不在前端拼數據餵模型；模型自己呼叫工具拿含信賴度的事實 |
-| 呈現不等於決策、頁面無寫入路徑 | 聊天**只開放唯讀工具**；`sync_garmin_data`／`generate_training_plan`／`add_context_note`／`save_external_workouts` 不進聊天。唯一新增的寫入是聊天紀錄兩張表。無「同步 Garmin」按鈕 |
+| 呈現不等於決策、頁面無**決策型**寫入路徑 | 聊天**只開放唯讀工具**；`sync_garmin_data`／`generate_training_plan`／`add_context_note`／`save_external_workouts` 不進聊天。⚠️ **2026-09-10 修訂**：原文為「頁面無寫入路徑……無『同步 Garmin』按鈕」，經 Fu 決定放行**資料同步這一個動作**（`POST /api/sync`，見 N-19 §7）。理由：本約束要防的是「頁面出現沒有信賴度的判讀與決策」（§7.3），而同步不產生任何判斷——它只把 Garmin 既有資料搬進來，冪等可重複。**決策型寫入仍不放行**（產課表／記事／外部課表），聊天面板**仍只開放唯讀工具**——同步是使用者按的按鈕，不是模型能呼叫的工具 |
 | 區網無驗證紅線（`app.py` docstring） | `/api/chat/*` 另加來源限制（D.3）；不對外網開放的紅線不變 |
 | 憑證規範（`CLAUDE.md`） | `ANTHROPIC_API_KEY` 只從 `os.environ` 讀；`.env.example` 只放 key；log／錯誤訊息／回傳不得含 key |
 | `app.js`（狀態）／`charts.js`（純畫圖）解耦 | **`charts.js` 零改動**。聊天面板獨立成 `coach.js`，只透過 `window.DashboardApp.getViewContext()` 讀 app 狀態，不碰 `state` |
@@ -548,6 +548,7 @@ event: error        data: {"message": "..."}      ← 之後串流結束；該�
 
 - 沒有信賴度的合成分數卡／雷達圖／結論句（解讀進面板）。
 - 聊天開放寫入工具（同步、產課表、記事）——仍走 Claude Code；N-7 課表調整粒度未 grill 前不碰。
+  ⚠️ 2026-09-10：`POST /api/sync` 已放行為**使用者按鈕**（N-19 §7），但**沒有**成為聊天可呼叫的工具——模型不該有能力自己去打 Garmin 的 API。產課表／記事／外部課表三者仍完全不放行。
 - N-8 結構化記憶（聊天表只是原料）。
 - app 內建帳號系統／HTTPS（D.0 第 4 條：放在 app 外面）。
 - 風格層 N-5、環境配速 N-10、N-12 曲線倒掛。

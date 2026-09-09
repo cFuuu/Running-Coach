@@ -571,7 +571,9 @@
      * @param {string} path 例如 '/api/sessions?range=30d'
      * @returns {Promise<Object>}
      */
-    request: function (path) {
+    request: function (path, body) {
+      // body 只有 POST 端點（/api/sync）會帶；假資料一律回固定結果，
+      // 故不需要依 body 分歧，收下只是為了與 app.js 的 apiPost 簽章一致。
       return new Promise(function (resolve, reject) {
         // 模擬網路延遲，讓載入中狀態看得見
         setTimeout(function () {
@@ -756,6 +758,14 @@
       return buildCalendar(start, end);
     }
     if (pathname === '/api/training-load') return buildTrainingLoad(range);
+    // 假資料模式沒有 Garmin token，同步永遠不可用——回 client_allowed:false
+    // 讓按鈕維持停用，而不是讓人在 demo 模式按下去打真的 API。
+    if (pathname === '/api/sync/status') {
+      return { client_allowed: false, reason: '假資料模式（?mock=1）不提供資料同步' };
+    }
+    if (pathname === '/api/sync') {
+      return { available: false, reason: '假資料模式（?mock=1）不提供資料同步' };
+    }
 
     var m = pathname.match(/^\/api\/sessions\/(\d+)$/);
     if (m) {

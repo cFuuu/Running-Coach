@@ -2536,6 +2536,46 @@ body.coach-open .coach-fab {
   font-size: 0.9rem;
 }
 
+/* ---- 同步進行中與結果訊息（N-19 §7）---- */
+
+/* 同步中的轉圈。prefers-reduced-motion 時停止旋轉但保留 disabled 與文字，
+   狀態仍然看得出來——動畫是輔助，不是唯一的訊號。 */
+@keyframes rc-spin {
+  to { transform: rotate(360deg); }
+}
+
+.tool-btn.is-syncing svg,
+.setting-btn.is-syncing svg {
+  animation: rc-spin 1.1s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-btn.is-syncing svg,
+  .setting-btn.is-syncing svg {
+    animation: none;
+  }
+}
+
+.setting-sync-message {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.setting-sync-message:empty {
+  display: none; /* 沒有訊息時不留空白塊 */
+}
+
+.setting-sync-message.is-error {
+  color: var(--error-text);
+}
+
+.setting-sync-message.is-ok {
+  color: var(--accent-text);
+}
+
 /* 尚未開放的區塊：說明目前的實際行為，不做假的勾選清單 */
 .setting-placeholder,
 .setting-note {

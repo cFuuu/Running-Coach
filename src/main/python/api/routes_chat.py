@@ -13,7 +13,6 @@ fastapi，可以用 unittest 直接測。
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import sqlite3
 from collections.abc import AsyncIterator
@@ -22,6 +21,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
+from src.main.python.api import client_access
 from src.main.python.api.routes_dashboard import get_conn
 from src.main.python.services import coach_chat, coach_chat_store
 from src.main.python.services import dashboard_queries as queries
@@ -30,12 +30,6 @@ from src.main.python.services.coach_chat import ChatConfig
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 AthleteParam = Query(default=None, description="要查詢的 athlete_id，未指定時用資料庫第一位")
-
-# Tailscale 的 CGNAT 網段。Python 3.12 的 ip_address.is_private 對這一段回 False
-# （它不在 RFC1918 私有位址裡），所以必須明列，否則從 Tailscale 連進來會被擋。
-# Tailscale 的 IPv6 位址落在 fd7a:115c:a1e0::/48，屬 unique-local，is_private
-# 本來就為 True，不必另外列。
-_TAILSCALE_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
 # 由 app.py 在建立 app 時以 dependency_overrides 覆寫成真正的設定。
@@ -50,41 +44,20 @@ def get_backend(config: ChatConfig = Depends(get_chat_config)) -> coach_chat.LLM
 
 
 def is_client_allowed(request: Request, config: ChatConfig) -> bool:
-    """判斷這個請求的來源位址可不可以用聊天端點。
-
-    **Fail closed**：位址解析不出來（沒有 client、或不是合法 IP）一律拒絕。
-    Starlette 的 `TestClient` 預設 host 是字串 `"testclient"`，因此測試必須傳
-    `client=("127.0.0.1", 1)` 才會被放行——這正是這條規則該有的行為。
-
-    uvicorn 只信任來自 127.0.0.1 的 `X-Forwarded-For`，區網裝置無法靠偽造
-    標頭把自己講成本機。
-    """
-    client = request.client
-    if client is None or not client.host:
-        return False
-    try:
-        ip = ipaddress.ip_address(client.host)
-    except ValueError:
-        return False
-
-    if ip.is_loopback:  # 涵蓋 127.0.0.0/8 與 ::1
-        return True
-    if not config.allow_private_network:
-        return False
-    return ip.is_private or ip in _TAILSCALE_CGNAT
+    """聊天端點的來源判斷。實作在 `client_access`，與 `/api/sync` 共用同一份
+    規則——見該模組說明為何不複製第二份。"""
+    return client_access.is_client_allowed(request, config.allow_private_network)
 
 
 def require_chat_client(
     request: Request, config: ChatConfig = Depends(get_chat_config)
 ) -> None:
-    if not is_client_allowed(request, config):
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "AI 教練僅限本機使用。要讓區網裝置使用，"
-                "請在啟動 server 的環境設定 RC_CHAT_ALLOW_PRIVATE_NETWORK=1。"
-            ),
-        )
+    client_access.require_client(
+        request,
+        config.allow_private_network,
+        "AI 教練僅限本機使用。要讓區網裝置使用，"
+        "請在啟動 server 的環境設定 RC_CHAT_ALLOW_PRIVATE_NETWORK=1。",
+    )
 
 
 def require_chat_enabled(config: ChatConfig = Depends(get_chat_config)) -> ChatConfig:

@@ -243,6 +243,35 @@
       });
   }
 
+  /**
+   * POST 版的 api()。目前只有 /api/sync 用得到。
+   *
+   * 與 api() 分開而非加參數，是因為兩者的錯誤語意不同：GET 失敗多半是
+   * 資料還沒進來，POST 失敗（403／422）要把後端的 detail 原文顯示給使用者
+   * ——那是可操作的指引（例如「請設定 RC_SYNC_ALLOW_PRIVATE_NETWORK=1」），
+   * 吞掉只留狀態碼會讓使用者不知道下一步該做什麼。
+   */
+  function apiPost(path, body) {
+    var full = path;
+    if (state.athleteId !== null && state.athleteId !== undefined) {
+      full += (path.indexOf('?') === -1 ? '?' : '&') + 'athlete_id=' + encodeURIComponent(state.athleteId);
+    }
+    if (useMock) return window.MOCK_API.request(full, body);
+
+    return fetch('.' + full, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) {
+          throw new Error(data.detail || ('API 回應 ' + res.status + '（' + path + '）'));
+        }
+        return data;
+      });
+    });
+  }
+
   // ------------------------------------------------------------ DOM 小工具
 
   function $(id) { return document.getElementById(id); }
@@ -1999,23 +2028,131 @@
     }
   }
 
+  // ------------------------------------------------------------ 資料同步
+  //
+  // N-19 §7。同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，
+  // 90 天約 7.5 分鐘），所以流程刻意分兩步：
+  //
+  //   1. dry_run=True 拿 estimate.summary（「45 天／226 次請求／約 3 分 46 秒」）
+  //   2. 使用者確認後才真的執行
+  //
+  // 這是 2026-09-01 與 Fu 議定的行為，CLI 與 MCP 都照做，dashboard 沒有理由
+  // 自己發明一套。兩顆鈕（右上角工具列與設定頁）都標了 data-action="sync"，
+  // 狀態一起更新——否則會出現「設定頁顯示同步中、右上角還能再按一次」。
+
+  var syncState = { running: false };
+
+  function syncButtons() {
+    return document.querySelectorAll('[data-action="sync"]');
+  }
+
+  function setSyncBusy(busy, label) {
+    syncState.running = busy;
+    Array.prototype.forEach.call(syncButtons(), function (btn) {
+      btn.disabled = busy;
+      btn.classList.toggle('is-syncing', busy);
+      // 右上角是純 icon 鈕（無文字節點），只有設定頁那顆要換字
+      var textNode = btn.querySelector('.setting-btn-text');
+      if (textNode && label) textNode.textContent = label;
+    });
+  }
+
+  function setSyncMessage(text, kind) {
+    var node = $('settings-sync-message');
+    if (!node) return;
+    clear(node);
+    if (!text) return;
+    node.className = 'setting-sync-message' + (kind ? ' is-' + kind : '');
+    node.appendChild(document.createTextNode(text));
+  }
+
+  /**
+   * 同步失敗時的結果不是例外，而是 available=False ＋ reason（見
+   * routes_sync 說明：那不是「請求錯了」而是「這次做不成」）。
+   * rate_limited 要特別提醒不可重試——重試會把帳號推得更靠近被鎖。
+   */
+  function describeSyncFailure(result) {
+    var reason = result.reason || '同步失敗，原因不明';
+    if (result.rate_limited) {
+      return '已觸發 Garmin 的請求限制，請稍後再試（不要連續重試）。' + reason;
+    }
+    return reason;
+  }
+
+  function requestSync() {
+    if (syncState.running) return;
+    setSyncBusy(true, '估算中…');
+    setSyncMessage('正在估算同步範圍…', null);
+
+    apiPost('/api/sync', { dry_run: true }).then(function (plan) {
+      if (!plan.available) {
+        setSyncBusy(false, '同步資料');
+        setSyncMessage(describeSyncFailure(plan), 'error');
+        return;
+      }
+
+      var summary = (plan.estimate && plan.estimate.summary) || (plan.days + ' 天');
+      var lines = ['即將同步：' + summary];
+      if (plan.start_date && plan.end_date) {
+        lines.push('區間：' + plan.start_date + ' ~ ' + plan.end_date);
+      }
+      if (plan.gap_truncated) {
+        lines.push('⚠️ 距上次同步已超過 90 天，更早的缺口本次補不到，'
+          + '需改下載官方匯出包並在終端機執行 garmin_import_runner。');
+      }
+      lines.push('要開始同步嗎？');
+
+      if (!window.confirm(lines.join('\n'))) {
+        setSyncBusy(false, '同步資料');
+        setSyncMessage('已取消', null);
+        return;
+      }
+
+      setSyncBusy(true, '同步中…');
+      setSyncMessage('同步中，預計 ' + summary + '。請勿關閉此頁。', null);
+
+      return apiPost('/api/sync', {}).then(function (result) {
+        setSyncBusy(false, '同步資料');
+        if (!result.available) {
+          setSyncMessage(describeSyncFailure(result), 'error');
+          return;
+        }
+        var parts = [];
+        if (result.activities !== undefined) parts.push('活動 ' + result.activities + ' 筆');
+        if (result.wellness !== undefined) parts.push('身體數據 ' + result.wellness + ' 筆');
+        setSyncMessage('同步完成：' + (parts.join('　·　') || '無新資料'), 'ok');
+        // 同步會改變資料，今日卡與行事曆必須重讀，否則畫面還停在同步前
+        loadToday();
+        if (state.calendarData) loadCalendarBody();
+      });
+    }).catch(function (err) {
+      setSyncBusy(false, '同步資料');
+      setSyncMessage(err.message, 'error');
+    });
+  }
+
   /**
    * 同步鈕（右上角工具列與設定頁各一顆，都標了 data-action="sync"）。
-   *
-   * N-19 §2.2／§7：本次只做 UI 外殼，後端 POST /api/sync 留待地端實作
-   * （需要 Garmin OAuth token，不可進雲端環境）。兩顆鈕目前都是 disabled，
-   * 這裡先接上呼叫點，後端接上後只要補 DashboardApp.requestSync 並移除
-   * disabled 即可，不必再回頭改綁定。
-   * requestSync 目前不存在，所以呼叫前先檢查——不用 ?. 是因為本檔通篇 ES5。
+   * 兩顆的 disabled 由 /api/sync/status 決定：來源不被允許時（例如從區網
+   * 裝置連進來）維持 disabled 並顯示理由，而不是讓使用者按下去才吃 403。
    */
   function bindSyncButtons() {
-    var btns = document.querySelectorAll('[data-action="sync"]');
-    Array.prototype.forEach.call(btns, function (btn) {
-      btn.addEventListener('click', function () {
-        if (window.DashboardApp && window.DashboardApp.requestSync) {
-          window.DashboardApp.requestSync();
-        }
-      });
+    Array.prototype.forEach.call(syncButtons(), function (btn) {
+      btn.addEventListener('click', requestSync);
+    });
+
+    api('/api/sync/status').then(function (status) {
+      if (status.client_allowed) {
+        setSyncBusy(false, '同步資料');
+      } else {
+        Array.prototype.forEach.call(syncButtons(), function (btn) {
+          btn.disabled = true;
+          btn.title = status.reason || '此裝置不允許執行同步';
+        });
+        setSyncMessage(status.reason, 'error');
+      }
+    }).catch(function () {
+      // status 拿不到就維持 HTML 的 disabled 預設值，不猜
     });
   }
 
