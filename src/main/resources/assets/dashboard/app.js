@@ -193,6 +193,25 @@
 
   var CONFIDENCE_LABEL = { high: '可信', low: '低信賴', unusable: '不可用' };
 
+  // Garmin（Firstbeat）的 HRV 狀態分類。值來自 daily_wellness.hrv_status，
+  // 由手錶端演算法判定，本專案只做顯示與標注偏誤，不重新計算也不覆寫。
+  var HRV_STATUS_LABEL = {
+    BALANCED: '平衡',
+    UNBALANCED: '不平衡',
+    LOW: '偏低',
+    POOR: '不佳',
+    NOT_ENOUGH_DATA: '資料不足'
+  };
+  // 只有「平衡」是預期狀態，其餘都值得注意——用 CSS class 區分顏色，
+  // 但不在這裡寫任何建議文字（判讀屬 AI 教練，見頁尾聲明）。
+  var HRV_STATUS_CLASS = {
+    BALANCED: 'hrv-status-balanced',
+    UNBALANCED: 'hrv-status-alert',
+    LOW: 'hrv-status-alert',
+    POOR: 'hrv-status-alert',
+    NOT_ENOUGH_DATA: 'hrv-status-muted'
+  };
+
   /**
    * 把 data_confidence.fact() 的三欄位輸出（{value, source, confidence}）
    * 渲染成一個帶信賴度 badge 的行內元素。fact 為 null／undefined 時顯示
@@ -812,10 +831,49 @@
         });
       }
       if (data.hrv) {
+        // as_of 有值＝顯示的不是今天而是這個日期的資料（今天尚未同步）。
+        // 必須明示，否則使用者會把昨天的 HRV 當成今天的。
+        if (data.hrv.as_of) {
+          loadBlock.appendChild(h('div', 'today-note',
+            'HRV 為 ' + data.hrv.as_of + ' 的資料（今日尚未同步）'));
+        }
         var hrvRow = h('div', 'today-fact-row');
         hrvRow.appendChild(h('span', 'today-fact-label', 'HRV'));
         hrvRow.appendChild(factValueNode(data.hrv.today_ms, function (v) { return C.formatNumber(v, 1); }, ' ms'));
         loadBlock.appendChild(hrvRow);
+
+        // Garmin 自己的 HRV 狀態（平衡／不平衡）。
+        //
+        // 這一塊走的是 garmin_reference（for_display_only），不是 fact()
+        // 的三欄位契約——它是手錶端黑盒演算法的輸出，規則引擎與 AI 教練
+        // 都不讀它，這裡純粹是「讓你看到手錶顯示了什麼」。因此不掛信賴度
+        // badge（那是 fact 的語彙），改用專屬的弱化註記說明它只能對照參考。
+        var gref = data.hrv.garmin_reference;
+        if (gref && gref.status) {
+          var statusRow = h('div', 'today-fact-row');
+          statusRow.appendChild(h('span', 'today-fact-label', 'Garmin HRV 狀態'));
+          var statusVal = h('span', 'today-fact-value', null);
+          var statusText = h('span', HRV_STATUS_CLASS[gref.status] || '',
+            HRV_STATUS_LABEL[gref.status] || gref.status);
+          statusVal.appendChild(statusText);
+          var refBadge = h('span', 'conf-badge conf-reference', '僅供對照');
+          refBadge.title = gref.note || '';
+          statusVal.appendChild(refBadge);
+          statusRow.appendChild(statusVal);
+          loadBlock.appendChild(statusRow);
+
+          // 平衡區間讓上面的 HRV 數值有對照依據——例如 77 ms 對 47–63 ms，
+          // 才看得出為何 Garmin 判為 UNBALANCED
+          if (gref.baseline_balanced_low && gref.baseline_balanced_upper) {
+            var baseRow = h('div', 'today-fact-row');
+            baseRow.appendChild(h('span', 'today-fact-label', 'Garmin 平衡區間'));
+            baseRow.appendChild(h('span', 'today-fact-value',
+              C.formatNumber(gref.baseline_balanced_low, 0) + '–'
+              + C.formatNumber(gref.baseline_balanced_upper, 0) + ' ms'));
+            loadBlock.appendChild(baseRow);
+          }
+        }
+
         if (data.hrv.delta_pct) {
           var deltaRow = h('div', 'today-fact-row');
           deltaRow.appendChild(h('span', 'today-fact-label', '較 7 日均值'));
@@ -889,7 +947,7 @@
     return card;
   }
 
-  /** 本週（週一起算）已完成的跑步距離與本週課表總距離。 */
+  /** 本週（週日起算，與行事曆一致）已完成的跑步距離與本週課表總距離。 */
   function weekVolumeSummary() {
     var days = state.weekDays || [];
     var done = 0;
@@ -954,7 +1012,7 @@
       label: '本週跑步次數',
       value: String(runCount),
       unit: '次',
-      note: '週一起算'
+      note: '週日起算'
     }));
 
     // ---- TSB（訓練壓力平衡）
@@ -1347,7 +1405,23 @@
   // 系統——這裡永遠錨定真實今天，與其他 range 圖表錨定「資料庫最新日」
   // 的語意不同（見後端 dashboard_queries.get_calendar 說明）。
 
-  /** 取「今天」所在週的週一（UTC，與既有 weeklyVolume() 週一為週首慣例一致）。 */
+  /**
+   * 取該日期所在週的週日（UTC）。行事曆與本週條的一週起點。
+   *
+   * 【為什麼與 weeklyVolume() 的週一不一致，是刻意的】
+   * 「一週從哪天開始」在本專案有兩個不同語意：
+   *   - 行事曆呈現：跟隨使用者習慣的日曆排法（週日為首），純粹是看的方式
+   *   - 週跑量統計：訓練科學慣例用 ISO 週（週一起算），換算週負荷、
+   *     ACWR 都以此為準，改動會讓歷史數字與既有規則引擎對不上
+   * 兩者各自保留自己的函式，不要為了「統一」而把其中一邊改掉。
+   */
+  function sundayOf(dateStr) {
+    var d = new Date(dateStr + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // getUTCDay() 0=週日，直接回推
+    return d;
+  }
+
+  /** 取該日期所在 ISO 週的週一（UTC）。僅供週跑量等訓練負荷統計使用。 */
   function mondayOf(dateStr) {
     var d = new Date(dateStr + 'T00:00:00Z');
     var dow = d.getUTCDay();
@@ -1420,9 +1494,9 @@
   }
 
   function loadWeekStrip() {
-    var monday = mondayOf(todayISO());
-    var sunday = addDaysISO(monday.toISOString().slice(0, 10), 6);
-    var start = monday.toISOString().slice(0, 10);
+    var weekStart = sundayOf(todayISO());
+    var start = weekStart.toISOString().slice(0, 10);
+    var sunday = addDaysISO(start, 6); // 週日 + 6 天 = 週六，本週的最後一天
     api('/api/calendar?start=' + start + '&end=' + sunday).then(function (data) {
       state.weekDays = data.days || [];
       renderWeekStrip();
@@ -1435,18 +1509,18 @@
     });
   }
 
-  /** 行事曆展開時用的月份邊界（YYYY-MM 的第一天所在週一 ~ 最後一天所在週日）。 */
+  /** 行事曆展開時用的月份邊界（YYYY-MM 的第一天所在週日 ~ 最後一天所在週六）。 */
   function monthGridRange(yearMonth) {
     var firstOfMonth = yearMonth + '-01';
     var d = new Date(firstOfMonth + 'T00:00:00Z');
     var nextMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
     var lastOfMonth = new Date(nextMonth.getTime() - 86400000).toISOString().slice(0, 10);
     return {
-      start: mondayOf(firstOfMonth).toISOString().slice(0, 10),
+      start: sundayOf(firstOfMonth).toISOString().slice(0, 10),
       end: (function () {
-        var sundayBase = mondayOf(lastOfMonth);
-        sundayBase.setUTCDate(sundayBase.getUTCDate() + 6);
-        return sundayBase.toISOString().slice(0, 10);
+        var lastRowStart = sundayOf(lastOfMonth);
+        lastRowStart.setUTCDate(lastRowStart.getUTCDate() + 6); // 該週的週六
+        return lastRowStart.toISOString().slice(0, 10);
       })(),
       monthStart: firstOfMonth,
       monthEnd: lastOfMonth
@@ -1471,6 +1545,14 @@
     nav.appendChild(label);
     nav.appendChild(nextBtn);
     node.appendChild(nav);
+
+    // 星期標頭。原本月曆只有日期數字、沒有星期列，改成週日為首後更需要
+    // 明示欄位對應的星期，否則使用者無法確認第一欄到底是週日還是週一。
+    var dowHead = h('div', 'calendar-dow-head');
+    ['日', '一', '二', '三', '四', '五', '六'].forEach(function (name) {
+      dowHead.appendChild(h('span', 'calendar-dow', name));
+    });
+    node.appendChild(dowHead);
 
     var grid = h('div', 'calendar-grid');
     var byDate = {};

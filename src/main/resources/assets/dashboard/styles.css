@@ -1387,6 +1387,32 @@ body.coach-open .coach-fab {
   margin-bottom: 10px;
 }
 
+/* 「僅供對照」badge。刻意與信賴度 badge（conf-high/low）長得不同：
+   那些是 fact() 三欄位契約的語彙，而這個標的是「根本不在事實層裡」，
+   用最弱化的灰階，不讓它看起來像一個有信賴度評級的數字。 */
+.conf-badge.conf-reference {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+}
+
+/* Garmin HRV 狀態文字色。只區分「平衡」與「其餘」兩種語氣，
+   不做三段式配色——狀態本身只是對照參考（garmin_blackbox 偏誤），
+   顏色講太細會讓它看起來比實際更權威。 */
+.hrv-status-balanced {
+  color: var(--c-good, var(--accent));
+  font-weight: 600;
+}
+
+.hrv-status-alert {
+  color: var(--badge-clipped-text);
+  font-weight: 600;
+}
+
+.hrv-status-muted {
+  color: var(--text-muted);
+}
+
 /* ---- 今日頁：KPI 條（大數字 + 迷你趨勢線） ---- */
 
 /* auto-fit + minmax 讓卡片數量隨寬度自動分行，不必為每個斷點各寫一次。
@@ -1866,6 +1892,22 @@ body.coach-open .coach-fab {
 .calendar-nav-label {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* 月曆星期標頭。欄寬與 gap 必須與 .calendar-grid 完全一致，
+   否則標頭與日期格會對不齊。 */
+.calendar-dow-head {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.calendar-dow {
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  padding: 2px 0;
 }
 
 .calendar-grid {
