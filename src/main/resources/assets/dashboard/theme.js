@@ -17,9 +17,13 @@
  *   CHOICES                               — [{value, label}]，供設定頁產生選項用的唯一來源
  *   getChoice() / setChoice(choice)       — 目前主題選擇的讀寫（會連動所有 UI）
  *
- * 【主題 UI 的兩種形態】
- *   右上角工具列的循環鈕（#theme-cycle-btn）與設定頁的三選一是同一份狀態的
- *   兩個視圖，updateButtons() 一次更新兩邊，因此不論從哪邊改都會即時連動。
+ * 【主題 UI 的三種形態】
+ *   右上角工具列的循環鈕（#theme-cycle-btn）、設定頁的三選一、設定頁的
+ *   深色開關（#setting-theme-dark）是同一份狀態的三個視圖，updateButtons()
+ *   一次更新三邊，因此不論從哪邊改都會即時連動。
+ *   注意三選一與循環鈕呈現的是「使用者選了什麼」（含 system），深色開關
+ *   呈現的是「解析後畫面實際是深是淺」——兩者在選 system 時會不同步，
+ *   這是刻意的（見 updateButtons）。
  *   選項鈕用 data-theme-choice（「這顆代表哪個選項」）、循環鈕用 data-theme-state
  *   （「目前是哪個狀態」）——語意不同故屬性名不同，否則選擇器會把循環鈕
  *   誤認成一個選項鈕。
@@ -122,8 +126,11 @@ window.Theme = (function () {
       cycle.setAttribute('title', '主題：' + labelOf(choice) + '（切換到' + labelOf(next) + '）');
     }
 
-    var follow = document.getElementById('setting-theme-system');
-    if (follow) follow.checked = (choice === 'system');
+    // 深色開關反映的是「現在畫面是深是淺」（resolve 後的結果），不是
+    // 使用者選了哪一項——選「跟隨系統」而系統是深色時，開關要是開的，
+    // 否則畫面明明是深色開關卻顯示關閉，兩者互相矛盾。
+    var darkSwitch = document.getElementById('setting-theme-dark');
+    if (darkSwitch) darkSwitch.checked = (resolve(choice) === 'dark');
   }
 
   function setChoice(choice) {
@@ -149,13 +156,13 @@ window.Theme = (function () {
       cycle.addEventListener('click', function () { setChoice(nextChoice(getChoice())); });
     }
 
-    // 「與系統同步」開關是 system 選項的明確版本：關掉時不能留在 system，
-    // 要落到目前實際顯示的那一個，否則畫面會在關掉開關的瞬間毫無變化，
-    // 使用者會以為開關壞了。
-    var follow = document.getElementById('setting-theme-system');
-    if (follow) {
-      follow.addEventListener('change', function () {
-        setChoice(follow.checked ? 'system' : resolve(getChoice()));
+    // 深色開關：一律落成明確的 light／dark，不會切回 'system'。
+    // 「跟隨系統」只能從上面的三選一選擇——這顆開關的語意是
+    // 「我現在就要深色／淺色」，那本質上就是一個明確選擇。
+    var darkSwitch = document.getElementById('setting-theme-dark');
+    if (darkSwitch) {
+      darkSwitch.addEventListener('change', function () {
+        setChoice(darkSwitch.checked ? 'dark' : 'light');
       });
     }
   }

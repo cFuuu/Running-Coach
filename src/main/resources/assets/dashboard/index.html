@@ -127,17 +127,11 @@
         <span class="nav-text">身體狀況</span>
       </a>
       <!--
-        系統設定只加在側邊列，不加進手機底部分頁列：分頁列是
-        grid-template-columns: repeat(5, 1fr)，加到第 6 格會把每格壓到
-        65px，圖示＋文字放不下。手機仍可從右上角齒輪進入（該頂列在
-        <768px 照常顯示），因此不會沒有入口。
+        系統設定刻意不放在這裡，也不放進手機底部分頁列——唯一入口是右上角
+        工具列的齒輪（#settings-btn）。同一個功能出現在兩處會讓人不確定
+        兩邊是不是同一個東西；齒輪在所有寬度（含 <768px）都顯示，因此
+        手機也不會沒有入口。
       -->
-      <a class="nav-link" href="#/settings" data-view="settings">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-gear"></use></svg>
-        </span>
-        <span class="nav-text">系統設定</span>
-      </a>
     </nav>
 
     <!--
@@ -218,7 +212,7 @@
           </span>
         </button>
 
-        <a class="tool-btn" id="settings-btn" href="#/settings" title="系統設定" aria-label="系統設定">
+        <a class="tool-btn" id="settings-btn" href="#/settings" data-view="settings" title="系統設定" aria-label="系統設定">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-gear"></use></svg>
         </a>
       </div>
@@ -362,14 +356,21 @@
           </div>
         </div>
 
+        <!--
+          直接切換目前顯示的深／淺色。取代先前的「與系統同步」開關——那個
+          開關等同上面三選一的「跟隨系統」，在淺色偏好的系統上按下去
+          畫面毫無變化（system 與 light 解析結果相同），看起來像壞掉。
+          這裡改成操作「現在畫面是深是淺」，一按必有視覺回饋；
+          按下時若原本是「跟隨系統」，會落成明確的 light／dark。
+        -->
         <div class="setting-row">
           <div class="setting-label">
-            <span class="setting-name">主題背景與系統同步</span>
-            <span class="setting-hint">開啟等同上面的「跟隨系統」；關閉後會停在目前顯示的主題</span>
+            <span class="setting-name">深色模式</span>
+            <span class="setting-hint">直接切換目前顯示的主題；原本設為「跟隨系統」時會改為明確選擇</span>
           </div>
           <div class="setting-control">
             <label class="switch">
-              <input type="checkbox" id="setting-theme-system">
+              <input type="checkbox" id="setting-theme-dark">
               <span class="switch-track" aria-hidden="true"></span>
             </label>
           </div>

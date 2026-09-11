@@ -1919,8 +1919,9 @@
       if (section) section.hidden = (key !== view);
     });
 
-    // 導覽高亮（側邊列與底部分頁列共用 data-view）
-    var links = document.querySelectorAll('.nav-link, .tab-link');
+    // 導覽高亮（側邊列、底部分頁列、右上角齒輪共用 data-view）。
+    // 齒輪也列入，是因為系統設定已從側邊列移除，它是該 view 的唯一入口。
+    var links = document.querySelectorAll('.nav-link, .tab-link, .tool-btn[data-view]');
     Array.prototype.forEach.call(links, function (link) {
       var active = link.getAttribute('data-view') === view;
       link.classList.toggle('is-active', active);

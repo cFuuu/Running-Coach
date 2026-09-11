@@ -110,8 +110,10 @@
   /* AI 教練面板寬度。桌機三欄的第三欄、平板抽屜、以及平板時 .content 為了
      不讓右上角工具列被面板蓋住而加的 padding-right，三者都由這一個變數驅動，
      不在三個地方各寫一次數值（見 CLAUDE.md「絕不複製貼上」）。
-     clamp：小桌機不至於把內容欄擠爆，2K/4K 上面板才有餘裕。 */
-  --coach-panel-w: clamp(360px, 40vw, 640px);
+     固定 360px 而非隨視窗縮放：面板裝的是對話泡泡，一行放 40 字左右已足夠，
+     再寬只是讓每行更長更難讀，卻把圖表要用的內容欄壓掉。先前的
+     clamp(360px, 40vw, 640px) 在 1440px 螢幕會吃掉 576px（40% 畫面）。 */
+  --coach-panel-w: 360px;
 
   /* 信賴度 badge（PLAN.md §7.3 三欄位契約）：high 用中性色（不強調，
      因為「可信」是預期狀態，不需要視覺提醒）；low 用與 badge-clipped
@@ -514,6 +516,16 @@ h1, h2, h3 {
 }
 
 .tool-btn:hover {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* 齒輪是系統設定的唯一入口（側邊列不再有這一項），所以它得自己承擔
+   「你正在設定頁」的高亮——否則進了設定頁，整個導覽區沒有任何一處
+   反映目前位置。class 由 app.js applyRoute() 依 data-view 指派，
+   與側邊列／分頁列共用同一套邏輯。 */
+.tool-btn.is-active {
   background: var(--surface-sunken);
   border-color: var(--border);
   color: var(--text);
