@@ -1124,9 +1124,39 @@ def get_today(
         }
 
     wellness_today_row = conn.execute(
-        "SELECT hrv_ms, hrv_weekly_avg_ms FROM daily_wellness WHERE athlete_id = ? AND date = ?",
+        """
+        SELECT hrv_ms, hrv_weekly_avg_ms, hrv_status,
+               hrv_baseline_balanced_low, hrv_baseline_balanced_upper
+        FROM daily_wellness WHERE athlete_id = ? AND date = ?
+        """,
         (resolved, today.isoformat()),
     ).fetchone()
+
+    # 今天的身體數據常常還沒同步（手錶隔天早上才上傳），此時整張 HRV 卡
+    # 會是空的，但昨天的資料其實在庫裡。退回最近一筆並標明是哪一天。
+    #
+    # 【窗口為何只有 _HRV_FALLBACK_DAYS 天，不沿用 readiness 的 14 天】
+    # N-13 的硬規則是「沒資料就不可假裝評估過」。HRV 是逐日變動的生理
+    # 指標，兩週前的數值拿來當「今日 HRV」已不是延遲、而是錯的資訊。
+    # 只涵蓋「手錶還沒同步今天」這一種情況，超出窗口一律回 None，
+    # 讓卡片誠實地顯示無資料。日期一定隨值回傳，前端必須標注。
+    hrv_as_of: str | None = None
+    if wellness_today_row is None or wellness_today_row["hrv_ms"] is None:
+        fallback_start = today - datetime.timedelta(days=_HRV_FALLBACK_DAYS)
+        fallback_row = conn.execute(
+            """
+            SELECT date, hrv_ms, hrv_weekly_avg_ms, hrv_status,
+                   hrv_baseline_balanced_low, hrv_baseline_balanced_upper
+            FROM daily_wellness
+            WHERE athlete_id = ? AND date <= ? AND date >= ? AND hrv_ms IS NOT NULL
+            ORDER BY date DESC LIMIT 1
+            """,
+            (resolved, today.isoformat(), fallback_start.isoformat()),
+        ).fetchone()
+        if fallback_row is not None:
+            wellness_today_row = fallback_row
+            hrv_as_of = fallback_row["date"]
+
     hrv_fact = None
     if wellness_today_row is not None:
         hrv_ms = wellness_today_row["hrv_ms"]
@@ -1150,6 +1180,32 @@ def get_today(
             )
             if delta_pct is not None
             else None,
+            # ---- Garmin（Firstbeat）自己的 HRV 狀態分類與平衡區間 ----
+            #
+            # 【為什麼這幾個欄位不走 data_confidence.fact()】
+            # fact() 對 unusable 級偏誤一律回 None，而 garmin_blackbox 正是
+            # unusable——那條規則保護的是「判斷層不得使用無法評估可信度的數字」，
+            # 目的正確，這裡也完全遵守：規則引擎與 AI 教練都不讀這個欄位。
+            #
+            # 但「不給判斷層用」與「不讓使用者看見手錶顯示了什麼」是兩件事。
+            # 使用者手錶上明明寫著「不平衡」，儀表板卻完全不提，反而會讓人
+            # 以為資料沒同步。因此改走 garmin_reference 這個獨立形狀：
+            # 明確標 for_display_only，與 fact() 的三欄位契約長得不一樣，
+            # 下游若誤把它當 fact 用會立刻壞掉（而不是靜默混入判斷）。
+            #
+            # 這個欄位的推導方式尚未釐清，見 TODO N-20。
+            "garmin_reference": {
+                "for_display_only": True,
+                "note": "Garmin（Firstbeat）黑盒演算法輸出，公式未公開，僅供對照，不得作為判讀依據",
+                "status": wellness_today_row["hrv_status"],
+                "baseline_balanced_low": wellness_today_row["hrv_baseline_balanced_low"],
+                "baseline_balanced_upper": wellness_today_row["hrv_baseline_balanced_upper"],
+            }
+            if wellness_today_row["hrv_status"] is not None
+            else None,
+            # 非 None 代表這張卡顯示的不是今天，而是這個日期的資料。
+            # 前端必須據此標注，否則使用者會把昨天的數字當成今天的。
+            "as_of": hrv_as_of,
         }
 
     consecutive_training_days = None
@@ -1208,6 +1264,10 @@ def get_today(
 # 準備度往回查幾天找「最近一次可評日」——超過這個範圍代表資料同步斷了
 # 太久，今日卡不再往回找，交由 freshness.days_behind 呈現這個事實即可。
 _READINESS_LOOKBACK_DAYS = 14
+
+# 今日卡 HRV 的退回窗口（天）。只為了涵蓋「手錶今天還沒同步」，
+# 不是資料補洞機制——超過這個天數就誠實顯示無資料（見 get_today）。
+_HRV_FALLBACK_DAYS = 2
 
 
 

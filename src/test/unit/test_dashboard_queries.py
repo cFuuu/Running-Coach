@@ -678,6 +678,42 @@ class TestToday(DashboardQueryTestCase):
         self.assertIsNotNone(result["readiness"]["latest_evaluable"])
         self.assertEqual(result["readiness"]["latest_evaluable"]["date"], "2026-03-10")
 
+    def test_hrv_falls_back_to_yesterday_and_marks_as_of(self):
+        """手錶隔天早上才上傳，今天常常還沒有 HRV。此時退回最近一筆，
+        但必須用 as_of 標明那是哪一天的資料，不可假裝是今天的。"""
+        day_after = datetime.date(2026, 3, 11)  # fixture 最新資料是 3/10
+        result = queries.get_today(self.conn, today=day_after)
+        self.assertIsNotNone(result["hrv"])
+        self.assertEqual(result["hrv"]["as_of"], "2026-03-10")
+
+    def test_hrv_as_of_is_none_when_today_has_its_own_data(self):
+        """今天自己就有資料時不該標 as_of——標了會讓前端誤顯示
+        「今日尚未同步」的註記。"""
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        self.assertIsNone(result["hrv"]["as_of"])
+
+    def test_hrv_fallback_does_not_reach_beyond_window(self):
+        """N-13：退回窗口只為涵蓋「今天還沒同步」，不是資料補洞。
+        超出 _HRV_FALLBACK_DAYS 後必須誠實回 None，不可拿舊資料充數。"""
+        far_future = datetime.date(2026, 6, 1)
+        result = queries.get_today(self.conn, today=far_future)
+        self.assertIsNone(result["hrv"])
+
+    def test_garmin_hrv_status_is_display_only_not_a_fact(self):
+        """Garmin HRV 狀態是 Firstbeat 黑盒輸出，必須走 garmin_reference
+        且標 for_display_only——長得與 fact() 的三欄位契約不同，
+        下游若誤當 fact 使用會立刻壞掉，而非靜默混進判斷層。"""
+        self.conn.execute(
+            "UPDATE daily_wellness SET hrv_status = 'UNBALANCED' WHERE date = '2026-03-10'"
+        )
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        gref = result["hrv"]["garmin_reference"]
+        self.assertIsNotNone(gref)
+        self.assertTrue(gref["for_display_only"])
+        self.assertEqual(gref["status"], "UNBALANCED")
+        # 不可有 fact() 的三欄位形狀，否則下游會誤用
+        self.assertNotIn("confidence", gref)
+
     def test_planned_today_reflects_training_plan_row(self):
         """fixture 的 training_plan 只有 2026-03-09 一筆（lsd 12km）。"""
         result = queries.get_today(self.conn, today=datetime.date(2026, 3, 9))
