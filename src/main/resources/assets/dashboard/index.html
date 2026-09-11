@@ -233,11 +233,36 @@
         <div id="today-body"></div>
       </section>
 
+      <!--
+        KPI 條：本週跑量進度、近 7 日趨勢等一眼可見的數字，各自帶一條
+        迷你趨勢線。排在「今日」之後、「本週」之前——先看今天要做什麼，
+        再看最近的狀態，最後才是整週的細節。
+      -->
+      <section class="panel" id="panel-kpi" aria-labelledby="h-kpi">
+        <h2 class="panel-title" id="h-kpi">
+          近期概況<span class="panel-hint">數值與趨勢，不含判讀</span>
+        </h2>
+        <div id="kpi-strip"></div>
+      </section>
+
       <section class="panel" id="panel-week" aria-labelledby="h-week">
         <h2 class="panel-title" id="h-week">本週</h2>
         <div id="week-strip"></div>
+        <!-- 本週課表一覽：週條只有格子，這裡列出每天的課表與完成狀態 -->
+        <div id="week-plan-list"></div>
         <p class="view-link-row">
           <a class="view-link" href="#/calendar">查看課表與行事曆 →</a>
+        </p>
+      </section>
+
+      <!-- 最近幾場訓練：原本今日頁只顯示「最近一場」，這裡列出近 8 場 -->
+      <section class="panel" id="panel-recent" aria-labelledby="h-recent">
+        <h2 class="panel-title" id="h-recent">
+          最近訓練<span class="panel-hint">近 8 場，點選可看單場分析</span>
+        </h2>
+        <div id="recent-sessions"></div>
+        <p class="view-link-row">
+          <a class="view-link" href="#/sessions">查看完整訓練紀錄 →</a>
         </p>
       </section>
     </section>

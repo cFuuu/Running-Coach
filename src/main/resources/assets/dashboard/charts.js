@@ -854,10 +854,64 @@ window.Charts = (function () {
     return svg;
   }
 
+  /**
+   * 迷你趨勢線（sparkline）：今日頁 KPI 卡右側用的縮圖，只有線與最後一點，
+   * 沒有座標軸、刻度、tooltip——它的用途是「一眼看出走勢方向」，不是讀值，
+   * 精確數值由卡片上的大字負責。
+   *
+   * 刻意不重用 trendLineChart：那個有軸標籤、格線、同步游標與命中層，
+   * 在 120x32 的尺寸下全部都是雜訊，而且它的 viewBox 是固定 VB_WIDTH。
+   *
+   * @param {Array<number>} values 依時間排序的數值（null／非有限值會被略過）
+   * @param {Object} [opts] { invert:boolean 值越小越好（配速）時反轉配色語意用 }
+   * @returns {SVGElement|null} 少於 2 個有效點時回 null（一個點畫不出趨勢）
+   */
+  function sparkline(values, opts) {
+    var options = opts || {};
+    var nums = (values || []).filter(function (v) {
+      return typeof v === 'number' && isFinite(v);
+    });
+    if (nums.length < 2) return null;
+
+    var W = 120;
+    var H = 32;
+    var pad = 3;
+    var min = Math.min.apply(null, nums);
+    var max = Math.max.apply(null, nums);
+    var span = max - min || 1;
+
+    var svg = el('svg', {
+      viewBox: '0 0 ' + W + ' ' + H,
+      preserveAspectRatio: 'none',
+      class: 'sparkline' + (options.invert ? ' is-invert' : ''),
+      'aria-hidden': 'true',  // 走勢已由卡片文字表達，對螢幕閱讀器是重複資訊
+      focusable: 'false'
+    });
+
+    var stepX = (W - pad * 2) / (nums.length - 1);
+    function xOf(i) { return pad + i * stepX; }
+    function yOf(v) { return H - pad - ((v - min) / span) * (H - pad * 2); }
+
+    var d = nums.map(function (v, i) {
+      return (i === 0 ? 'M' : 'L') + xOf(i).toFixed(1) + ' ' + yOf(v).toFixed(1);
+    }).join(' ');
+    svg.appendChild(el('path', { d: d, class: 'sparkline-path' }));
+
+    // 最後一點畫實心圓：讓「現在在哪」一眼可見
+    svg.appendChild(el('circle', {
+      cx: xOf(nums.length - 1).toFixed(1),
+      cy: yOf(nums[nums.length - 1]).toFixed(1),
+      r: 2.5,
+      class: 'sparkline-dot'
+    }));
+    return svg;
+  }
+
   // ---------------------------------------------------------------- 對外介面
 
   return {
     lapPaceChart: lapPaceChart,
+    sparkline: sparkline,
     recordsChart: recordsChart,
     hrZoneChart: hrZoneChart,
     trendLineChart: trendLineChart,

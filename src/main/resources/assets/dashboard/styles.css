@@ -1387,6 +1387,251 @@ body.coach-open .coach-fab {
   margin-bottom: 10px;
 }
 
+/* ---- 今日頁：KPI 條（大數字 + 迷你趨勢線） ---- */
+
+/* auto-fit + minmax 讓卡片數量隨寬度自動分行，不必為每個斷點各寫一次。
+   min 設 180px：容得下「TSB（CTL − ATL）」這種較長的標籤而不換行成兩行。 */
+.kpi-strip {
+  display: grid;
+  /* min 值決定一列塞得下幾張。目前有 5 張卡；桌機內容區在 1440px 螢幕上
+     只有約 840px（AI 面板佔 360px），要讓 5 張並排而不出現「4＋1 孤兒列」，
+     每張至少得壓到 130px 以下。窄螢幕自然降成 3+2、2+2+1。 */
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 12px;
+}
+
+.kpi-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.kpi-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* 數字在上、趨勢線在下並佔滿整個卡片寬度。
+   原本是左右並排，但「TSB（CTL − ATL）」這類長標籤把卡片撐窄後，
+   120px 的趨勢線會壓到數字上（實測 -23.5 與線重疊）。上下堆疊後
+   兩者各自有完整寬度，任何標籤長度都不會互相干擾。 */
+.kpi-main {
+  display: block;
+}
+
+.kpi-value-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+}
+
+.kpi-value {
+  font-size: 1.45rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-unit {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.kpi-spark {
+  margin-top: 6px;
+  line-height: 0;
+}
+
+.kpi-note {
+  margin-top: 6px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.kpi-note-pct {
+  margin-top: 2px;
+}
+
+/* 本週跑量的達成度進度條 */
+.kpi-bar {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bar-track);
+  overflow: hidden;
+}
+
+.kpi-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* sparkline 本體。stroke 用 currentColor 以外的明確變數，避免繼承到
+   .kpi-card 的文字色而與內文同色、看不出是圖。 */
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 28px;
+}
+
+.sparkline-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* viewBox 用 preserveAspectRatio:none 拉伸，線寬會跟著變形；
+     這個屬性讓線寬維持視覺一致 */
+  vector-effect: non-scaling-stroke;
+}
+
+.sparkline-dot {
+  fill: var(--accent);
+}
+
+/* ---- 今日頁：本週課表一覽 ---- */
+
+.week-plan-list {
+  margin-top: var(--gap);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* 六欄固定比例：星期、日期、課表、實際、狀態。
+   課表與實際給最多空間，其餘是短字串。 */
+.wp-row {
+  display: grid;
+  grid-template-columns: 2.5rem 3.2rem minmax(0, 1fr) minmax(0, 1fr) 4.5rem;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
+.wp-row + .wp-row {
+  border-top: 1px solid var(--border);
+}
+
+.wp-dow {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wp-date,
+.wp-state {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.wp-plan,
+.wp-actual {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wp-actual {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 手機：欄位太多會擠成一團，改成兩行流式排列 */
+@media (max-width: 560px) {
+  .wp-row {
+    grid-template-columns: 2.5rem 3.2rem minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .wp-actual {
+    grid-column: 3;
+  }
+
+  .wp-state {
+    grid-column: 1 / -1;
+    text-align: right;
+  }
+}
+
+/* ---- 今日頁：最近訓練清單 ---- */
+
+.recent-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.recent-row {
+  display: grid;
+  grid-template-columns: 3.4rem 4.5rem minmax(0, 1fr) minmax(0, 1fr) 4.8rem;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent-row + .recent-row {
+  border-top: 1px solid var(--border);
+}
+
+.recent-row:hover {
+  background: var(--surface-sunken);
+}
+
+.recent-row:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.rc-date {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-type {
+  font-weight: 600;
+}
+
+.rc-km,
+.rc-pace,
+.rc-hr {
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-hr {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+@media (max-width: 560px) {
+  .recent-row {
+    grid-template-columns: 3.4rem 4.5rem minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  .rc-pace {
+    grid-column: 3;
+  }
+
+  .rc-hr {
+    grid-column: 1 / -1;
+    text-align: right;
+  }
+}
+
 .today-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
