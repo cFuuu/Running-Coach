@@ -37,6 +37,7 @@
     loadSeries: null,
     calendarMonth: null,   // 'YYYY-MM'，展開月曆時才需要，預設當月
     calendarData: null,    // /api/calendar 回傳的月曆資料（展開後才載入）
+    calendarSelectedDate: null, // 'YYYY-MM-DD'，月曆下方明細顯示的是哪一天
     weekDays: null,        // /api/calendar 的本週資料（週條用）
 
     view: 'today',         // 目前 view：today|calendar|sessions|load|wellness
@@ -1227,12 +1228,23 @@
       if (cursor < range.monthStart || cursor > range.monthEnd) cell.classList.add('is-outside-month');
       cell.appendChild(h('span', 'calendar-cell-date', cursor.slice(8, 10)));
       if (day) {
-        var runnable = firstRunningActivity(day.activities);
-        if (runnable) {
+        // 只要當天有任何活動或課表就可點（不限跑步）——點擊是「看這天發生什麼」，
+        // 不再是「跳到某一場跑步的明細」，所以健走、重訓、純課表日也該能點開。
+        if (day.activities.length > 0 || day.planned.length > 0) {
           cell.classList.add('is-clickable');
-          cell.addEventListener('click', function (id) {
-            return function () { navigate('sessions', id); };
-          }(runnable.id));
+          cell.setAttribute('role', 'button');
+          cell.setAttribute('tabindex', '0');
+          if (cursor === state.calendarSelectedDate) cell.classList.add('is-selected');
+          (function (date) {
+            cell.addEventListener('click', function () { selectCalendarDate(date); });
+            // 鍵盤操作：格子是 div，不像 button 會自動把 Enter／Space 轉成 click
+            cell.addEventListener('keydown', function (ev) {
+              if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                selectCalendarDate(date);
+              }
+            });
+          }(cursor));
         }
         if (day.activities.length > 0) cell.appendChild(activityDots(day.activities));
         cell.title = cursor + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
@@ -1241,6 +1253,117 @@
       cursor = addDaysISO(cursor, 1);
     }
     node.appendChild(grid);
+
+    // 月曆重畫後明細要跟著更新（換月、或首次載入都會走到這裡）
+    renderCalendarDay();
+  }
+
+  /**
+   * 選取月曆上的某一天：更新選取態並就地渲染下方明細。
+   * 刻意不改 hash——當日明細是行事曆的一部分，不是另一個位置；
+   * 換月份時 renderCalendarBody 會重畫格子，選取態靠 state 保留。
+   * @param {string} date 'YYYY-MM-DD'
+   */
+  function selectCalendarDate(date) {
+    // 再點一次同一天＝收起，符合「點開／點關」的直覺
+    state.calendarSelectedDate = (state.calendarSelectedDate === date) ? null : date;
+
+    var grid = $('calendar-body').querySelector('.calendar-grid');
+    if (grid) {
+      var cells = grid.querySelectorAll('.calendar-cell');
+      Array.prototype.forEach.call(cells, function (c) { c.classList.remove('is-selected'); });
+    }
+    if (state.calendarSelectedDate) {
+      // 重新標記選取的格子。格子沒帶 data-date，用與繪製時相同的日期序走訪
+      // 太繞，改用 title 前綴比對（title 的開頭就是 ISO 日期，見 renderCalendarBody）。
+      var target = null;
+      Array.prototype.forEach.call(grid ? grid.querySelectorAll('.calendar-cell') : [], function (c) {
+        if (c.title && c.title.indexOf(state.calendarSelectedDate) === 0) target = c;
+      });
+      if (target) target.classList.add('is-selected');
+    }
+    renderCalendarDay();
+  }
+
+  /** 把某一天的課表與活動渲染到月曆下方的明細面板。 */
+  function renderCalendarDay() {
+    var panel = $('panel-calendar-day');
+    var node = $('calendar-day-body');
+    if (!panel || !node) return;
+    clear(node);
+
+    var date = state.calendarSelectedDate;
+    if (!date) {
+      panel.classList.remove('is-open');
+      node.appendChild(h('p', 'calendar-day-empty', '點選月曆上的日期，這裡會顯示當天的課表與訓練內容。'));
+      return;
+    }
+    panel.classList.add('is-open');
+
+    var day = null;
+    (state.calendarData && state.calendarData.days ? state.calendarData.days : []).forEach(function (d) {
+      if (d.date === date) day = d;
+    });
+    if (!day) {
+      node.appendChild(h('p', 'calendar-day-empty', date + '　沒有資料。'));
+      return;
+    }
+
+    var head = h('div', 'calendar-day-head');
+    head.appendChild(h('h3', 'calendar-day-title', date + '（' + dowLabel(date) + '）'));
+    head.appendChild(h('span', 'calendar-day-state day-' + day.day_state,
+      DAY_STATE_LABEL[day.day_state] || day.day_state));
+    node.appendChild(head);
+
+    // ---- 課表
+    if (day.planned && day.planned.length > 0) {
+      var psec = h('div', 'calendar-day-section');
+      psec.appendChild(h('h4', 'calendar-day-subtitle', '課表'));
+      day.planned.forEach(function (pl) {
+        var row = h('div', 'calendar-day-row');
+        row.appendChild(h('span', 'cd-type', WORKOUT_TYPE_LABEL[pl.workout_type] || pl.workout_type));
+        if (pl.planned_distance_km) {
+          row.appendChild(h('span', 'cd-val', C.formatNumber(pl.planned_distance_km, 1) + ' km'));
+        }
+        if (pl.planned_pace_sec_per_km) {
+          row.appendChild(h('span', 'cd-val', C.formatPace(pl.planned_pace_sec_per_km) + '/km'));
+        }
+        psec.appendChild(row);
+      });
+      node.appendChild(psec);
+    }
+
+    // ---- 實際活動
+    if (day.activities && day.activities.length > 0) {
+      var asec = h('div', 'calendar-day-section');
+      asec.appendChild(h('h4', 'calendar-day-subtitle', '實際訓練'));
+      day.activities.forEach(function (a) {
+        var row = h('div', 'calendar-day-row');
+        var dot = h('span', 'cd-dot');
+        dot.style.background = 'var(' + activityColorVar(a.activity_type) + ')';
+        row.appendChild(dot);
+        row.appendChild(h('span', 'cd-type', ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type));
+        if (a.title) row.appendChild(h('span', 'cd-title', a.title));
+        if (a.distance_km) row.appendChild(h('span', 'cd-val', C.formatNumber(a.distance_km, 2) + ' km'));
+        if (a.duration_sec) row.appendChild(h('span', 'cd-val', C.formatDuration(a.duration_sec)));
+        if (a.distance_km && a.duration_sec) {
+          row.appendChild(h('span', 'cd-val', C.formatPace(a.duration_sec / a.distance_km) + '/km'));
+        }
+        // 跑步才有單場明細可看：其餘類型（健走、重訓）在訓練紀錄裡沒有對應頁面
+        if (a.is_running) {
+          var link = h('button', 'cd-link', '看單場分析 →');
+          link.type = 'button';
+          link.addEventListener('click', function () { navigate('sessions', a.id); });
+          row.appendChild(link);
+        }
+        asec.appendChild(row);
+      });
+      node.appendChild(asec);
+    }
+
+    if ((!day.planned || day.planned.length === 0) && (!day.activities || day.activities.length === 0)) {
+      node.appendChild(h('p', 'calendar-day-empty', '這天沒有課表也沒有訓練紀錄。'));
+    }
   }
 
   function loadCalendarBody() {
@@ -1256,6 +1379,9 @@
   function shiftCalendarMonth(delta) {
     var d = new Date(state.calendarMonth + '-01T00:00:00Z');
     d.setUTCMonth(d.getUTCMonth() + delta);
+    // 換月後原本選的那天已不在畫面上，明細跟著收起，避免月曆顯示 10 月
+    // 下方卻還停在 9 月某天的內容
+    state.calendarSelectedDate = null;
     navigate('calendar', d.toISOString().slice(0, 7));
   }
 

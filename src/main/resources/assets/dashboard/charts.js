@@ -60,15 +60,24 @@ window.Charts = (function () {
   }
 
   /**
-   * 依容器實際像素寬度，決定 X 軸最多顯示幾個刻度標籤。
-   * 30 天標籤在 390px 手機上會擠成一團，所以必須動態抽稀。
-   * @param {number} containerPx 容器寬度（px）；取不到時給保守值
-   * @param {number} perLabelPx 每個標籤預估需要的像素寬
+   * 決定 X 軸最多顯示幾個刻度標籤。
+   *
+   * 【為什麼算的是 viewBox 座標而不是容器像素】
+   * SVG 用固定 VB_WIDTH 的 viewBox 搭配 width:100% 等比縮放，所以標籤文字
+   * 的「實際螢幕字級」會隨容器變寬而放大、變窄而縮小——但標籤之間的
+   * viewBox 間距是固定的。也就是說能不能塞得下，完全由 viewBox 座標決定，
+   * 與容器幾 px 無關。
+   *
+   * 先前這裡用容器像素寬去除，等於容器越寬就放越多標籤，可是它們仍被壓進
+   * 同一個 VB_WIDTH 座標系；1920px 螢幕上因此擠出 21 個標籤、實測相鄰標籤
+   * 重疊 7px。現在固定以 VB_WIDTH 計算，任何容器寬度下的密度都一致。
+   *
+   * @param {number} _containerPx 已不再使用（保留參數位置，呼叫端無需同步修改）
+   * @param {number} perLabelVb 每個標籤在 viewBox 座標下需要的寬度
    */
-  function maxTickCount(containerPx, perLabelPx) {
-    var w = containerPx && containerPx > 0 ? containerPx : 320;
-    var per = perLabelPx || 56;
-    return Math.max(2, Math.floor(w / per));
+  function maxTickCount(_containerPx, perLabelVb) {
+    var per = perLabelVb || 56;
+    return Math.max(2, Math.floor(VB_WIDTH / per));
   }
 
   /**

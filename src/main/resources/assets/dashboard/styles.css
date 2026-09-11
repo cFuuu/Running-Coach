@@ -1653,6 +1653,18 @@ body.coach-open .coach-fab {
   border-color: var(--accent);
 }
 
+.calendar-cell.is-clickable:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* 目前在下方明細面板顯示的那一天。用外框而非底色，因為底色已經被
+   day_state（完成／未執行／額外訓練）用掉了，再疊一層會蓋掉狀態資訊。 */
+.calendar-cell.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
 .calendar-cell.is-outside-month {
   opacity: 0.35;
 }
@@ -1681,6 +1693,114 @@ body.coach-open .coach-fab {
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- 行事曆：點日期後就地展開的當日明細 ---- */
+
+/* 沒有選任何一天時，面板只剩一行提示，不需要完整 panel 的內距與邊框，
+   收得扁一點讓月曆保持視覺主體。 */
+.calendar-day-panel {
+  margin-top: var(--gap);
+}
+
+.calendar-day-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.calendar-day-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.calendar-day-state {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.calendar-day-section + .calendar-day-section {
+  margin-top: 14px;
+}
+
+.calendar-day-subtitle {
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* 一列一個活動／課表。wrap 讓窄螢幕自動換行，不必另寫手機斷點。 */
+.calendar-day-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.calendar-day-row + .calendar-day-row {
+  margin-top: 6px;
+}
+
+.cd-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.cd-type {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cd-title {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.cd-val {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+/* 「看單場分析」推到最右：它是離開本頁的動作，與左側的數據分開比較不會誤按 */
+.cd-link {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.cd-link:hover {
+  border-color: var(--accent);
+}
+
+.cd-link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.calendar-day-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
 }
 
 .calendar-legend {
