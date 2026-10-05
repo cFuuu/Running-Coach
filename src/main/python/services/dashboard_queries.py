@@ -1193,7 +1193,8 @@ def get_today(
             # 明確標 for_display_only，與 fact() 的三欄位契約長得不一樣，
             # 下游若誤把它當 fact 用會立刻壞掉（而不是靜默混入判斷）。
             #
-            # 這個欄位的推導方式尚未釐清，見 TODO N-20。
+            # 狀態是拿 7 日均值（hrv_weekly_avg_ms）對平衡區間判的，不是昨夜
+            # 均值（hrv_ms）：實測 39/39 天吻合，昨夜均值只有 29/39。見 TODO N-20。
             "garmin_reference": {
                 "for_display_only": True,
                 "note": "Garmin（Firstbeat）黑盒演算法輸出，公式未公開，僅供對照，不得作為判讀依據",

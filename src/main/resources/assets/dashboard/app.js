@@ -837,10 +837,19 @@
           loadBlock.appendChild(h('div', 'today-note',
             'HRV 為 ' + data.hrv.as_of + ' 的資料（今日尚未同步）'));
         }
+        // 昨夜均值與 7 日均值分開列：Garmin 的狀態與平衡區間是拿 7 日均值
+        // 判的（實測 39/39 天吻合，昨夜均值只有 29/39），只列昨夜值會讓人
+        // 誤拿它去對平衡區間。
         var hrvRow = h('div', 'today-fact-row');
-        hrvRow.appendChild(h('span', 'today-fact-label', 'HRV'));
+        hrvRow.appendChild(h('span', 'today-fact-label', 'HRV 昨夜均值'));
         hrvRow.appendChild(factValueNode(data.hrv.today_ms, function (v) { return C.formatNumber(v, 1); }, ' ms'));
         loadBlock.appendChild(hrvRow);
+        if (data.hrv.weekly_avg_ms) {
+          var weeklyRow = h('div', 'today-fact-row');
+          weeklyRow.appendChild(h('span', 'today-fact-label', 'HRV 7 日均值'));
+          weeklyRow.appendChild(factValueNode(data.hrv.weekly_avg_ms, function (v) { return C.formatNumber(v, 1); }, ' ms'));
+          loadBlock.appendChild(weeklyRow);
+        }
 
         // Garmin 自己的 HRV 狀態（平衡／不平衡）。
         //
@@ -862,11 +871,11 @@
           statusRow.appendChild(statusVal);
           loadBlock.appendChild(statusRow);
 
-          // 平衡區間讓上面的 HRV 數值有對照依據——例如 77 ms 對 47–63 ms，
-          // 才看得出為何 Garmin 判為 UNBALANCED
+          // 平衡區間對照的是 7 日均值、不是昨夜值——例如昨夜 77 ms 高於
+          // 47–63 ms 仍判 UNBALANCED，是 7 日均值落在區間外
           if (gref.baseline_balanced_low && gref.baseline_balanced_upper) {
             var baseRow = h('div', 'today-fact-row');
-            baseRow.appendChild(h('span', 'today-fact-label', 'Garmin 平衡區間'));
+            baseRow.appendChild(h('span', 'today-fact-label', 'Garmin 平衡區間（對照 7 日均值）'));
             baseRow.appendChild(h('span', 'today-fact-value',
               C.formatNumber(gref.baseline_balanced_low, 0) + '–'
               + C.formatNumber(gref.baseline_balanced_upper, 0) + ' ms'));
@@ -876,7 +885,7 @@
 
         if (data.hrv.delta_pct) {
           var deltaRow = h('div', 'today-fact-row');
-          deltaRow.appendChild(h('span', 'today-fact-label', '較 7 日均值'));
+          deltaRow.appendChild(h('span', 'today-fact-label', '昨夜較 7 日均值'));
           deltaRow.appendChild(factValueNode(data.hrv.delta_pct, function (v) { return fmtDelta(v, 1, '%'); }));
           loadBlock.appendChild(deltaRow);
         }
