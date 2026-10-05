@@ -4,6 +4,8 @@
     python -m src.main.python.api.app --db-path output/running_coach.db
     python -m src.main.python.api.app --db-path output/running_coach.db --host 0.0.0.0 --port 8000
 
+啟動後會等 server 就緒再自動用預設瀏覽器開啟 dashboard；不想開就加 `--no-browser`。
+
 ⚠️ 安全性：這個服務**沒有任何身分驗證**，也沒有 HTTPS。
     預設綁 127.0.0.1，只有這台電腦連得到。改成 `--host 0.0.0.0` 之後，
     **同一個區網內的任何裝置**（訪客的手機、共用 Wi-Fi 上的陌生人、
@@ -39,6 +41,10 @@
 from __future__ import annotations
 
 import argparse
+import socket
+import threading
+import time
+import webbrowser
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -58,6 +64,8 @@ DASHBOARD_ASSETS_DIR = (
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
+# 等 server 開始接受連線的上限；逾時就放棄開瀏覽器（server 照常跑）
+BROWSER_WAIT_TIMEOUT_SEC = 15.0
 
 
 def create_app(
@@ -104,6 +112,24 @@ def create_app(
     return app
 
 
+def _local_host(host: str) -> str:
+    """綁 0.0.0.0／:: 時本機仍要連 127.0.0.1，萬用位址本身不是可連線的目標。"""
+    return "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+
+
+def _open_browser_when_ready(url: str, host: str, port: int) -> None:
+    """背景輪詢 port，等 uvicorn 真的在聽了才開瀏覽器，避免開到連線失敗頁。"""
+    deadline = time.monotonic() + BROWSER_WAIT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                webbrowser.open(url)
+                return
+        except OSError:
+            time.sleep(0.3)
+    print(f"[warn] {BROWSER_WAIT_TIMEOUT_SEC:.0f} 秒內 server 未就緒，未自動開啟瀏覽器；請手動開 {url}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="啟動 Running Coach dashboard 的本機 API server。"
@@ -118,6 +144,11 @@ def main() -> None:
         ),
     )
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"連接埠，預設 {DEFAULT_PORT}")
+    ap.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="啟動後不要自動開啟瀏覽器（預設會在 server 就緒後開啟 dashboard）",
+    )
     args = ap.parse_args()
 
     if not Path(args.db_path).exists():
@@ -130,6 +161,16 @@ def main() -> None:
         )
 
     import uvicorn
+
+    local_host = _local_host(args.host)
+    url = f"http://{local_host}:{args.port}/"
+    print(f"Dashboard：{url}")
+    if not args.no_browser:
+        threading.Thread(
+            target=_open_browser_when_ready,
+            args=(url, local_host, args.port),
+            daemon=True,
+        ).start()
 
     uvicorn.run(create_app(args.db_path), host=args.host, port=args.port)
 
