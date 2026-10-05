@@ -92,7 +92,7 @@
   // default_hidden），不再於前端寫死一份。見 wellnessMetricDefs() 與
   // FALLBACK_WELLNESS_METRICS（meta 請求失敗時的最小降級路徑）。
   var FALLBACK_WELLNESS_METRICS = [
-    { key: 'hrv_ms', label: 'HRV', unit: 'ms', decimals: 1, format: 'number', default_hidden: false },
+    { key: 'hrv_ms', label: 'HRV 夜間均值', unit: 'ms', decimals: 1, format: 'number', default_hidden: false },
     { key: 'resting_hr_bpm', label: '靜止心率', unit: 'bpm', decimals: 0, format: 'number', default_hidden: false },
     { key: 'spo2_pct', label: '血氧', unit: '%', decimals: 0, format: 'number', default_hidden: false },
     { key: 'sleep_score', label: '睡眠分數', unit: '', decimals: 0, format: 'number', default_hidden: false },
@@ -1044,7 +1044,7 @@
       .filter(function (v) { return typeof v === 'number' && isFinite(v); });
     if (hrvVals.length > 0) {
       strip.appendChild(kpiCard({
-        label: 'HRV',
+        label: 'HRV 夜間均值',
         value: C.formatNumber(hrvVals[hrvVals.length - 1], 0),
         unit: 'ms',
         note: '近 30 天走勢',
@@ -1379,7 +1379,7 @@
       '訓練日 ' + impact.training_date + ' → 隔天 ' + nextDay.date + '（數值為隔天減訓練當天）'));
 
     var grid = h('div', 'stat-grid stat-grid-3');
-    var hrvCard = statCard('HRV 變化',
+    var hrvCard = statCard('HRV 夜間均值變化',
       fmtDelta(nextDay.hrv_delta, 1, ' ms'),
       nextDay.hrv_delta_pct === null || nextDay.hrv_delta_pct === undefined
         ? '' : fmtDelta(nextDay.hrv_delta_pct, 1, '%'));

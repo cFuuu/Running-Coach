@@ -64,7 +64,7 @@ CUSTOM_RANGE_PREFIX = "custom:"
 WellnessMetricDef = tuple[str, str, str, int, str]  # (column, label, unit, decimals, format)
 
 WELLNESS_METRIC_DEFS: tuple[WellnessMetricDef, ...] = (
-    ("hrv_ms", "HRV", "ms", 1, "number"),
+    ("hrv_ms", "HRV 夜間均值", "ms", 1, "number"),
     ("resting_hr_bpm", "靜止心率", "bpm", 0, "number"),
     ("spo2_pct", "血氧", "%", 0, "number"),
     ("sleep_score", "睡眠分數", "", 0, "number"),

@@ -291,7 +291,7 @@
   // 動態組出 wellness_metric_defs，避免這裡與 METRIC_DEFS 重複維護一份
   // 又和後端結構脫節。
   var WELLNESS_METRIC_LABELS = {
-    hrv_ms: { label: 'HRV', unit: 'ms', format: 'number' },
+    hrv_ms: { label: 'HRV 夜間均值', unit: 'ms', format: 'number' },
     resting_hr_bpm: { label: '靜止心率', unit: 'bpm', format: 'number' },
     spo2_pct: { label: '血氧', unit: '%', format: 'number' },
     sleep_score: { label: '睡眠分數', unit: '', format: 'number' },
