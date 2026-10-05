@@ -150,6 +150,7 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 # 跑測試
 "$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
 
-# 啟動 Dashboard API（區網存取，無身分驗證，勿對外網開放）
+# 啟動 Dashboard API（區網存取，無身分驗證，勿對外網開放；就緒後自動開瀏覽器）
+scripts/dashboard.cmd                  # 捷徑：同下行，額外參數原樣轉傳
 "$RC" -m src.main.python.api.app --db-path output/running_coach.db --host 0.0.0.0 --port 8000
 ```
