@@ -81,14 +81,14 @@ def get_vdot_candidate_activities(
     只回傳 distance_km 落在某個標準距離容忍範圍內的活動（見模組頂端說明）；
     距離對不上任何已知類別的活動不是有效候選，不列入回傳清單。
 
-    填了 race_official_time_sec（比賽官方成績）的場次，配速改用「官方成績 ÷
-    標準距離」——手錶的 avg_pace 會被忘了按停等操作污染（實例：3K 測驗官方
-    13:59，手錶多記了 27 秒與 70 公尺）。
+    比賽場次（workout_type='race'）的距離類別與配速改由 race_result() 決定，
+    見該函式說明。
     """
     rows = conn.execute(
         """
-        SELECT date(started_at) AS activity_date, distance_km, avg_hr_bpm,
-               avg_pace_sec_per_km, workout_type, race_official_time_sec
+        SELECT date(started_at) AS activity_date, distance_km, duration_sec, avg_hr_bpm,
+               avg_pace_sec_per_km, workout_type, race_official_time_sec,
+               race_official_distance_km
         FROM activities
         WHERE athlete_id = ? AND distance_km IS NOT NULL
         ORDER BY started_at
@@ -98,22 +98,56 @@ def get_vdot_candidate_activities(
 
     candidates: list[dict[str, Any]] = []
     for row in rows:
-        distance_category = _distance_category_for_km(row["distance_km"])
-        if distance_category is None:
-            continue
-        pace = row["avg_pace_sec_per_km"]
-        if row["race_official_time_sec"]:
-            pace = row["race_official_time_sec"] / _STANDARD_DISTANCES_KM[distance_category]
+        is_race = row["workout_type"] == _RACE_WORKOUT_TYPE
+        if is_race:
+            result = race_result(row)
+            if result is None:
+                continue
+            distance_category, pace = result["distance_category"], result["pace_sec_per_km"]
+        else:
+            distance_category = _distance_category_for_km(row["distance_km"])
+            if distance_category is None:
+                continue
+            pace = row["avg_pace_sec_per_km"]
         candidates.append(
             {
                 "date": datetime.date.fromisoformat(row["activity_date"]),
                 "distance_category": distance_category,
-                "is_max_effort": row["workout_type"] == _RACE_WORKOUT_TYPE,
+                "is_max_effort": is_race,
                 "avg_hr_bpm": row["avg_hr_bpm"],
                 "pace_sec_per_km": pace,
             }
         )
     return candidates
+
+
+def race_result(row: Any) -> dict[str, Any] | None:
+    """一場比賽的成績：距離類別、完賽時間、配速。VDOT 候選與儀表板最佳成績
+    共用這一份規則，兩邊對同一場比賽的判讀必須一致。
+
+    row 需有 distance_km、duration_sec、race_official_time_sec、
+    race_official_distance_km 四個欄位（sqlite3.Row 或 dict 皆可）。
+
+    - 距離類別：有官方距離用官方距離，否則用手錶距離（舊錶 GPS 偏差會歸錯類）
+    - 時間：有官方成績用官方成績，否則用手錶 duration_sec（忘了按停等操作
+      會污染手錶時間，實例：3K 測驗官方 13:59，手錶記 14:26）
+    - 配速：一律「時間 ÷ 標準距離」，不用手錶的 avg_pace——比賽距離是固定的，
+      手錶多量的 GPS 距離不該讓配速看起來變快
+
+    距離對不上任何標準類別、或沒有時間時回傳 None。
+    """
+    category = _distance_category_for_km(
+        row["race_official_distance_km"] or row["distance_km"]
+    )
+    time_sec = row["race_official_time_sec"] or row["duration_sec"]
+    if category is None or not time_sec:
+        return None
+    return {
+        "distance_category": category,
+        "time_sec": time_sec,
+        "pace_sec_per_km": time_sec / _STANDARD_DISTANCES_KM[category],
+        "official": bool(row["race_official_time_sec"]),
+    }
 
 
 def _get_hr_profile(

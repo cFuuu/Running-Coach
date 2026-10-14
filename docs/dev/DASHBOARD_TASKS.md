@@ -231,6 +231,38 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 - delta 一律是「隔天數值 − 訓練當天數值」，**只回傳數字，不做「這樣好不好」的判斷**（呼應使用者「只呈現數據，不做解讀」的要求）
 - 定義只看**隔天**（不做兩天/週均），這是 v1 的簡化選擇；之後若要改定義，只需改這支查詢函式，不涉及資料遷移
 
+### `GET /api/overview?range=90d&today=YYYY-MM-DD&athlete_id=1`（2026-10-14 新增）
+
+總覽頁（`#/overview`）用。ATL/CTL/TSB **不在這裡**，前端沿用 `/api/training-load`。
+
+```json
+{
+  "range": "90d", "start_date": "2026-07-17", "end_date": "2026-10-14", "available": true,
+  "sessions": { "total": 26, "effective": 25,
+                "criteria": { "min_duration_sec": 600, "min_distance_km": 1.0, "requires_hr": true } },
+  "this_week": { "week_start": "2026-10-12", "week_end": "2026-10-18", "done_km": 12.2,
+                 "planned_km": 35.5, "planned_without_distance": 2 },
+  "weekly_intensity": { "tiers": { "low": [0, 1, 2], "mid": [3], "high": [4, 5] },
+                        "weeks": [{ "week_start": "2026-10-05", "partial": false, "low_km": 27.5,
+                                    "mid_km": 3.1, "high_km": 0.0, "unknown_km": 0.0, "total_km": 30.6 }] },
+  "hr_zones": { "available": true, "zones": [{ "zone": 1, "seconds": 3006, "pct": 3.5 }],
+                "total_seconds": 87114, "sessions_counted": 26 },
+  "vdot": { "race": { "value": { "value": 39.8, "source": "…", "confidence": { "level": "high", "biases": [] } },
+                      "basis": { "date": "2026-10-08", "distance": "3K" }, "reason": null },
+            "garmin_reference": { "for_display_only": true, "note": "…", "as_of": "2026-10-14",
+                                  "predictions": [{ "distance": "5K", "time_sec": 1355, "vdot": 42.9 }] } },
+  "personal_bests": [{ "distance": "3k", "label": "3K",
+                       "records": [{ "id": 1098, "date": "2026-10-08", "title": "…", "distance_km": 3.07,
+                                     "time_sec": 839, "pace_sec_per_km": 280, "official": true }] }]
+}
+```
+- **兩種錨點**：有效訓練／週跑量／心率區間走 `range`（錨定資料庫最新日）；`this_week` 與 `vdot` 錨定真實今天（`today` 可覆寫）。週一律 ISO 週（週一起算）
+- **有效訓練**＝資料品質篩選（≥10 分鐘、≥1 km、有心率），**不是**「練得好不好」
+- **強度分層**用手錶的 Garmin %HRR 五區，**不可**套 Daniels 的區名；沒有心率區間的場次整場算 `unknown_km`，不猜
+- `hr_zones.pct` 分母只含 Z1~Z5（API 同步來源沒有 Z0）
+- **VDOT 只用 `workout_type='race'` 的全力成績**，不走心率換算（該路徑會嚴重高估：一場輕鬆 10K 推出 48.5）。`value` 為 null 時看 `reason`。`garmin_reference` 與 `/api/today` 的 HRV 同一形狀，判斷層不讀
+- **最佳成績**不吃 range；有 `activities.race_official_time_sec`（官方成績）時優先採用，`official` 標明
+
 ---
 
 ## Task A：後端查詢層 + FastAPI

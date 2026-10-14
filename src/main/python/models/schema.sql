@@ -124,6 +124,10 @@ CREATE TABLE IF NOT EXISTS activities (
     -- 比賽距離（3K／5K／10K／半馬／全馬）。最佳成績與 VDOT 有此值時優先採用。
     -- 同步程式不寫入此欄。
     race_official_time_sec  INTEGER,
+    -- 比賽的官方距離（公里），僅在手錶距離偏離到歸錯距離類別時才填
+    -- （例：2019 年舊錶 GPS 把半馬記成 22.30km，超出半馬容忍範圍）。
+    -- 距離類別判斷優先用此值；與上一欄同樣不由同步程式寫入。
+    race_official_distance_km REAL,
     -- NULL distance_km bypasses this UNIQUE constraint (SQL: NULL != NULL) — fine today since
     -- every known activity_type populates distance_km (0 for strength), but a future GPS-less
     -- type with a NULL distance would silently skip dedup.

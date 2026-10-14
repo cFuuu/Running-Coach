@@ -1696,9 +1696,9 @@ def _race_vdot(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) 
     """只用標記為比賽（workout_type='race'）的全力成績推 VDOT。
 
     刻意**不傳 max_hr_bpm** 給 vdot_engine：沒有 HRmax，非全力場次就無法經
-    心率換算成候選（engine 的既有行為），等於只剩比賽成績。心率換算路徑
-    會把輕鬆跑換算成遠高於實力的等效配速（2026-10-14 實測：一場 146bpm 的
-    輕鬆 10K 推出 VDOT 48.5，同期比賽成績僅 34~38），總覽不採用。
+    心率換算成候選（engine 的既有行為），等於只剩比賽成績。心率換算是次最大
+    強度推估，即使 2026-10-14 修正公式後仍系統性偏高（實測一場 146bpm 的輕鬆
+    10K 推出 44.6，同期 3K 全力成績 39.8；修正前是 48.5），總覽不採用。
     """
     candidates = [
         c for c in training_plan_generator.get_vdot_candidate_activities(conn, athlete_id)
@@ -1724,6 +1724,8 @@ def _race_vdot(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) 
             ),
             bias_codes=["vdot_race_stale"] if basis["confidence"] == "low" else [],
         ),
+        # 供前端顯示「依據哪一場」，不必去解析 source 字串
+        "basis": {"date": basis["activity"]["date"].isoformat(), "distance": label},
         "reason": None,
     }
 
@@ -1770,9 +1772,6 @@ def _garmin_vdot_reference(
     }
 
 
-# 最佳成績每個距離列出幾場（第 1 名為最佳，其餘為次佳紀錄）
-PERSONAL_BEST_TOP_N = 3
-
 # 由短到長的顯示順序
 _PERSONAL_BEST_ORDER = ("3k", "5k", "10k", "half_marathon", "marathon")
 
@@ -1780,52 +1779,47 @@ _PERSONAL_BEST_ORDER = ("3k", "5k", "10k", "half_marathon", "marathon")
 def _personal_bests(conn: sqlite3.Connection, athlete_id: int) -> list[dict]:
     """標記為比賽（workout_type='race'）的跑步，依標準距離分組取最快幾場。
 
-    不吃 range：最佳成績是生涯紀錄。距離歸類沿用 VDOT 候選的同一套容忍
-    範圍（training_plan_generator），不另訂一份——兩邊對「這場算不算 10K」
-    的判斷必須一致。
-
-    時間優先用 race_official_time_sec（官方成績，配速以標準距離換算），
-    沒填才用手錶的 duration_sec 與 avg_pace；`official` 標明是哪一種。
+    回傳每個距離的**全部**比賽、由快到慢；畫面上預設只展開前幾名由前端決定。
+    不吃 range：最佳成績是生涯紀錄。每場的距離類別／時間／配速一律交給
+    training_plan_generator.race_result()——與 VDOT 候選同一份規則，兩邊對
+    「這場算不算半馬、成績幾分」的判讀必須一致。`official` 標明時間是否為
+    官方成績。
     """
     placeholders, running_types = _running_type_filter()
     rows = conn.execute(
         f"""
         SELECT id, date(started_at) AS activity_date, title, distance_km,
-               duration_sec, avg_pace_sec_per_km, race_official_time_sec
+               duration_sec, race_official_time_sec, race_official_distance_km
         FROM activities
         WHERE athlete_id = ? AND activity_type IN ({placeholders})
           AND workout_type = 'race'
-          AND COALESCE(race_official_time_sec, duration_sec) IS NOT NULL
-        ORDER BY COALESCE(race_official_time_sec, duration_sec)
         """,
         (athlete_id, *running_types),
     ).fetchall()
 
     grouped: dict[str, list[dict]] = {}
     for row in rows:
-        category = training_plan_generator._distance_category_for_km(row["distance_km"])
-        if category is None:
+        result = training_plan_generator.race_result(row)
+        if result is None:
             continue
-        official = row["race_official_time_sec"]
-        grouped.setdefault(category, []).append(
+        grouped.setdefault(result["distance_category"], []).append(
             {
                 "id": row["id"],
                 "date": row["activity_date"],
                 "title": row["title"],
                 "distance_km": _round(row["distance_km"], 2),
-                "time_sec": official or row["duration_sec"],
-                "pace_sec_per_km": (
-                    round(official / vdot_engine._DISTANCE_KM[category])
-                    if official else row["avg_pace_sec_per_km"]
-                ),
-                "official": bool(official),
+                "time_sec": result["time_sec"],
+                "pace_sec_per_km": round(result["pace_sec_per_km"]),
+                "official": result["official"],
             }
         )
+    for records in grouped.values():
+        records.sort(key=lambda r: r["time_sec"])
     return [
         {
             "distance": category,
             "label": _DISTANCE_CATEGORY_LABEL[category],
-            "records": grouped[category][:PERSONAL_BEST_TOP_N],
+            "records": grouped[category],
         }
         for category in _PERSONAL_BEST_ORDER
         if category in grouped

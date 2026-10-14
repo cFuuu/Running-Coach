@@ -940,6 +940,8 @@ class TestOverview(DashboardQueryTestCase):
         self.assertIsNotNone(fact)
         self.assertIn("2026-03-09 10K", fact["source"])
         self.assertEqual(fact["confidence"]["level"], "high")
+        basis = self._overview()["vdot"]["race"]["basis"]
+        self.assertEqual(basis, {"date": "2026-03-09", "distance": "10K"})
 
     def test_vdot_accepts_3k_time_trial(self):
         self._add_run("2026-03-01T07:00:00", 3.05, 840)
@@ -1008,11 +1010,32 @@ class TestOverview(DashboardQueryTestCase):
         )
         self.assertEqual(self._overview()["vdot"]["race"]["value"]["value"], with_official)
 
-    def test_personal_bests_capped_at_top_n(self):
-        for i in range(queries.PERSONAL_BEST_TOP_N + 2):
-            self._add_run(f"2025-0{i + 1}-01T07:00:00", 5.0, 1500 + i * 10)
+    def test_official_distance_rescues_gps_drifted_race(self):
+        # 舊錶 GPS 把半馬記成 22.30km（超出半馬 ±1.05km 容忍），沒填官方距離就不列
+        run_id = self._add_run("2025-03-01T07:00:00", 22.30, 10214)
+        self.assertEqual(self._overview()["personal_bests"], [])
+        self.conn.execute(
+            "UPDATE activities SET race_official_distance_km = 21.0975 WHERE id = ?", (run_id,)
+        )
+        pb = self._overview()["personal_bests"][0]
+        self.assertEqual(pb["label"], "半馬")
+        record = pb["records"][0]
+        self.assertEqual(record["time_sec"], 10214)
+        self.assertFalse(record["official"])  # 時間仍是手錶紀錄
+        self.assertEqual(record["pace_sec_per_km"], round(10214 / 21.0975))
+
+    def test_race_pace_uses_standard_distance_not_gps(self):
+        # 手錶 10.11km / 52:30：配速應為 52:30 ÷ 10km = 5:15，而非手錶的 5:12
+        self._add_run("2025-11-23T07:00:00", 10.11, 3150)
+        record = self._overview()["personal_bests"][0]["records"][0]
+        self.assertEqual(record["pace_sec_per_km"], 315)
+
+    def test_personal_bests_return_every_race_fastest_first(self):
+        times = [1530, 1500, 1550, 1510, 1520]
+        for i, t in enumerate(times):
+            self._add_run(f"2025-0{i + 1}-01T07:00:00", 5.0, t)
         records = self._overview()["personal_bests"][0]["records"]
-        self.assertEqual(len(records), queries.PERSONAL_BEST_TOP_N)
+        self.assertEqual([r["time_sec"] for r in records], sorted(times))
 
     def test_no_athlete_returns_unavailable(self):
         empty_conn = get_connection(":memory:")
