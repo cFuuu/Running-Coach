@@ -1699,14 +1699,14 @@ def _this_week_volume(
     }
 
 
-# 「近期跑量」的滾動視窗天數（2026-10-14 Fu 指定看近 2 週）
-RECENT_VOLUME_DAYS = 14
+# 「近期跑量」的滾動視窗天數（2026-10-14 Fu 指定看近 1 週）
+RECENT_VOLUME_DAYS = 7
 
 
 def _recent_volume(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) -> dict:
     """近 RECENT_VOLUME_DAYS 天（含今天）跑量，與再往前同長度的一段對照。
 
-    用滾動天數而非 ISO 週：「近 2 週」問的是最近這段時間，不該因為今天是
+    用滾動天數而非 ISO 週：「近 1 週」問的是最近 7 天，不該因為今天是
     週三就只算到上週日。兩段都只回傳數字，增減幅度的好壞不在這裡判斷。
     """
     placeholders, running_types = _running_type_filter()
@@ -1735,10 +1735,11 @@ def _recent_volume(conn: sqlite3.Connection, athlete_id: int, today: datetime.da
     }
 
 
-# Garmin 手錶五區的標準名稱（Garmin Connect 介面用語），中文為 Fu 指定譯名
+# 手錶五區的顯示名稱（英文沿用 Garmin Connect 用語，Z2 依 Fu 指定為 Easy run），
+# 中文為 Fu 指定譯名
 HR_ZONE_NAMES: dict[int, tuple[str, str]] = {
     1: ("熱身", "Warm Up"),
-    2: ("輕鬆", "Easy"),
+    2: ("輕鬆", "Easy run"),
     3: ("有氧", "Aerobic"),
     4: ("閾值", "Threshold"),
     5: ("最大", "Maximum"),
@@ -1950,6 +1951,39 @@ def _personal_bests(races: list[dict]) -> list[dict]:
     ]
 
 
+def _data_freshness(conn: sqlite3.Connection, athlete_id: int) -> dict:
+    """最後更新時間：資料最後一次寫入（同步）的時刻，與最新一筆活動／身體數據。
+
+    last_synced_at 取各同步資料表 fetched_at 的最大值。⚠️ fetched_at 存的是
+    **不帶時區的 UTC**（garmin_sync_runner 以 datetime.now(timezone.utc) 去掉
+    tzinfo 寫入），這裡補上 "Z" 標成 UTC，由前端換算成當地時間顯示——
+    直接當當地時間會差 8 小時。activity_latest_at 是活動的 started_at，
+    本來就是當地時間，原樣回傳。
+    """
+    synced = conn.execute(
+        """
+        SELECT MAX(t) AS t FROM (
+            SELECT MAX(fetched_at) AS t FROM activities WHERE athlete_id = ?
+            UNION ALL SELECT MAX(fetched_at) FROM daily_wellness WHERE athlete_id = ?
+            UNION ALL SELECT MAX(fetched_at) FROM training_status WHERE athlete_id = ?
+            UNION ALL SELECT MAX(fetched_at) FROM performance_metrics WHERE athlete_id = ?
+        )
+        """,
+        (athlete_id,) * 4,
+    ).fetchone()["t"]
+    activity = conn.execute(
+        "SELECT MAX(started_at) AS t FROM activities WHERE athlete_id = ?", (athlete_id,)
+    ).fetchone()["t"]
+    wellness = conn.execute(
+        "SELECT MAX(date) AS d FROM daily_wellness WHERE athlete_id = ?", (athlete_id,)
+    ).fetchone()["d"]
+    return {
+        "last_synced_at": synced[:19] + "Z" if synced else None,
+        "activity_latest_at": activity[:16] if activity else None,
+        "wellness_latest": wellness,
+    }
+
+
 def get_overview(
     conn: sqlite3.Connection,
     athlete_id: int | None = None,
@@ -1996,15 +2030,7 @@ def get_overview(
                 "requires_hr": True,
             },
         },
-        "data_freshness": {
-            "activity_latest": conn.execute(
-                "SELECT MAX(date(started_at)) AS d FROM activities WHERE athlete_id = ?",
-                (resolved,),
-            ).fetchone()["d"],
-            "wellness_latest": conn.execute(
-                "SELECT MAX(date) AS d FROM daily_wellness WHERE athlete_id = ?", (resolved,)
-            ).fetchone()["d"],
-        },
+        "data_freshness": _data_freshness(conn, resolved),
         "this_week": _this_week_volume(conn, resolved, today),
         "recent_volume": _recent_volume(conn, resolved, today),
         "weekly_intensity": {

@@ -1069,18 +1069,25 @@ class TestOverview(DashboardQueryTestCase):
         )
         self.assertEqual((week["sessions"], week["zone_sessions_counted"]), (1, 1))
 
-    def test_recent_volume_rolling_two_weeks(self):
+    def test_recent_volume_rolling_one_week(self):
         recent = self._overview()["recent_volume"]
-        # 02-25~03-10：100(10) + 200(9) + 300(5)；再往前 02-11~02-24 沒有跑步
-        self.assertEqual((recent["start"], recent["end"]), ("2026-02-25", "2026-03-10"))
-        self.assertEqual(recent["km"], 24.0)
-        self.assertEqual(recent["previous_km"], 0.0)
+        # 03-04~03-10：100(10) + 200(9)；再往前 02-25~03-03：300(5)
+        self.assertEqual((recent["start"], recent["end"]), ("2026-03-04", "2026-03-10"))
+        self.assertEqual(recent["km"], 19.0)
+        self.assertEqual(recent["previous_km"], 5.0)
+
+    def test_data_freshness_marks_sync_time_as_utc(self):
+        f = self._overview()["data_freshness"]
+        # fixture 的 fetched_at 是 2026-03-10T00:00:00（UTC，無時區）
+        self.assertEqual(f["last_synced_at"], "2026-03-10T00:00:00Z")
+        self.assertEqual(f["activity_latest_at"], "2026-03-09T07:00")
+        self.assertEqual(f["wellness_latest"], "2026-03-10")
 
     def test_hr_zone_bounds_unavailable_without_watch_settings(self):
         bounds = self._overview()["hr_zone_bounds"]
         self.assertFalse(bounds["available"])
         self.assertEqual([z["name_en"] for z in bounds["zones"]],
-                         ["Warm Up", "Easy", "Aerobic", "Threshold", "Maximum"])
+                         ["Warm Up", "Easy run", "Aerobic", "Threshold", "Maximum"])
 
     def test_hr_zone_bounds_converted_to_bpm(self):
         self.conn.execute(
