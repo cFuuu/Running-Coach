@@ -102,6 +102,12 @@ _MARATHON_KM = _DISTANCE_KM["marathon"]
 # Daniels 訓練配速表的常見經驗區間（非逐一查表，屬簡化線性近似）：
 # 數值代表「該課種配速 = marathon_pace_sec_per_km * 係數」，係數 < 1 代表更快。
 # 每個課種給一組 (下界係數, 上界係數) 區間。
+#
+# 2026-10-14 Fu 決定**維持固定係數**，不改成 Daniels 的 %VO2max 反解法
+# （E 59–74%、T 83–88% 等）。對照（VDOT 40.2）：E 現行 6:11–6:43 vs Daniels
+# 5:50–6:58；T 4:53–5:06 vs 5:04–5:19。理由是固定係數較符合他目前的狀況；
+# VDOT 本身已於同日改為 Daniels 原版公式，兩件事各自獨立。
+
 _PACE_ZONE_FACTORS: dict[str, tuple[float, float]] = {
     "easy": (1.14, 1.24),
     "marathon": (0.98, 1.02),
