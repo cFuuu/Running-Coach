@@ -1720,7 +1720,7 @@ def _race_vdot(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) 
             round(result["vdot"], 1),
             source=(
                 f"{basis['activity']['date'].isoformat()} {label} 全力成績（標記為比賽）→ "
-                "Riegel 換算全馬等效時間 → Daniels VDOT 公式"
+                "Daniels VDOT 公式（實際距離與完賽時間）"
             ),
             bias_codes=["vdot_race_stale"] if basis["confidence"] == "low" else [],
         ),
@@ -1756,11 +1756,8 @@ def _garmin_vdot_reference(
         time_sec = row[column]
         if not time_sec:
             continue
-        # 用 engine 自己的距離表換回配速，確保與 project_to_marathon_time_sec() 互為反運算
-        pace = time_sec / vdot_engine._DISTANCE_KM[category]
-        vdot = vdot_engine.estimate_vdot(
-            vdot_engine.project_to_marathon_time_sec(category, pace)
-        )
+        # 與比賽成績同一條公式（Daniels 原版、用 engine 的標準距離）
+        vdot = vdot_engine.vdot_from_race(vdot_engine._DISTANCE_KM[category], time_sec)
         predictions.append({"distance": label, "time_sec": time_sec, "vdot": round(vdot, 1)})
     if not predictions:
         return None

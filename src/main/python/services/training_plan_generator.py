@@ -21,7 +21,7 @@ is_max_effort 欄位，本模組在查詢時轉換：
       路線繞路，但不到會把 10K 誤判成半馬的程度）。distance_km 不落在任何
       已知距離容忍範圍內的活動，不是 VDOT 候選，直接排除（vdot_engine 對
       short_interval 這類無標準距離的類別本來就不支援 Riegel 推算，見
-      vdot_engine.project_to_marathon_time_sec()，故本模組也不嘗試映射它）。
+      vdot_engine.vdot_from_race()，故本模組也不嘗試映射它）。
     - is_max_effort：activities.workout_type='race'（人工標記的比賽記錄）
       視為全力程度；其餘一律 False，交由 vdot_engine 既有的心率強度換算
       路徑處理（缺心率則該筆活動不合格，被 select_candidate 排除）。

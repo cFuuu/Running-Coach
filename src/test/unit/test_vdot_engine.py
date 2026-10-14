@@ -11,7 +11,11 @@ from src.main.python.services.vdot_engine import (
     project_to_marathon_time_sec,
     running_vo2,
     select_candidate,
+    vdot_from_race,
 )
+
+# 與引擎 _DISTANCE_KM 一致的標準距離，測試用
+KM = {"3k": 3.0, "5k": 5.0, "10k": 10.0, "half_marathon": 21.0975, "marathon": 42.195}
 
 REFERENCE_DATE = datetime.date(2026, 8, 19)
 RESTING_HR = 60
@@ -129,15 +133,15 @@ class TestEstimateMaxEffortPace(unittest.TestCase):
         )
 
     def test_vdot_of_converted_pace_equals_vo2r_estimate(self):
-        """換算後的配速走完既有管線（Riegel → Daniels），VDOT 必須等於
-        %HRR≈%VO2R 推出的 VO2max——兩段公式互為反運算。"""
+        """換算後的配速代回 Daniels 公式，VDOT 必須等於 %HRR≈%VO2R 推出的
+        VO2max——兩段公式互為反運算。"""
         pace, hr = 360, 140
         hrr = (hr - RESTING_HR) / (190 - RESTING_HR)
         expected = 3.5 + (running_vo2(pace) - 3.5) / hrr
         for category in ("3k", "10k", "half_marathon"):
             with self.subTest(category=category):
                 converted = self._convert(pace, hr, category)
-                vdot = estimate_vdot(project_to_marathon_time_sec(category, converted))
+                vdot = vdot_from_race(KM[category], converted * KM[category])
                 self.assertAlmostEqual(vdot, expected, places=1)
 
     def test_lower_hr_at_same_pace_means_faster_equivalent(self):
@@ -155,7 +159,7 @@ class TestEstimateMaxEffortPace(unittest.TestCase):
         舊公式推出 VDOT 48.5。新公式仍會偏高（次最大推估的已知偏誤），
         但必須明顯低於舊值。"""
         converted = estimate_max_effort_pace(346, 146, 195, 56, "10k")
-        vdot = estimate_vdot(project_to_marathon_time_sec("10k", converted))
+        vdot = vdot_from_race(10.0, converted * 10.0)
         self.assertLess(vdot, 46)
         self.assertGreater(vdot, 38)
 
@@ -253,6 +257,26 @@ class TestProjectToMarathonTimeSec(unittest.TestCase):
     def test_short_interval_has_no_standard_distance_and_raises(self):
         with self.assertRaises(ValueError):
             project_to_marathon_time_sec("short_interval", 240)
+
+
+class TestVdotFromRace(unittest.TestCase):
+    def test_matches_published_daniels_table(self):
+        """Daniels' Running Formula 的 VDOT 40 列：5K 24:08、10K 50:03、
+        半馬 1:50:59、全馬 3:49:45——四個距離都應回推出 40（±0.1）。"""
+        for km, time_sec in [(5, 1448), (10, 3003), (21.0975, 6659), (42.195, 13785)]:
+            with self.subTest(km=km):
+                self.assertAlmostEqual(vdot_from_race(km, time_sec), 40, delta=0.1)
+
+    def test_pipeline_uses_actual_distance_not_riegel(self):
+        """半馬成績直接代公式，不先經 Riegel 換算全馬（2026-10-14 改為 Daniels 原版）。"""
+        pace = 7047 / 21.0975  # 1:57:27
+        result = estimate_vdot_and_paces(
+            [_activity(days_ago=30, distance_category="half_marathon", pace_sec_per_km=pace)],
+            reference_date=REFERENCE_DATE,
+        )
+        self.assertAlmostEqual(result["vdot"], vdot_from_race(21.0975, 7047), places=6)
+        via_riegel = estimate_vdot(project_to_marathon_time_sec("half_marathon", pace))
+        self.assertNotAlmostEqual(result["vdot"], via_riegel, places=1)
 
 
 class TestEstimateVdot(unittest.TestCase):

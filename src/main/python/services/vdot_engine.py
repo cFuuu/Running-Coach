@@ -25,10 +25,16 @@ VDOT 48.5（同期比賽成績僅 34~40）。修正兩處：
 2. **真實全力成績一律優先於換算候選**，代表性排序只在同一類內比較——原本
    換算後的長距離候選能壓過真實的短距離比賽，錯誤的換算因此直接主導結果
 
-VDOT／配速輸出——套用 Daniels VDOT 公式（Daniels & Gilbert, "Oxygen Power"）與
-Riegel 跨距離推算公式（指數 1.06）：先用 Riegel 公式把選中的基準成績換算到全馬
-距離的等效表現，再用 Daniels 的 VO2/%VO2max 迴歸公式反推 VDOT，最後依 VDOT
-對照 Daniels 訓練配速公式產出 Easy/Marathon/Tempo/Interval 各課種的配速區間。
+VDOT／配速輸出——套用 Daniels VDOT 公式（Daniels & Gilbert, "Oxygen Power"）：
+把選中的基準成績（實際距離與完賽時間）直接代入 VO2/%VO2max 迴歸公式反推
+VDOT（見 vdot_from_race），再依 VDOT 產出 Easy/Marathon/Tempo/Interval 各課種
+的配速區間。
+
+2026-10-14 改為 Daniels 原版：原本先用 Riegel（指數 1.06）把成績換算成全馬
+等效時間再代入公式。Daniels 的 %VO2max 式本身就以比賽時間描述耐力衰減，
+再疊一層 Riegel 是重複且互相不一致的假設（半馬 1:57:27 原版 37.1、經 Riegel
+36.6，距離越長差越多）。Riegel 只保留於 project_to_marathon_time_sec() 供
+全馬完賽時間推估，不再進 VDOT 計算。
 LSD 配速沿用 Easy 配速區間的下界（Daniels 對 LSD 沒有獨立公式，訓練上等同於
 較長的 Easy run）。
 """
@@ -147,8 +153,8 @@ def estimate_max_effort_pace(
     1. Daniels 攝氧成本式：該場配速 → 當時的 VO2
     2. %HRR ≈ %VO2R（ACSM 採用，Swain & Leutholtz 1997）：
            VO2max = VO2rest + (VO2 − VO2rest) / %HRR，VO2rest = 3.5
-    3. 把推估的 VO2max 當 VDOT，反解全馬時間，再用 Riegel 換回該距離的配速
-       ——讓後續「Riegel 推全馬 → Daniels 反推 VDOT」的既有管線得到同一個 VDOT
+    3. 把推估的 VO2max 當 VDOT，用 Daniels 公式反解該距離的完賽時間與配速
+       ——讓後續 vdot_from_race() 由這個配速得到同一個 VDOT
 
     已知偏誤：次最大強度推估對耐力訓練量少的跑者會**偏高**（體能測得出的
     有氧上限，比實際比賽跑得出的高）；HRmax／靜止心率的誤差也會直接放大到
@@ -163,10 +169,8 @@ def estimate_max_effort_pace(
     if hrr_pct <= 0:
         return None
     vo2max = _RESTING_VO2 + (running_vo2(pace_sec_per_km) - _RESTING_VO2) / hrr_pct
-    marathon_time_sec = _vdot_to_marathon_time_sec(vo2max)
     distance_km = _DISTANCE_KM[distance_category]
-    category_time_sec = marathon_time_sec / (_MARATHON_KM / distance_km) ** RIEGEL_EXPONENT
-    return category_time_sec / distance_km
+    return _vdot_to_race_time_sec(vo2max, distance_km) / distance_km
 
 
 def _resolve_effort(
@@ -194,7 +198,7 @@ def _resolve_effort(
 
     category = activity.get("distance_category")
     if not resting_hr_bpm or category not in _DISTANCE_KM:
-        # 換算需要靜止心率（%HRR）與明確距離（Riegel 換回該距離配速）
+        # 換算需要靜止心率（%HRR）與明確距離（反解該距離的配速）
         return False, None, False
     equivalent_pace = estimate_max_effort_pace(
         pace, avg_hr_bpm, max_hr_bpm, resting_hr_bpm, category
@@ -210,6 +214,8 @@ def project_to_marathon_time_sec(
 ) -> float:
     """用 Riegel 公式將任一距離的配速，推算至全馬距離的等效完賽時間（秒）。
 
+    僅供「全馬大概跑幾小時」的推估用；**不參與 VDOT 計算**（見模組說明）。
+
     T2 = T1 * (D2/D1)^RIEGEL_EXPONENT，D1/D2 為距離（公里）、T1/T2 為完賽時間。
     """
     distance_km = _DISTANCE_KM.get(distance_category)
@@ -221,23 +227,30 @@ def project_to_marathon_time_sec(
     return base_time_sec * (_MARATHON_KM / distance_km) ** RIEGEL_EXPONENT
 
 
-def estimate_vdot(marathon_time_sec: float) -> float:
-    """依全馬完賽時間（秒），用 Daniels VO2/%VO2max 迴歸公式反推 VDOT。
+def vdot_from_race(distance_km: float, time_sec: float) -> float:
+    """依一場全力成績（距離、完賽時間），用 Daniels VO2/%VO2max 迴歸公式反推 VDOT。
 
     採用 Daniels & Gilbert（"Oxygen Power"）給出的兩條迴歸公式：
         VO2 = -4.60 + 0.182258 * v + 0.000104 * v^2   （v：公尺/分鐘配速）
         %VO2max = 0.8 + 0.1894393 * e^(-0.012778*t) + 0.2989558 * e^(-0.1932605*t)
                                                                     （t：分鐘）
         VDOT = VO2 / %VO2max
+    第一式是該速度的攝氧成本，第二式是能持續 t 分鐘的最大攝氧比例
+    （比賽越久比例越低）。這就是 Daniels VDOT 表背後的公式。
     """
-    time_min = marathon_time_sec / 60.0
-    vo2 = running_vo2(marathon_time_sec / _MARATHON_KM)
+    time_min = time_sec / 60.0
+    vo2 = running_vo2(time_sec / distance_km)
     pct_vo2max = (
         0.8
         + 0.1894393 * pow(2.718281828459045, -0.012778 * time_min)
         + 0.2989558 * pow(2.718281828459045, -0.1932605 * time_min)
     )
     return vo2 / pct_vo2max
+
+
+def estimate_vdot(marathon_time_sec: float) -> float:
+    """vdot_from_race() 的全馬特例。"""
+    return vdot_from_race(_MARATHON_KM, marathon_time_sec)
 
 
 def compute_pace_zones(vdot: float) -> dict[str, dict[str, float]]:
@@ -264,16 +277,22 @@ def compute_pace_zones(vdot: float) -> dict[str, dict[str, float]]:
     return zones
 
 
-def _vdot_to_marathon_time_sec(vdot: float, _tolerance_sec: float = 0.5) -> float:
-    """estimate_vdot() 的反函式：給定 VDOT，二分搜尋對應的全馬完賽時間。
+def _vdot_to_marathon_time_sec(vdot: float) -> float:
+    return _vdot_to_race_time_sec(vdot, _MARATHON_KM)
 
-    Daniels 公式沒有 VDOT → 時間的封閉解析解，用二分搜尋在合理時間範圍
-    （90 分鐘～6 小時）內反解，因為 estimate_vdot() 對時間是嚴格遞減函式。
+
+def _vdot_to_race_time_sec(
+    vdot: float, distance_km: float, _tolerance_sec: float = 0.5
+) -> float:
+    """vdot_from_race() 的反函式：給定 VDOT 與距離，二分搜尋對應的完賽時間。
+
+    Daniels 公式沒有 VDOT → 時間的封閉解析解，用二分搜尋在合理配速範圍
+    （2:00～20:00/km）內反解，因為 vdot_from_race() 對時間是嚴格遞減函式。
     """
-    low_sec, high_sec = 90 * 60.0, 6 * 60 * 60.0
+    low_sec, high_sec = distance_km * 120.0, distance_km * 1200.0
     while high_sec - low_sec > _tolerance_sec:
         mid_sec = (low_sec + high_sec) / 2
-        mid_vdot = estimate_vdot(mid_sec)
+        mid_vdot = vdot_from_race(distance_km, mid_sec)
         if mid_vdot > vdot:
             # 時間越短、VDOT 越高——反解時間太短代表算出的 VDOT 偏高，要往長的方向找。
             low_sec = mid_sec
@@ -289,7 +308,7 @@ def estimate_vdot_and_paces(
     reference_date: datetime.date | None = None,
     resting_hr_bpm: float | None = None,
 ) -> dict[str, Any]:
-    """完整流程：挑選基準候選 → Riegel 跨距離推算 → Daniels VDOT → 各課種配速區間。
+    """完整流程：挑選基準候選 → Daniels VDOT（實際距離）→ 各課種配速區間。
 
     max_hr_source：沿用既有 athlete_profile.max_hr_source 語意
         （'watch_display'/'measured'/'age_formula'/'observed_from_data'），
@@ -326,20 +345,19 @@ def estimate_vdot_and_paces(
         }
 
     if candidate_result["distance_category"] not in _DISTANCE_KM:
-        # short_interval 等沒有明確標準距離的類別無法套用 Riegel 推算。
+        # short_interval 等沒有明確標準距離的類別無法代入 Daniels 公式。
         return {
             "available": False,
             "reason": (
                 f"選中的候選（{candidate_result['distance_category']}）"
-                "沒有明確的推算距離，無法套用 Riegel 公式換算至全馬"
+                "沒有明確的標準距離，無法代入 Daniels 公式"
             ),
         }
 
-    marathon_time_sec = project_to_marathon_time_sec(
-        candidate_result["distance_category"],
-        candidate_result["effective_pace_sec_per_km"],
+    distance_km = _DISTANCE_KM[candidate_result["distance_category"]]
+    vdot = vdot_from_race(
+        distance_km, candidate_result["effective_pace_sec_per_km"] * distance_km
     )
-    vdot = estimate_vdot(marathon_time_sec)
     pace_zones = compute_pace_zones(vdot)
 
     return {
