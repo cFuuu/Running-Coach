@@ -38,6 +38,8 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("activities", "min_temperature_c", "REAL"),
     ("activities", "max_temperature_c", "REAL"),
     ("activities", "hr_time_in_zone_json", "TEXT"),
+    # 2026-10-14：比賽／測驗的官方成績（見 schema.sql 註解）
+    ("activities", "race_official_time_sec", "INTEGER"),
     # 每日身體數據：HRV 基準線、短期負荷、睡眠階段、readiness 快照時點
     ("daily_wellness", "hrv_baseline_low_upper", "REAL"),
     ("daily_wellness", "hrv_baseline_balanced_low", "REAL"),

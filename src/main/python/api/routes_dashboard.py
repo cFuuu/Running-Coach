@@ -196,3 +196,20 @@ def read_training_load(
 ) -> dict:
     """訓練負荷面板：range 內每日 ATL/CTL/TSB 時間序列，各自帶信賴度。"""
     return queries.get_training_load(conn, athlete_id, _validate_range(range))
+
+
+@router.get("/overview")
+def read_overview(
+    range: str = RangeParam,
+    today: str | None = Query(
+        default=None, description="覆寫『今天』（本週跑量與 VDOT 的錨點），格式 YYYY-MM-DD"
+    ),
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """總覽頁：有效訓練數、本週跑量、強度堆疊週跑量、心率區間分佈、VDOT。
+
+    ATL/CTL/TSB 由前端另取 /api/training-load，這裡不重複輸出。
+    """
+    today_date = _parse_date_param(today, "today") if today else None
+    return queries.get_overview(conn, athlete_id, _validate_range(range), today_date)

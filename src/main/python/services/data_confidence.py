@@ -104,6 +104,11 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
         "（分母無配速），與 Friel/TrainingPeaks 的 Pa:HR decoupling 不是"
         "同一個量，後者的 5% 門檻不適用；實測本專案中位漂移即為 6.2%",
     ),
+    "vdot_race_stale": (
+        "low",
+        "VDOT 的基準比賽距今已超過 90 天（半馬／全馬放寬至 180 天才排除），"
+        "期間體能可能已有變化，數值反映的是當時而非現在的能力",
+    ),
     "strength_hr_missing": (
         "low",
         "該重訓活動無心率資料，強度以固定保守值 50% HRR 估算，"

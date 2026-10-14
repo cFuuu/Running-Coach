@@ -855,6 +855,172 @@ class TestTrainingLoad(DashboardQueryTestCase):
         self.assertEqual(result["series"], [])
 
 
+class TestOverview(DashboardQueryTestCase):
+    """fixture 的 30d 視窗（2026-02-09 ~ 2026-03-10）內有三場跑步：
+    100（03-09，10km，有心率與區間）、200（03-05，9km，有心率無區間）、
+    300（03-03，5km，無心率）。"""
+
+    TODAY = datetime.date(2026, 3, 10)
+
+    def _overview(self, **kwargs):
+        return queries.get_overview(self.conn, range_key="30d", today=self.TODAY, **kwargs)
+
+    def _mark_race(self, external_id):
+        self.conn.execute(
+            "UPDATE activities SET workout_type = 'race', workout_type_source = 'manual' "
+            "WHERE external_id = ?",
+            (external_id,),
+        )
+
+    def _add_run(self, started_at, distance_km, duration_sec, workout_type="race"):
+        cur = self.conn.execute(
+            """
+            INSERT INTO activities (athlete_id, activity_type, started_at, distance_km,
+                                    duration_sec, avg_pace_sec_per_km, workout_type,
+                                    source, fetched_at)
+            VALUES (?, 'running', ?, ?, ?, ?, ?, 'garmin_export', '2026-03-10T00:00:00')
+            """,
+            (self.athlete_id, started_at, distance_km, duration_sec,
+             round(duration_sec / distance_km), workout_type),
+        )
+        return cur.lastrowid
+
+    def test_effective_sessions_excludes_runs_without_hr(self):
+        sessions = self._overview()["sessions"]
+        self.assertEqual(sessions["total"], 3)
+        self.assertEqual(sessions["effective"], 2)  # 300 沒有心率
+
+    def test_weekly_intensity_splits_distance_by_zone_time(self):
+        weeks = {w["week_start"]: w for w in self._overview()["weekly_intensity"]["weeks"]}
+        # 100：Z0 300s + Z1 600s + Z2 1800s = 2700s 低強度、Z4 300s 高強度，共 3000s
+        self.assertEqual(weeks["2026-03-09"]["low_km"], 9.0)
+        self.assertEqual(weeks["2026-03-09"]["mid_km"], 0.0)
+        self.assertEqual(weeks["2026-03-09"]["high_km"], 1.0)
+        # 200、300 都沒有心率區間 → 整場算 unknown，不猜強度
+        self.assertEqual(weeks["2026-03-02"]["unknown_km"], 14.0)
+        self.assertEqual(weeks["2026-03-02"]["low_km"], 0.0)
+
+    def test_weekly_intensity_lists_every_iso_week_and_flags_partial(self):
+        weeks = self._overview()["weekly_intensity"]["weeks"]
+        self.assertEqual(weeks[0]["week_start"], "2026-02-09")  # 視窗起日剛好是週一
+        self.assertFalse(weeks[0]["partial"])
+        self.assertTrue(weeks[-1]["partial"])  # 03-09 那週被 03-10 截斷
+        empty = [w for w in weeks if w["week_start"] == "2026-02-16"][0]
+        self.assertEqual(empty["total_km"], 0.0)
+
+    def test_hr_zone_distribution_excludes_zone_zero_from_denominator(self):
+        zones = self._overview()["hr_zones"]
+        self.assertTrue(zones["available"])
+        pct = {z["zone"]: z["pct"] for z in zones["zones"]}
+        # 分母只有 Z1~Z5：600 + 1800 + 300 = 2700
+        self.assertEqual(pct, {1: 22.2, 2: 66.7, 3: 0.0, 4: 11.1, 5: 0.0})
+        self.assertEqual(zones["sessions_counted"], 1)
+
+    def test_this_week_uses_iso_week_anchored_on_today(self):
+        week = self._overview()["this_week"]
+        self.assertEqual(week["week_start"], "2026-03-09")
+        self.assertEqual(week["done_km"], 10.0)
+        self.assertEqual(week["planned_km"], 12.0)
+        self.assertEqual(week["planned_without_distance"], 0)
+
+    def test_this_week_without_plan_is_none_not_zero(self):
+        week = queries.get_overview(
+            self.conn, range_key="30d", today=datetime.date(2026, 3, 20)
+        )["this_week"]
+        self.assertIsNone(week["planned_km"])
+
+    def test_vdot_ignores_non_race_runs(self):
+        race = self._overview()["vdot"]["race"]
+        self.assertIsNone(race["value"])
+        self.assertIn("沒有標記為比賽", race["reason"])
+
+    def test_vdot_from_fresh_race(self):
+        self._mark_race("10000001")
+        fact = self._overview()["vdot"]["race"]["value"]
+        self.assertIsNotNone(fact)
+        self.assertIn("2026-03-09 10K", fact["source"])
+        self.assertEqual(fact["confidence"]["level"], "high")
+
+    def test_vdot_accepts_3k_time_trial(self):
+        self._add_run("2026-03-01T07:00:00", 3.05, 840)
+        fact = self._overview()["vdot"]["race"]["value"]
+        self.assertIn("3K", fact["source"])
+
+    def test_vdot_half_marathon_past_90_days_is_low_confidence(self):
+        self._add_run("2025-10-01T07:00:00", 21.2, 7200)  # 160 天前
+        fact = self._overview()["vdot"]["race"]["value"]
+        self.assertEqual(fact["confidence"]["level"], "low")
+        self.assertEqual(fact["confidence"]["biases"][0]["code"], "vdot_race_stale")
+
+    def test_vdot_stale_race_reports_reason(self):
+        self._add_run("2025-01-01T07:00:00", 10.0, 3000)
+        race = self._overview()["vdot"]["race"]
+        self.assertIsNone(race["value"])
+        self.assertIn("新鮮度", race["reason"])
+
+    def test_garmin_reference_is_display_only(self):
+        self.assertIsNone(self._overview()["vdot"]["garmin_reference"])
+        self.conn.execute(
+            """
+            INSERT INTO performance_metrics (athlete_id, date, race_predict_10k_sec,
+                                             source, fetched_at)
+            VALUES (?, '2026-03-08', 3000, 'garmin_mcp', '2026-03-08T00:00:00')
+            """,
+            (self.athlete_id,),
+        )
+        ref = self._overview()["vdot"]["garmin_reference"]
+        self.assertTrue(ref["for_display_only"])
+        self.assertEqual(ref["as_of"], "2026-03-08")
+        self.assertEqual([p["distance"] for p in ref["predictions"]], ["10K"])
+        # 10K 50:00 與「比賽 10K 50:00」推出的 VDOT 必須一致（同一條換算路徑）
+        self._mark_race("10000001")
+        race_vdot = self._overview()["vdot"]["race"]["value"]["value"]
+        self.assertEqual(ref["predictions"][0]["vdot"], race_vdot)
+
+    def test_personal_bests_group_by_distance_fastest_first(self):
+        self._mark_race("10000001")                                   # 10K 50:00
+        self._add_run("2025-06-01T07:00:00", 10.1, 3300)       # 10K 55:00
+        self._add_run("2025-05-01T07:00:00", 21.1, 7000)       # 半馬
+        self._add_run("2025-04-01T07:00:00", 15.0, 5000)       # 非標準距離，不列
+        self._add_run("2025-03-01T07:00:00", 5.0, 1400, workout_type="easy")  # 非比賽
+        pbs = self._overview()["personal_bests"]
+        self.assertEqual([p["label"] for p in pbs], ["10K", "半馬"])
+        self.assertEqual([r["time_sec"] for r in pbs[0]["records"]], [3000, 3300])
+        self.assertFalse(pbs[0]["records"][0]["official"])
+
+    def test_official_time_overrides_watch_time(self):
+        # 手錶 3.07km / 866s（忘了按停），官方成績 3K 839s
+        run_id = self._add_run("2026-03-01T07:00:00", 3.07, 866)
+        self.conn.execute(
+            "UPDATE activities SET race_official_time_sec = 839 WHERE id = ?", (run_id,)
+        )
+        overview = self._overview()
+        record = overview["personal_bests"][0]["records"][0]
+        self.assertEqual(record["time_sec"], 839)
+        self.assertEqual(record["pace_sec_per_km"], 280)  # 839 / 3.0
+        self.assertTrue(record["official"])
+        # VDOT 也用官方成績：比照一場剛好 3.0km / 839s 的紀錄
+        with_official = overview["vdot"]["race"]["value"]["value"]
+        self.conn.execute(
+            "UPDATE activities SET race_official_time_sec = NULL, distance_km = 3.0, "
+            "duration_sec = 839, avg_pace_sec_per_km = 280 WHERE id = ?",
+            (run_id,),
+        )
+        self.assertEqual(self._overview()["vdot"]["race"]["value"]["value"], with_official)
+
+    def test_personal_bests_capped_at_top_n(self):
+        for i in range(queries.PERSONAL_BEST_TOP_N + 2):
+            self._add_run(f"2025-0{i + 1}-01T07:00:00", 5.0, 1500 + i * 10)
+        records = self._overview()["personal_bests"][0]["records"]
+        self.assertEqual(len(records), queries.PERSONAL_BEST_TOP_N)
+
+    def test_no_athlete_returns_unavailable(self):
+        empty_conn = get_connection(":memory:")
+        self.addCleanup(empty_conn.close)
+        result = queries.get_overview(empty_conn, range_key="30d", today=self.TODAY)
+        self.assertFalse(result["available"])
+
+
 class TestNoFastapiDependency(unittest.TestCase):
     def test_query_layer_does_not_import_fastapi(self):
         """查詢層必須維持純粹，才能在沒有 web 框架的情境下重用（也才好測）。

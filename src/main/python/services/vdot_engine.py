@@ -47,12 +47,15 @@ LONG_DISTANCE_FRESHNESS_DAYS = 180
 
 # 距離代表性排序表：數字越小代表性越高，優先被選中。
 # 對應 PLAN.md §5.5：全馬/半馬 > 10K > 5K > 短間歇。
+# 3K 於 2026-10-14 補入（Fu 的跑團 3K 速度測試），代表性排在 5K 之後：
+# 距離越短，Riegel 外推到全馬的誤差越大。
 _DISTANCE_RANK: dict[str, int] = {
     "marathon": 0,
     "half_marathon": 1,
     "10k": 2,
     "5k": 3,
-    "short_interval": 4,
+    "3k": 4,
+    "short_interval": 5,
 }
 
 # marathon / half_marathon 屬於「長距離」候選，套用寬鬆新鮮度門檻；
@@ -80,6 +83,7 @@ _DISTANCE_KM: dict[str, float] = {
     "half_marathon": 21.0975,
     "10k": 10.0,
     "5k": 5.0,
+    "3k": 3.0,
     # 短間歇沒有統一距離，Riegel 推算不適用短間歇（見 project_to_marathon 的檢查）。
 }
 

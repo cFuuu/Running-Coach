@@ -51,6 +51,7 @@ _STANDARD_DISTANCES_KM: dict[str, float] = {
     "half_marathon": 21.0975,
     "10k": 10.0,
     "5k": 5.0,
+    "3k": 3.0,
 }
 
 # 反推 distance_category 時的容忍誤差比例（相對標準距離）。
@@ -81,11 +82,15 @@ def get_vdot_candidate_activities(
 
     只回傳 distance_km 落在某個標準距離容忍範圍內的活動（見模組頂端說明）；
     距離對不上任何已知類別的活動不是有效候選，不列入回傳清單。
+
+    填了 race_official_time_sec（比賽官方成績）的場次，配速改用「官方成績 ÷
+    標準距離」——手錶的 avg_pace 會被忘了按停等操作污染（實例：3K 測驗官方
+    13:59，手錶多記了 27 秒與 70 公尺）。
     """
     rows = conn.execute(
         """
         SELECT date(started_at) AS activity_date, distance_km, avg_hr_bpm,
-               avg_pace_sec_per_km, workout_type
+               avg_pace_sec_per_km, workout_type, race_official_time_sec
         FROM activities
         WHERE athlete_id = ? AND distance_km IS NOT NULL
         ORDER BY started_at
@@ -98,13 +103,16 @@ def get_vdot_candidate_activities(
         distance_category = _distance_category_for_km(row["distance_km"])
         if distance_category is None:
             continue
+        pace = row["avg_pace_sec_per_km"]
+        if row["race_official_time_sec"]:
+            pace = row["race_official_time_sec"] / _STANDARD_DISTANCES_KM[distance_category]
         candidates.append(
             {
                 "date": datetime.date.fromisoformat(row["activity_date"]),
                 "distance_category": distance_category,
                 "is_max_effort": row["workout_type"] == _RACE_WORKOUT_TYPE,
                 "avg_hr_bpm": row["avg_hr_bpm"],
-                "pace_sec_per_km": row["avg_pace_sec_per_km"],
+                "pace_sec_per_km": pace,
             }
         )
     return candidates

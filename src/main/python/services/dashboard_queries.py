@@ -26,6 +26,8 @@ from typing import Any
 from src.main.python.services import fit_parser
 from src.main.python.services import plan_reconciliation
 from src.main.python.services import training_load_queries
+from src.main.python.services import training_plan_generator
+from src.main.python.services import vdot_engine
 from src.main.python.services.activity_types import RUNNING_ACTIVITY_TYPES
 from src.main.python.services import garmin_export_parser as parser
 from src.main.python.services.readiness import DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS
@@ -1498,3 +1500,389 @@ def get_training_load(
         )
 
     return {**window, "series": series}
+
+
+# --------------------------------------------------------------------------
+# /api/overview
+# --------------------------------------------------------------------------
+
+# 「有效訓練」的篩選條件（2026-10-14 Fu 拍板）。意思是「資料品質足以拿來分析
+# 的場次」，**不是**「練得好不好」——後者要對照課表，屬 session_quality 的範疇。
+# 排除的是手錶誤觸、起跑就停、沒戴心率的場次。
+EFFECTIVE_SESSION_MIN_DURATION_SEC = 600
+EFFECTIVE_SESSION_MIN_DISTANCE_KM = 1.0
+
+# 強度分層：心率區間 → 低／中／高。區間沿用 Garmin 手錶上設定的 Z1~Z5
+# （%HRR 五區），**不是** Daniels 的配速區，不可套上「馬拉松區」「閾值區」
+# 之類的名稱。Z0（低於 Z1 的暖身／停等時間）歸入低強度。
+INTENSITY_TIER_ZONES: dict[str, tuple[int, ...]] = {
+    "low": (HR_ZONE_BELOW_FIRST, 1, 2),
+    "mid": (3,),
+    "high": (4, 5),
+}
+
+# VDOT 對照用的 Garmin 完賽預測欄位 → (vdot_engine 距離類別, 顯示名稱)
+_GARMIN_RACE_PREDICTIONS: tuple[tuple[str, str, str], ...] = (
+    ("race_predict_5k_sec", "5k", "5K"),
+    ("race_predict_10k_sec", "10k", "10K"),
+    ("race_predict_half_sec", "half_marathon", "半馬"),
+    ("race_predict_marathon_sec", "marathon", "全馬"),
+)
+_DISTANCE_CATEGORY_LABEL = {
+    "3k": "3K",
+    **{code: label for _, code, label in _GARMIN_RACE_PREDICTIONS},
+}
+
+
+def _iso_monday(day: datetime.date) -> datetime.date:
+    """該日所在 ISO 週的週一。週跑量統計一律用 ISO 週（與前端 mondayOf() 同義）。"""
+    return day - datetime.timedelta(days=day.weekday())
+
+
+def _running_type_filter() -> tuple[str, list[str]]:
+    """(SQL placeholder 字串, 參數) —— sorted() 讓參數順序穩定（來源是 frozenset）。"""
+    running_types = sorted(RUNNING_ACTIVITY_TYPES)
+    return ",".join("?" for _ in running_types), running_types
+
+
+def _fetch_overview_runs(
+    conn: sqlite3.Connection, athlete_id: int, start_date: str | None, end_date: str
+) -> list[sqlite3.Row]:
+    placeholders, running_types = _running_type_filter()
+    sql = f"""
+        SELECT id, date(started_at) AS activity_date, distance_km, duration_sec,
+               avg_hr_bpm, raw_data_json, source_version
+        FROM activities
+        WHERE athlete_id = ?
+          AND activity_type IN ({placeholders})
+          AND date(started_at) <= ?
+    """
+    params: list[Any] = [athlete_id, *running_types, end_date]
+    if start_date:
+        sql += " AND date(started_at) >= ?"
+        params.append(start_date)
+    sql += " ORDER BY started_at"
+    return conn.execute(sql, params).fetchall()
+
+
+def _is_effective_session(row: sqlite3.Row) -> bool:
+    return (
+        (row["duration_sec"] or 0) >= EFFECTIVE_SESSION_MIN_DURATION_SEC
+        and (row["distance_km"] or 0) >= EFFECTIVE_SESSION_MIN_DISTANCE_KM
+        and row["avg_hr_bpm"] is not None
+    )
+
+
+def _zone_seconds(row: sqlite3.Row) -> dict[int, int] | None:
+    """單場的 {zone: 秒數}（含 Z0）。單位換算一律交給 _build_hr_zones()，
+    不在這裡重寫一次——匯出包是毫秒、API 同步是秒，見該函式說明。"""
+    zones = _build_hr_zones(
+        row["raw_data_json"], is_api=row["source_version"] == API_SYNC_SOURCE_VERSION
+    )
+    if not zones["available"]:
+        return None
+    seconds = {z["zone"]: z["seconds"] for z in zones["zones"]}
+    seconds[HR_ZONE_BELOW_FIRST] = zones["below_zone_1"]["seconds"]
+    return seconds
+
+
+def _weekly_intensity(
+    runs: list[tuple[sqlite3.Row, dict[int, int] | None]],
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> list[dict]:
+    """每個 ISO 週的跑量，依該場心率區間停留時間的比例拆成低／中／高強度。
+
+    沒有心率區間的場次整場計入 unknown_km，不猜它的強度。range 內每一週
+    都會列出（沒跑就是 0 km——那是真的沒跑，不是缺資料）；被 range 起訖日
+    切到一半的週標 partial，前端據此提示該週數字不完整。
+    """
+    weeks: dict[datetime.date, dict] = {}
+    week = _iso_monday(start_date)
+    while week <= end_date:
+        week_end = week + datetime.timedelta(days=6)
+        weeks[week] = {
+            "week_start": week.isoformat(),
+            "partial": week < start_date or week_end > end_date,
+            "low_km": 0.0, "mid_km": 0.0, "high_km": 0.0, "unknown_km": 0.0,
+        }
+        week += datetime.timedelta(days=7)
+
+    for row, zone_secs in runs:
+        distance = row["distance_km"] or 0.0
+        bucket = weeks[_iso_monday(datetime.date.fromisoformat(row["activity_date"]))]
+        total = sum(zone_secs.values()) if zone_secs else 0
+        if total <= 0:
+            bucket["unknown_km"] += distance
+            continue
+        for tier, zones in INTENSITY_TIER_ZONES.items():
+            bucket[f"{tier}_km"] += distance * sum(zone_secs.get(z, 0) for z in zones) / total
+
+    result = []
+    for bucket in weeks.values():
+        for key in ("low_km", "mid_km", "high_km", "unknown_km"):
+            bucket[key] = round(bucket[key], 1)
+        bucket["total_km"] = round(
+            bucket["low_km"] + bucket["mid_km"] + bucket["high_km"] + bucket["unknown_km"], 1
+        )
+        result.append(bucket)
+    return result
+
+
+def _hr_zone_distribution(zone_rows: list[dict[int, int]]) -> dict:
+    """range 內所有跑步的 Z1~Z5 停留時間加總與佔比。
+
+    佔比分母**只有 Z1~Z5**、不含 Z0：API 同步來源沒有 Z0（見 _build_hr_zones
+    的跨來源限制），分母含 Z0 會讓兩種來源混算時佔比語意不一致。
+    """
+    unavailable = {"available": False, "reason": "此區間內沒有含心率區間資料的跑步"}
+    totals = {z: sum(r.get(z, 0) for r in zone_rows) for z in range(1, HR_ZONE_MAX + 1)}
+    total = sum(totals.values())
+    if total <= 0:
+        return unavailable
+    return {
+        "available": True,
+        "zones": [
+            {"zone": z, "seconds": s, "pct": round(s / total * 100, 1)}
+            for z, s in totals.items()
+        ],
+        "total_seconds": total,
+        "sessions_counted": len(zone_rows),
+    }
+
+
+def _this_week_volume(
+    conn: sqlite3.Connection, athlete_id: int, today: datetime.date
+) -> dict:
+    """本 ISO 週（週一～週日，錨定真實今天）已跑距離與課表距離。
+
+    課表距離只加總有填 planned_distance_km 的課；只給時間（如「FR 60 分鐘」）
+    的課無法換算距離，另以 planned_without_distance 計數讓前端註明，
+    不拿配速去猜一個距離出來。
+    """
+    week_start = _iso_monday(today)
+    week_end = week_start + datetime.timedelta(days=6)
+    placeholders, running_types = _running_type_filter()
+    done = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(distance_km), 0) AS km FROM activities
+        WHERE athlete_id = ? AND activity_type IN ({placeholders})
+          AND date(started_at) BETWEEN ? AND ?
+        """,
+        (athlete_id, *running_types, week_start.isoformat(), week_end.isoformat()),
+    ).fetchone()["km"]
+    plan = conn.execute(
+        """
+        SELECT COALESCE(SUM(planned_distance_km), 0) AS km,
+               SUM(CASE WHEN planned_distance_km IS NULL THEN 1 ELSE 0 END) AS no_distance,
+               COUNT(*) AS sessions
+        FROM training_plan
+        WHERE athlete_id = ? AND is_active = 1 AND workout_type <> 'rest'
+          AND planned_date BETWEEN ? AND ?
+        """,
+        (athlete_id, week_start.isoformat(), week_end.isoformat()),
+    ).fetchone()
+    return {
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "done_km": round(done, 1),
+        # 本週沒有任何（非休息的）課表時為 None，與「課表 0 km」區分
+        "planned_km": round(plan["km"], 1) if plan["sessions"] else None,
+        "planned_without_distance": plan["no_distance"] or 0,
+    }
+
+
+def _race_vdot(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) -> dict:
+    """只用標記為比賽（workout_type='race'）的全力成績推 VDOT。
+
+    刻意**不傳 max_hr_bpm** 給 vdot_engine：沒有 HRmax，非全力場次就無法經
+    心率換算成候選（engine 的既有行為），等於只剩比賽成績。心率換算路徑
+    會把輕鬆跑換算成遠高於實力的等效配速（2026-10-14 實測：一場 146bpm 的
+    輕鬆 10K 推出 VDOT 48.5，同期比賽成績僅 34~38），總覽不採用。
+    """
+    candidates = [
+        c for c in training_plan_generator.get_vdot_candidate_activities(conn, athlete_id)
+        if c["is_max_effort"] and c["date"] <= today
+    ]
+    result = vdot_engine.estimate_vdot_and_paces(candidates, reference_date=today)
+    if not result["available"]:
+        reason = (
+            "資料庫中沒有標記為比賽的成績"
+            if not candidates
+            else "比賽成績皆超過新鮮度門檻（5K／10K 90 天、半馬／全馬 180 天）"
+        )
+        return {"value": None, "reason": reason}
+
+    basis = result["source_candidate"]
+    label = _DISTANCE_CATEGORY_LABEL.get(basis["distance_category"], basis["distance_category"])
+    return {
+        "value": data_confidence.fact(
+            round(result["vdot"], 1),
+            source=(
+                f"{basis['activity']['date'].isoformat()} {label} 全力成績（標記為比賽）→ "
+                "Riegel 換算全馬等效時間 → Daniels VDOT 公式"
+            ),
+            bias_codes=["vdot_race_stale"] if basis["confidence"] == "low" else [],
+        ),
+        "reason": None,
+    }
+
+
+def _garmin_vdot_reference(
+    conn: sqlite3.Connection, athlete_id: int, today: datetime.date
+) -> dict | None:
+    """Garmin 完賽預測換算成的 VDOT，僅供對照。
+
+    與 /api/today 的 HRV garmin_reference 同一個形狀與理由：garmin_blackbox
+    是 unusable，fact() 會回 None；但使用者手錶上看得到這些預測，儀表板
+    並列出來對照是合理的，只是明確標 for_display_only，判斷層不讀。
+    """
+    row = conn.execute(
+        """
+        SELECT date, race_predict_5k_sec, race_predict_10k_sec,
+               race_predict_half_sec, race_predict_marathon_sec
+        FROM performance_metrics
+        WHERE athlete_id = ? AND date <= ?
+        ORDER BY date DESC LIMIT 1
+        """,
+        (athlete_id, today.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    predictions = []
+    for column, category, label in _GARMIN_RACE_PREDICTIONS:
+        time_sec = row[column]
+        if not time_sec:
+            continue
+        # 用 engine 自己的距離表換回配速，確保與 project_to_marathon_time_sec() 互為反運算
+        pace = time_sec / vdot_engine._DISTANCE_KM[category]
+        vdot = vdot_engine.estimate_vdot(
+            vdot_engine.project_to_marathon_time_sec(category, pace)
+        )
+        predictions.append({"distance": label, "time_sec": time_sec, "vdot": round(vdot, 1)})
+    if not predictions:
+        return None
+    return {
+        "for_display_only": True,
+        "note": "Garmin（Firstbeat）黑盒演算法輸出，公式未公開，僅供對照，不得作為判讀依據",
+        "as_of": row["date"],
+        "predictions": predictions,
+    }
+
+
+# 最佳成績每個距離列出幾場（第 1 名為最佳，其餘為次佳紀錄）
+PERSONAL_BEST_TOP_N = 3
+
+# 由短到長的顯示順序
+_PERSONAL_BEST_ORDER = ("3k", "5k", "10k", "half_marathon", "marathon")
+
+
+def _personal_bests(conn: sqlite3.Connection, athlete_id: int) -> list[dict]:
+    """標記為比賽（workout_type='race'）的跑步，依標準距離分組取最快幾場。
+
+    不吃 range：最佳成績是生涯紀錄。距離歸類沿用 VDOT 候選的同一套容忍
+    範圍（training_plan_generator），不另訂一份——兩邊對「這場算不算 10K」
+    的判斷必須一致。
+
+    時間優先用 race_official_time_sec（官方成績，配速以標準距離換算），
+    沒填才用手錶的 duration_sec 與 avg_pace；`official` 標明是哪一種。
+    """
+    placeholders, running_types = _running_type_filter()
+    rows = conn.execute(
+        f"""
+        SELECT id, date(started_at) AS activity_date, title, distance_km,
+               duration_sec, avg_pace_sec_per_km, race_official_time_sec
+        FROM activities
+        WHERE athlete_id = ? AND activity_type IN ({placeholders})
+          AND workout_type = 'race'
+          AND COALESCE(race_official_time_sec, duration_sec) IS NOT NULL
+        ORDER BY COALESCE(race_official_time_sec, duration_sec)
+        """,
+        (athlete_id, *running_types),
+    ).fetchall()
+
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        category = training_plan_generator._distance_category_for_km(row["distance_km"])
+        if category is None:
+            continue
+        official = row["race_official_time_sec"]
+        grouped.setdefault(category, []).append(
+            {
+                "id": row["id"],
+                "date": row["activity_date"],
+                "title": row["title"],
+                "distance_km": _round(row["distance_km"], 2),
+                "time_sec": official or row["duration_sec"],
+                "pace_sec_per_km": (
+                    round(official / vdot_engine._DISTANCE_KM[category])
+                    if official else row["avg_pace_sec_per_km"]
+                ),
+                "official": bool(official),
+            }
+        )
+    return [
+        {
+            "distance": category,
+            "label": _DISTANCE_CATEGORY_LABEL[category],
+            "records": grouped[category][:PERSONAL_BEST_TOP_N],
+        }
+        for category in _PERSONAL_BEST_ORDER
+        if category in grouped
+    ]
+
+
+def get_overview(
+    conn: sqlite3.Connection,
+    athlete_id: int | None = None,
+    range_key: str = DEFAULT_RANGE,
+    today: datetime.date | None = None,
+) -> dict:
+    """總覽頁：有效訓練數、本週跑量、強度堆疊週跑量、心率區間分佈、VDOT、最佳成績。
+
+    ATL/CTL/TSB 不在這裡——前端直接用既有的 /api/training-load，不重算一份。
+
+    兩種錨點並存（與其他端點的既有語意一致）：
+    - range 系列（有效訓練、週跑量、心率區間）走 resolve_range()，錨定資料庫最新日
+    - 本週跑量與 VDOT 錨定真實今天（today 可覆寫供測試）
+    """
+    today = today or datetime.date.today()
+    resolved = resolve_athlete_id(conn, athlete_id)
+    window = resolve_range(conn, resolved, range_key, today)
+    if resolved is None:
+        return {**window, "available": False, "reason": "資料庫中沒有學員資料"}
+
+    rows = _fetch_overview_runs(conn, resolved, window["start_date"], window["end_date"])
+    runs = [(row, _zone_seconds(row)) for row in rows]
+
+    end_date = datetime.date.fromisoformat(window["end_date"])
+    if window["start_date"]:
+        start_date = datetime.date.fromisoformat(window["start_date"])
+    else:
+        # range=all：從第一場跑步那週開始，而非無限往前
+        start_date = datetime.date.fromisoformat(rows[0]["activity_date"]) if rows else end_date
+
+    return {
+        **window,
+        "available": True,
+        "sessions": {
+            "total": len(rows),
+            "effective": sum(1 for row in rows if _is_effective_session(row)),
+            "criteria": {
+                "min_duration_sec": EFFECTIVE_SESSION_MIN_DURATION_SEC,
+                "min_distance_km": EFFECTIVE_SESSION_MIN_DISTANCE_KM,
+                "requires_hr": True,
+            },
+        },
+        "this_week": _this_week_volume(conn, resolved, today),
+        "weekly_intensity": {
+            "tiers": {tier: list(zones) for tier, zones in INTENSITY_TIER_ZONES.items()},
+            "weeks": _weekly_intensity(runs, start_date, end_date),
+        },
+        "hr_zones": _hr_zone_distribution([z for _, z in runs if z]),
+        "vdot": {
+            "race": _race_vdot(conn, resolved, today),
+            "garmin_reference": _garmin_vdot_reference(conn, resolved, today),
+        },
+        "personal_bests": _personal_bests(conn, resolved),
+    }

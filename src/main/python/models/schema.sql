@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS activities (
     -- 與 training_plan.workout_type（原本「計畫」練什麼）分開，兩者比對即可看出課表遵從度。
     workout_type            TEXT CHECK (workout_type IN ('easy', 'tempo', 'interval', 'lsd', 'race', 'recovery', 'unknown')),
     workout_type_source     TEXT CHECK (workout_type_source IN ('auto', 'manual')),
+    -- 比賽／測驗的官方成績（秒），僅 workout_type='race' 的場次需要時才人工填入。
+    -- 手錶的 duration_sec 常與實際成績不同（忘了按停、起跑前就按開始），
+    -- 但 duration_sec 是 Garmin 的原始紀錄、會被重新同步覆寫，且必須與該場
+    -- 的配速／心率序列一致，故不改它，另存這一欄。對應距離視為該場的標準
+    -- 比賽距離（3K／5K／10K／半馬／全馬）。最佳成績與 VDOT 有此值時優先採用。
+    -- 同步程式不寫入此欄。
+    race_official_time_sec  INTEGER,
     -- NULL distance_km bypasses this UNIQUE constraint (SQL: NULL != NULL) — fine today since
     -- every known activity_type populates distance_km (0 for strength), but a future GPS-less
     -- type with a NULL distance would silently skip dedup.
