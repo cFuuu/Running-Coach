@@ -1336,8 +1336,8 @@ def get_calendar(
 
     plan_rows = conn.execute(
         """
-        SELECT id, planned_date, workout_type, planned_distance_km,
-               planned_pace_sec_per_km, plan_source, linked_activity_id
+        SELECT id, planned_date, workout_type, planned_distance_km, planned_duration_sec,
+               planned_pace_sec_per_km, plan_source, linked_activity_id, notes
         FROM training_plan
         WHERE athlete_id = ? AND is_active = 1
           AND planned_date >= ? AND planned_date <= ?
@@ -1429,7 +1429,11 @@ def get_calendar(
                         "workout_type": p["workout_type"],
                         "planned_distance_km": p["planned_distance_km"],
                         "planned_pace_sec_per_km": p["planned_pace_sec_per_km"],
+                        "planned_duration_sec": p["planned_duration_sec"],
                         "plan_source": p["plan_source"],
+                        # 外部課表的教練原文（跑班寫法如 P"6:05-5:55、r400m3'30）放在這裡，
+                        # 前端顯示原文而非只顯示課種，避免資訊被壓扁成「節奏跑 13 km」
+                        "notes": p["notes"],
                     }
                     for p in day_plans
                 ],

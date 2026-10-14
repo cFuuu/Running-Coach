@@ -755,6 +755,21 @@ class TestCalendar(DashboardQueryTestCase):
         self.assertEqual(result["days"][0]["date"], "2026-03-01")
         self.assertEqual(result["days"][-1]["date"], "2026-03-05")
 
+    def test_planned_entry_carries_coach_notes_and_duration(self):
+        """外部課表只給時間的課（FR 60'）要能顯示時間與教練原文，不只剩課種。"""
+        self.conn.execute(
+            "INSERT INTO training_plan (athlete_id, planned_date, workout_type, "
+            "planned_duration_sec, notes, plan_source, created_at) VALUES (?, '2026-03-02', "
+            "'easy', 3900, 'D1：60''-70''FR+ST*3', 'external', '2026-03-01T00:00:00')",
+            (self.athlete_id,),
+        )
+        result = queries.get_calendar(
+            self.conn, start="2026-03-02", end="2026-03-02", today=datetime.date(2026, 3, 10)
+        )
+        plan = result["days"][0]["planned"][0]
+        self.assertEqual(plan["planned_duration_sec"], 3900)
+        self.assertEqual(plan["notes"], "D1：60'-70'FR+ST*3")
+
     def test_planned_day_matched_to_activity_is_planned_done(self):
         """2026-03-09 有 lsd 課表且有一場跑步活動——應配對成功。"""
         result = queries.get_calendar(
