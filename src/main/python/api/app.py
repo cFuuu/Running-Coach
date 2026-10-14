@@ -50,10 +50,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from src.main.python.api import routes_analysis
 from src.main.python.api import routes_chat
 from src.main.python.api import routes_dashboard
 from src.main.python.api import routes_sync
 from src.main.python.models.db import get_connection
+from src.main.python.services import analysis_report_store
+from src.main.python.services.coach_analysis import AnalysisConfig
 from src.main.python.services.coach_chat import ChatConfig
 
 # 前端靜態檔（Task B 的產出）。用相對於本檔案的路徑推導，
@@ -72,6 +75,7 @@ def create_app(
     db_path: str,
     assets_dir: Path | None = None,
     chat_config: ChatConfig | None = None,
+    analysis_config: AnalysisConfig | None = None,
 ) -> FastAPI:
     """建立 FastAPI 應用程式。db_path 由呼叫端提供，不預設任何路徑。
 
@@ -89,17 +93,23 @@ def create_app(
     # 確保聊天用的兩張表存在：本進程原本從不執行 schema.sql（各請求用裸
     # sqlite3.connect），資料庫是 CLI 匯入器建的，新表不會自己長出來。
     # get_connection() 會套用 schema.sql 與欄位遷移，開一次關掉即可。
-    get_connection(db_path).close()
+    conn = get_connection(db_path)
+    # 上次 server 結束時還在跑的分析（子程序已隨舊進程消失）標成 error，不留 running
+    analysis_report_store.mark_stale_running_as_error(conn)
+    conn.close()
 
     app.include_router(routes_dashboard.router)
     app.include_router(routes_chat.router)
     app.include_router(routes_sync.router)
+    app.include_router(routes_analysis.router)
     # 路由層宣告的預設 dependency 只是佔位，這裡換成真正連到 db_path 的版本
     app.dependency_overrides[routes_dashboard.get_conn] = (
         routes_dashboard.make_connection_dependency(db_path)
     )
     config = chat_config if chat_config is not None else ChatConfig.from_env()
     app.dependency_overrides[routes_chat.get_chat_config] = lambda: config
+    a_config = analysis_config if analysis_config is not None else AnalysisConfig.from_env()
+    app.dependency_overrides[routes_analysis.get_analysis_config] = lambda: a_config
 
     # 靜態前端掛在根路徑，必須在 /api 路由之後掛載才不會蓋掉它們。
     # Task B 尚未建立目錄時就跳過，讓後端仍可單獨啟動測 API。

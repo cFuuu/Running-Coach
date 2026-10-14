@@ -491,6 +491,30 @@ CREATE TABLE IF NOT EXISTS coach_messages (
     UNIQUE (conversation_id, seq)
 );
 
+-- analysis_reports：總覽「AI 分析」按鈕產出的分析報告（2026-10-14 Fu 決定保存）。
+-- 由 Claude Code 無互動 session（services/coach_analysis.py）產生。
+--
+-- ⚠️ 與 coach_messages 同一條硬邊界：**只存原始報告，永不進事實層、規則引擎不讀。**
+-- 它是 TODO.md N-8「跨對話記憶」日後的原料，不是記憶本身。
+-- tools_json 記錄這次分析呼叫了哪些工具（名稱、參數、是否出錯），讓報告裡的
+-- 每個結論都能回頭查它依據的是哪些查詢（D.1／§7.3 的可追溯原則）。
+CREATE TABLE IF NOT EXISTS analysis_reports (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id      INTEGER NOT NULL REFERENCES athlete_profile(id),
+    created_at      TEXT NOT NULL,
+    finished_at     TEXT,
+    status          TEXT NOT NULL CHECK (status IN ('running', 'done', 'error')),
+    prompt          TEXT NOT NULL,
+    report_text     TEXT,
+    tools_json      TEXT,
+    error           TEXT,
+    num_turns       INTEGER,
+    duration_ms     INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_reports_athlete
+    ON analysis_reports (athlete_id, created_at);
+
 CREATE INDEX IF NOT EXISTS idx_activity_weather_activity
     ON activity_weather (activity_id, hour_local);
 CREATE INDEX IF NOT EXISTS idx_activity_laps_activity ON activity_laps (activity_id);

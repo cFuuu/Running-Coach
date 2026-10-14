@@ -250,7 +250,19 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 - **有效訓練**＝資料品質篩選，**不是**「練得好不好」
 - **強度分層**用手錶的 Garmin %HRR 五區，**不可**套 Daniels 的區名；沒有心率區間的場次整場算 `unknown_km`
 - **VDOT** 為 Daniels 原版公式（實際距離直接代入）；不走心率換算（次最大推估，系統性偏高）
-- **AI 分析**不在此 API：總覽「摘要」的按鈕呼叫 `CoachPanel.ask()`，在 AI 教練面板開新對話送出問題（D.1：解讀只出現在面板對話裡，2026-10-14 Fu 確認）
+- **AI 分析**不在此 API，另見下方 `/api/analysis`
+
+### `/api/analysis*`（2026-10-15 新增：總覽「AI 分析」按鈕）
+
+按鈕 → `POST /api/analysis` → 後端在背景啟動 **Claude Code 無互動 session**（`claude -p`，`services/coach_analysis.py`），
+用本機已登入的 Claude Code，**不需要 `ANTHROPIC_API_KEY`**；以 SSE 串流 `start → tool_use／tool_result／text／denied … → done｜error`，
+報告存進 `analysis_reports`（只存原文，不進事實層、規則引擎不讀）。`GET /api/analysis`（清單）、`GET /api/analysis/{id}`（單筆）、`GET /api/analysis/status`。
+
+- **安全邊界**：`--tools ""`（關掉全部內建工具）、`--allowedTools` 只有 `READ_ONLY_TOOL_NAMES`、`--disallowedTools` 列出寫入型工具、`--permission-mode dontAsk`、`--strict-mcp-config`。2026-10-14 實測要求它寫入 `add_context_note`，被拒且資料庫未變動
+- **分析問題原文在後端**（`routes_analysis.ANALYSIS_PROMPT`），前端不帶 prompt；系統提示＝`coach()` 行為約束層原文＋分析介面補充
+- 只接受本機（放行私有網段同樣看 `RC_CHAT_ALLOW_PRIVATE_NETWORK`）；同時只跑一個（第二個回 409）；server 重啟時把未收尾的 `running` 標成 `error`
+- 結果顯示在 AI 面板的「分析報告」畫面（D.1：解讀只出現在面板，2026-10-14 Fu 確認），可下拉回看過去的報告；分析無法在面板追問，追問請用 Claude Code
+- 設定（皆可不設）：`RC_ANALYSIS_CLAUDE_BIN`、`RC_ANALYSIS_MCP_CONFIG`、`RC_ANALYSIS_TIMEOUT_SEC`（預設 300）、`RC_ANALYSIS_MODEL`
 
 ---
 
