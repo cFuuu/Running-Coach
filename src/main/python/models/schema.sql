@@ -14,6 +14,12 @@ CREATE TABLE IF NOT EXISTS athlete_profile (
     -- readiness 判斷邏輯的警訊。NULL 代表尚未人工設定，判斷邏輯需降級為
     -- 使用預設閾值（預設值由判斷邏輯本體決定，不在 schema 層硬編碼）。
     high_risk_consecutive_training_days  INTEGER,
+    -- 手錶上設定的心率區間邊界（%HRR，Garmin「Based On %HRR」），JSON 陣列
+    -- 6 個數字：Z1 下界、Z1/Z2、Z2/Z3、Z3/Z4、Z4/Z5、Z5 上界，例如
+    -- [0.54, 0.59, 0.74, 0.83, 0.88, 1.0]。只用於把區間換算成 bpm 顯示；
+    -- 每場的區間停留時間是手錶自己算好的（hrTimeInZone_N），不依賴此欄。
+    -- NULL 代表未設定，顯示端不換算 bpm、也不套任何預設值。
+    hr_zone_hrr_bounds_json TEXT,
     updated_at      TEXT NOT NULL
 );
 

@@ -21,6 +21,8 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("training_plan", "superseded_by", "INTEGER"),
     # 2026-08-20：個人化恢復閾值（Issue #16），NULL 代表尚未人工設定。
     ("athlete_profile", "high_risk_consecutive_training_days", "INTEGER"),
+    # 2026-10-14：手錶心率區間的 %HRR 邊界（見 schema.sql 註解）
+    ("athlete_profile", "hr_zone_hrr_bounds_json", "TEXT"),
     # --- 2026-09-02：Garmin 指標擴充（見 docs/dev/GARMIN_METRICS_AUDIT.md）---
     # 審計發現大量已抓到卻未落庫的指標。欄位語意與單位見 schema.sql 註解。
     # 活動：訓練效果、運動負荷、跑步動態、功率、環境、心率區間

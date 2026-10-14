@@ -885,6 +885,10 @@ class TestOverview(DashboardQueryTestCase):
         )
         return cur.lastrowid
 
+    def _pb(self, distance):
+        """最佳成績固定列出五個距離，依距離代碼取該格。"""
+        return {p["distance"]: p for p in self._overview()["personal_bests"]}[distance]
+
     def test_effective_sessions_excludes_runs_without_hr(self):
         sessions = self._overview()["sessions"]
         self.assertEqual(sessions["total"], 3)
@@ -986,9 +990,15 @@ class TestOverview(DashboardQueryTestCase):
         self._add_run("2025-04-01T07:00:00", 15.0, 5000)       # 非標準距離，不列
         self._add_run("2025-03-01T07:00:00", 5.0, 1400, workout_type="easy")  # 非比賽
         pbs = self._overview()["personal_bests"]
-        self.assertEqual([p["label"] for p in pbs], ["10K", "半馬"])
-        self.assertEqual([r["time_sec"] for r in pbs[0]["records"]], [3000, 3300])
-        self.assertFalse(pbs[0]["records"][0]["official"])
+        self.assertEqual([p["label"] for p in pbs if p["records"]], ["10K", "半馬"])
+        ten_k = self._pb("10k")["records"]
+        self.assertEqual([r["time_sec"] for r in ten_k], [3000, 3300])
+        self.assertFalse(ten_k[0]["official"])
+
+    def test_personal_bests_always_list_all_five_distances(self):
+        pbs = self._overview()["personal_bests"]
+        self.assertEqual([p["label"] for p in pbs], ["3K", "5K", "10K", "半馬", "全馬"])
+        self.assertTrue(all(p["records"] == [] for p in pbs))
 
     def test_official_time_overrides_watch_time(self):
         # 手錶 3.07km / 866s（忘了按停），官方成績 3K 839s
@@ -1013,13 +1023,11 @@ class TestOverview(DashboardQueryTestCase):
     def test_official_distance_rescues_gps_drifted_race(self):
         # 舊錶 GPS 把半馬記成 22.30km（超出半馬 ±1.05km 容忍），沒填官方距離就不列
         run_id = self._add_run("2025-03-01T07:00:00", 22.30, 10214)
-        self.assertEqual(self._overview()["personal_bests"], [])
+        self.assertEqual(self._pb("half_marathon")["records"], [])
         self.conn.execute(
             "UPDATE activities SET race_official_distance_km = 21.0975 WHERE id = ?", (run_id,)
         )
-        pb = self._overview()["personal_bests"][0]
-        self.assertEqual(pb["label"], "半馬")
-        record = pb["records"][0]
+        record = self._pb("half_marathon")["records"][0]
         self.assertEqual(record["time_sec"], 10214)
         self.assertFalse(record["official"])  # 時間仍是手錶紀錄
         self.assertEqual(record["pace_sec_per_km"], round(10214 / 21.0975))
@@ -1027,15 +1035,57 @@ class TestOverview(DashboardQueryTestCase):
     def test_race_pace_uses_standard_distance_not_gps(self):
         # 手錶 10.11km / 52:30：配速應為 52:30 ÷ 10km = 5:15，而非手錶的 5:12
         self._add_run("2025-11-23T07:00:00", 10.11, 3150)
-        record = self._overview()["personal_bests"][0]["records"][0]
+        record = self._pb("10k")["records"][0]
         self.assertEqual(record["pace_sec_per_km"], 315)
 
     def test_personal_bests_return_every_race_fastest_first(self):
         times = [1530, 1500, 1550, 1510, 1520]
         for i, t in enumerate(times):
             self._add_run(f"2025-0{i + 1}-01T07:00:00", 5.0, t)
-        records = self._overview()["personal_bests"][0]["records"]
+        records = self._pb("5k")["records"]
         self.assertEqual([r["time_sec"] for r in records], sorted(times))
+
+    def test_this_week_zone_seconds(self):
+        week = self._overview()["this_week"]
+        # 本週（03-09 起）只有 100：Z1 600s、Z2 1800s、Z4 300s
+        self.assertEqual(
+            {z["zone"]: z["seconds"] for z in week["zone_seconds"]},
+            {1: 600, 2: 1800, 3: 0, 4: 300, 5: 0},
+        )
+        self.assertEqual((week["sessions"], week["zone_sessions_counted"]), (1, 1))
+
+    def test_recent_volume_rolling_two_weeks(self):
+        recent = self._overview()["recent_volume"]
+        # 02-25~03-10：100(10) + 200(9) + 300(5)；再往前 02-11~02-24 沒有跑步
+        self.assertEqual((recent["start"], recent["end"]), ("2026-02-25", "2026-03-10"))
+        self.assertEqual(recent["km"], 24.0)
+        self.assertEqual(recent["previous_km"], 0.0)
+
+    def test_hr_zone_bounds_unavailable_without_watch_settings(self):
+        bounds = self._overview()["hr_zone_bounds"]
+        self.assertFalse(bounds["available"])
+        self.assertEqual([z["name_en"] for z in bounds["zones"]],
+                         ["Warm Up", "Easy", "Aerobic", "Threshold", "Maximum"])
+
+    def test_hr_zone_bounds_converted_to_bpm(self):
+        self.conn.execute(
+            "UPDATE athlete_profile SET max_hr_bpm = 195, resting_hr_bpm = 56, "
+            "max_hr_source = 'watch_display', "
+            "hr_zone_hrr_bounds_json = '[0.54, 0.59, 0.74, 0.83, 0.88, 1.0]'"
+        )
+        bounds = self._overview()["hr_zone_bounds"]
+        self.assertTrue(bounds["available"])
+        z2 = bounds["zones"][1]
+        self.assertEqual((z2["name"], z2["bpm_low"], z2["bpm_high"]), ("輕鬆", 138, 159))
+        self.assertEqual(bounds["zones"][-1]["bpm_high"], 195)
+        self.assertEqual(bounds["max_hr"]["confidence"]["level"], "low")
+
+    def test_vdot_history_lists_races_oldest_first(self):
+        self._add_run("2025-12-01T07:00:00", 21.1, 7000)
+        self._add_run("2026-02-01T07:00:00", 3.0, 840)
+        history = self._overview()["vdot"]["history"]
+        self.assertEqual([h["distance"] for h in history], ["半馬", "3K"])
+        self.assertTrue(all(isinstance(h["vdot"], float) for h in history))
 
     def test_no_athlete_returns_unavailable(self):
         empty_conn = get_connection(":memory:")
