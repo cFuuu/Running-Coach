@@ -13,11 +13,17 @@
 
 心率強度換算等效全力配速——2026-08-18 grill 討論結論：
 非全力程度的活動（如 easy run）不該因為配速慢就直接被排除，也不該直接套用
-Daniels 公式（會嚴重低估真實能力）。做法是先用該次活動的平均心率相對 HRmax
-的百分比，換算出「若當時全力跑會是什麼配速」的等效值，換算後的候選仍可用，
-但信賴度標記較低（非真實測驗/比賽成績）。這是本引擎自訂的換算公式，非標準
-Daniels 公式的一部分，假設與依據見 estimate_max_effort_pace() 的說明。
-完全沒有心率資料的活動無法換算，維持排除。
+Daniels 公式（會嚴重低估真實能力）。做法是用該次活動的配速與心率推估 VO2max，
+再換回「若當時全力跑這個距離會是什麼配速」，換算後的候選仍可用，但信賴度
+標記較低（非真實測驗/比賽成績）。算法與依據見 estimate_max_effort_pace()。
+完全沒有心率資料（或缺 HRmax／靜止心率）的活動無法換算，維持排除。
+
+2026-10-14 修正（換算 bug）：原公式為「配速 × 平均心率/HRmax」，等於假設
+配速與心率成正比且過原點，一場 146bpm 的輕鬆 10K 被換算成 4:15/km，推出
+VDOT 48.5（同期比賽成績僅 34~40）。修正兩處：
+1. 換算公式改用 ACSM 的 %HRR ≈ %VO2R 關係（見 estimate_max_effort_pace）
+2. **真實全力成績一律優先於換算候選**，代表性排序只在同一類內比較——原本
+   換算後的長距離候選能壓過真實的短距離比賽，錯誤的換算因此直接主導結果
 
 VDOT／配速輸出——套用 Daniels VDOT 公式（Daniels & Gilbert, "Oxygen Power"）與
 Riegel 跨距離推算公式（指數 1.06）：先用 Riegel 公式把選中的基準成績換算到全馬
@@ -67,11 +73,8 @@ _LONG_DISTANCE_CATEGORIES = frozenset({"marathon", "half_marathon"})
 # 保守的分界——高於此值視為已接近全力，不需要換算即可直接使用。
 MAX_EFFORT_HR_PCT_THRESHOLD = 0.85
 
-# 自訂換算公式的係數：低於全力強度時，每少 1 個百分點的 %HRmax，配速線性
-# 放慢對應係數。此為本引擎自訂的簡化假設（非標準 Daniels/Riegel 公式），
-# 依據是配速與攝氧量在次最大強度區間內大致呈線性關係的常見訓練經驗法則；
-# 未來若累積足夠真實資料應重新校正。
-_HR_PACE_ADJUSTMENT_FACTOR = 1.0
+# 安靜代謝的攝氧量（ml/kg/min，1 MET），%VO2R 公式的基準點。
+_RESTING_VO2 = 3.5
 
 # Riegel 公式的距離代表性指數：T2 = T1 * (D2/D1)^RIEGEL_EXPONENT。
 # PLAN.md §5.5 定案值。
@@ -124,31 +127,52 @@ def _passes_freshness_gate(
     return age_days <= SHORT_DISTANCE_FRESHNESS_DAYS, False
 
 
+def running_vo2(pace_sec_per_km: float) -> float:
+    """Daniels & Gilbert 的跑步攝氧成本迴歸式：配速 → VO2（ml/kg/min）。
+    與 estimate_vdot() 內的 VO2 項是同一條公式。"""
+    velocity_m_per_min = 60000.0 / pace_sec_per_km
+    return -4.60 + 0.182258 * velocity_m_per_min + 0.000104 * velocity_m_per_min**2
+
+
 def estimate_max_effort_pace(
     pace_sec_per_km: float,
     avg_hr_bpm: float,
     max_hr_bpm: float,
-) -> float:
-    """依心率強度將次全力配速換算成等效全力配速（秒/公里）。
+    resting_hr_bpm: float,
+    distance_category: str,
+) -> float | None:
+    """依心率強度將次全力配速換算成該距離的等效全力配速（秒/公里）。
 
-    自訂簡化公式（非標準 Daniels/Riegel 方法，需在未來累積真實資料後重新校正）：
-    配速變慢幅度與強度不足幅度（1 - %HRmax）成正比。%HRmax 越低，代表跑者當時
-    保留的力氣越多，實際「全力」配速應比記錄的配速更快。
+    算法（次最大強度推估 VO2max）：
+    1. Daniels 攝氧成本式：該場配速 → 當時的 VO2
+    2. %HRR ≈ %VO2R（ACSM 採用，Swain & Leutholtz 1997）：
+           VO2max = VO2rest + (VO2 − VO2rest) / %HRR，VO2rest = 3.5
+    3. 把推估的 VO2max 當 VDOT，反解全馬時間，再用 Riegel 換回該距離的配速
+       ——讓後續「Riegel 推全馬 → Daniels 反推 VDOT」的既有管線得到同一個 VDOT
 
-        equivalent_pace = pace / (1 - _HR_PACE_ADJUSTMENT_FACTOR * (1 - hr_pct))
+    已知偏誤：次最大強度推估對耐力訓練量少的跑者會**偏高**（體能測得出的
+    有氧上限，比實際比賽跑得出的高）；HRmax／靜止心率的誤差也會直接放大到
+    結果上。故換算候選一律降級信賴度，且永遠排在真實全力成績之後。
 
-    hr_pct 為 1.0（達到 HRmax）時換算結果等於原配速；hr_pct 越低，等效配速
-    比原配速快得越多。
+    %HRR 超出 (0, 1] 時回傳 None（心率不高於靜止心率代表資料有問題，無從換算）。
     """
-    hr_pct = avg_hr_bpm / max_hr_bpm
-    hr_pct = min(hr_pct, 1.0)
-    denominator = 1 - _HR_PACE_ADJUSTMENT_FACTOR * (1 - hr_pct)
-    return pace_sec_per_km * denominator
+    reserve = max_hr_bpm - resting_hr_bpm
+    if reserve <= 0:
+        return None
+    hrr_pct = min((avg_hr_bpm - resting_hr_bpm) / reserve, 1.0)
+    if hrr_pct <= 0:
+        return None
+    vo2max = _RESTING_VO2 + (running_vo2(pace_sec_per_km) - _RESTING_VO2) / hrr_pct
+    marathon_time_sec = _vdot_to_marathon_time_sec(vo2max)
+    distance_km = _DISTANCE_KM[distance_category]
+    category_time_sec = marathon_time_sec / (_MARATHON_KM / distance_km) ** RIEGEL_EXPONENT
+    return category_time_sec / distance_km
 
 
 def _resolve_effort(
     activity: dict[str, Any],
     max_hr_bpm: float | None,
+    resting_hr_bpm: float | None,
 ) -> tuple[bool, float | None, bool]:
     """判斷這筆活動能否成為候選，並在需要換算時算出等效全力配速。
 
@@ -168,7 +192,15 @@ def _resolve_effort(
         # 強度已接近全力，直接視為可用候選，不需要換算也不降級信賴度。
         return True, pace, False
 
-    equivalent_pace = estimate_max_effort_pace(pace, avg_hr_bpm, max_hr_bpm)
+    category = activity.get("distance_category")
+    if not resting_hr_bpm or category not in _DISTANCE_KM:
+        # 換算需要靜止心率（%HRR）與明確距離（Riegel 換回該距離配速）
+        return False, None, False
+    equivalent_pace = estimate_max_effort_pace(
+        pace, avg_hr_bpm, max_hr_bpm, resting_hr_bpm, category
+    )
+    if equivalent_pace is None:
+        return False, None, False
     return True, equivalent_pace, True
 
 
@@ -199,9 +231,7 @@ def estimate_vdot(marathon_time_sec: float) -> float:
         VDOT = VO2 / %VO2max
     """
     time_min = marathon_time_sec / 60.0
-    velocity_m_per_min = (_MARATHON_KM * 1000) / time_min
-
-    vo2 = -4.60 + 0.182258 * velocity_m_per_min + 0.000104 * velocity_m_per_min**2
+    vo2 = running_vo2(marathon_time_sec / _MARATHON_KM)
     pct_vo2max = (
         0.8
         + 0.1894393 * pow(2.718281828459045, -0.012778 * time_min)
@@ -257,12 +287,15 @@ def estimate_vdot_and_paces(
     max_hr_bpm: float | None = None,
     max_hr_source: str | None = None,
     reference_date: datetime.date | None = None,
+    resting_hr_bpm: float | None = None,
 ) -> dict[str, Any]:
     """完整流程：挑選基準候選 → Riegel 跨距離推算 → Daniels VDOT → 各課種配速區間。
 
     max_hr_source：沿用既有 athlete_profile.max_hr_source 語意
         （'watch_display'/'measured'/'age_formula'/'observed_from_data'），
         原樣透傳到輸出結果，不在此函式內做任何信賴度判斷或阻斷計算。
+
+    resting_hr_bpm：非全力候選的心率換算需要（%HRR），見 select_candidate()。
 
     回傳：
         可推算時：
@@ -281,7 +314,10 @@ def estimate_vdot_and_paces(
             {"available": False, "reason": str}
     """
     candidate_result = select_candidate(
-        activities, reference_date=reference_date, max_hr_bpm=max_hr_bpm
+        activities,
+        reference_date=reference_date,
+        max_hr_bpm=max_hr_bpm,
+        resting_hr_bpm=resting_hr_bpm,
     )
     if not candidate_result["available"]:
         return {
@@ -325,8 +361,12 @@ def select_candidate(
     activities: list[dict[str, Any]],
     reference_date: datetime.date | None = None,
     max_hr_bpm: float | None = None,
+    resting_hr_bpm: float | None = None,
 ) -> dict[str, Any]:
     """從候選活動清單中挑出最適合作為 VDOT 推算基準的一筆。
+
+    排序：**真實全力成績（含心率已達全力門檻者）一律優先於心率換算候選**；
+    同一類之內才比距離代表性，同代表性取最新。見模組說明的 2026-10-14 修正。
 
     activities：每筆至少包含
         - "date": datetime.date，活動日期
@@ -343,6 +383,9 @@ def select_candidate(
     max_hr_bpm：使用者的最大心率，用於非全力程度候選的心率強度換算。
         沿用既有 athlete_profile.max_hr_bpm 語意，由呼叫端傳入（本函式不碰
         資料庫）。若為 None，非全力程度候選一律無法換算、視為不合格。
+
+    resting_hr_bpm：使用者的靜止心率，心率換算（%HRR）所需。若為 None，
+        需要換算的低強度候選一律視為不合格（心率已達全力門檻者不受影響）。
 
     回傳：
         找到候選時：
@@ -372,7 +415,9 @@ def select_candidate(
         if category not in _DISTANCE_RANK:
             continue
 
-        usable, effective_pace, hr_converted = _resolve_effort(activity, max_hr_bpm)
+        usable, effective_pace, hr_converted = _resolve_effort(
+            activity, max_hr_bpm, resting_hr_bpm
+        )
         if not usable:
             continue
 
@@ -406,8 +451,9 @@ def select_candidate(
             "reason": "候選活動皆未通過新鮮度門檻，或缺乏可用的心率/配速資料無法換算",
         }
 
-    # 依代表性排序取最優先（rank 越小越優先）；同代表性等級取最新一筆。
-    eligible.sort(key=lambda c: (c["rank"], -c["date"].toordinal()))
+    # 真實全力成績優先（hr_converted=False 排前），其次代表性（rank 越小越
+    # 優先），同代表性等級取最新一筆。
+    eligible.sort(key=lambda c: (c["hr_converted"], c["rank"], -c["date"].toordinal()))
     best = eligible[0]
 
     confidence = "low" if best["degraded_confidence"] else "high"

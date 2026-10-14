@@ -26,12 +26,10 @@ is_max_effort 欄位，本模組在查詢時轉換：
       視為全力程度；其餘一律 False，交由 vdot_engine 既有的心率強度換算
       路徑處理（缺心率則該筆活動不合格，被 select_candidate 排除）。
 
-athlete_profile 缺 max_hr_bpm／resting_hr_bpm 時的行為：這兩個欄位分屬
-不同用途——max_hr_bpm 是 vdot_engine 換算非全力候選所需的參數，缺了它
-vdot_engine 仍可能靠 is_max_effort=True 的候選（比賽成績，不需要換算）
-成功推算 VDOT，因此不在本模組內提前中止，原樣傳 None 讓 vdot_engine 的
-既有邏輯判斷是否可用。resting_hr_bpm 本模組目前的流程不使用（訓練負荷
-查詢層 training_load_queries.py 才需要它），故不在此檢查。
+athlete_profile 缺 max_hr_bpm／resting_hr_bpm 時的行為：兩者都是 vdot_engine
+換算非全力候選（%HRR）所需的參數，缺了它們 vdot_engine 仍可能靠
+is_max_effort=True 的候選（比賽成績，不需要換算）成功推算 VDOT，因此不在
+本模組內提前中止，原樣傳 None 讓 vdot_engine 的既有邏輯判斷是否可用。
 """
 
 from __future__ import annotations
@@ -120,15 +118,18 @@ def get_vdot_candidate_activities(
 
 def _get_hr_profile(
     conn: sqlite3.Connection, athlete_id: int
-) -> tuple[float | None, str | None]:
-    """取出 VDOT 推算需要的 (max_hr_bpm, max_hr_source)。查無此人時皆為 None。"""
+) -> dict[str, Any]:
+    """取出 VDOT 推算需要的 HR 參數，key 與 estimate_vdot_and_paces() 的
+    參數同名，可直接 ** 展開傳入。查無此人時值皆為 None。"""
     row = conn.execute(
-        "SELECT max_hr_bpm, max_hr_source FROM athlete_profile WHERE id = ?",
+        "SELECT max_hr_bpm, max_hr_source, resting_hr_bpm FROM athlete_profile WHERE id = ?",
         (athlete_id,),
     ).fetchone()
-    if row is None:
-        return None, None
-    return row["max_hr_bpm"], row["max_hr_source"]
+    return {
+        "max_hr_bpm": row["max_hr_bpm"] if row else None,
+        "max_hr_source": row["max_hr_source"] if row else None,
+        "resting_hr_bpm": row["resting_hr_bpm"] if row else None,
+    }
 
 
 def get_pace_zones(
@@ -142,15 +143,13 @@ def get_pace_zones(
         兩年前的訓練時，不該拿今天的體能當比較基準。未提供時等同「現在」，
         沿用 vdot_engine 預設（以今天為基準、不排除任何活動）。
     """
-    max_hr_bpm, max_hr_source = _get_hr_profile(conn, athlete_id)
     candidates = get_vdot_candidate_activities(conn, athlete_id)
     if reference_date is not None:
         candidates = [c for c in candidates if c["date"] <= reference_date]
     result = estimate_vdot_and_paces(
         candidates,
-        max_hr_bpm=max_hr_bpm,
-        max_hr_source=max_hr_source,
         reference_date=reference_date,
+        **_get_hr_profile(conn, athlete_id),
     )
     return result["pace_zones"] if result["available"] else None
 
@@ -184,14 +183,11 @@ def generate_and_save_plan(
     未寫入任何資料庫列即代表失敗——VDOT 無法推算時本函式在呼叫
     periodization_scheduler／training_plan_store 之前就明確中止。
     """
-    max_hr_bpm, max_hr_source = _get_hr_profile(conn, athlete_id)
-
     candidate_activities = get_vdot_candidate_activities(conn, athlete_id)
     vdot_result = estimate_vdot_and_paces(
         candidate_activities,
-        max_hr_bpm=max_hr_bpm,
-        max_hr_source=max_hr_source,
         reference_date=reference_date,
+        **_get_hr_profile(conn, athlete_id),
     )
     if not vdot_result["available"]:
         return {"available": False, "reason": vdot_result["reason"]}

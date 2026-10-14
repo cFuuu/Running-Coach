@@ -9,10 +9,12 @@ from src.main.python.services.vdot_engine import (
     estimate_vdot,
     estimate_vdot_and_paces,
     project_to_marathon_time_sec,
+    running_vo2,
     select_candidate,
 )
 
 REFERENCE_DATE = datetime.date(2026, 8, 19)
+RESTING_HR = 60
 
 
 def _activity(
@@ -120,34 +122,57 @@ class TestSelectCandidate(unittest.TestCase):
 
 
 class TestEstimateMaxEffortPace(unittest.TestCase):
-    def test_at_max_hr_pace_is_unchanged(self):
-        pace = estimate_max_effort_pace(pace_sec_per_km=300, avg_hr_bpm=190, max_hr_bpm=190)
-        self.assertAlmostEqual(pace, 300, places=3)
+    def _convert(self, pace, avg_hr, category="10k"):
+        return estimate_max_effort_pace(
+            pace_sec_per_km=pace, avg_hr_bpm=avg_hr, max_hr_bpm=190,
+            resting_hr_bpm=RESTING_HR, distance_category=category,
+        )
 
-    def test_below_max_hr_pace_speeds_up(self):
-        # 65% HRmax，等效全力配速應明顯快於原配速。
-        pace = estimate_max_effort_pace(pace_sec_per_km=400, avg_hr_bpm=123.5, max_hr_bpm=190)
-        self.assertLess(pace, 400)
+    def test_vdot_of_converted_pace_equals_vo2r_estimate(self):
+        """換算後的配速走完既有管線（Riegel → Daniels），VDOT 必須等於
+        %HRR≈%VO2R 推出的 VO2max——兩段公式互為反運算。"""
+        pace, hr = 360, 140
+        hrr = (hr - RESTING_HR) / (190 - RESTING_HR)
+        expected = 3.5 + (running_vo2(pace) - 3.5) / hrr
+        for category in ("3k", "10k", "half_marathon"):
+            with self.subTest(category=category):
+                converted = self._convert(pace, hr, category)
+                vdot = estimate_vdot(project_to_marathon_time_sec(category, converted))
+                self.assertAlmostEqual(vdot, expected, places=1)
+
+    def test_lower_hr_at_same_pace_means_faster_equivalent(self):
+        self.assertLess(self._convert(360, 130), self._convert(360, 150))
 
     def test_hr_above_max_hr_is_clamped(self):
-        """avg_hr 因感測器雜訊略高於 max_hr 時，不應產生變慢的荒謬結果。"""
-        pace = estimate_max_effort_pace(pace_sec_per_km=300, avg_hr_bpm=195, max_hr_bpm=190)
-        self.assertAlmostEqual(pace, 300, places=3)
+        """avg_hr 因感測器雜訊略高於 max_hr 時，視同 %HRR = 100%。"""
+        self.assertAlmostEqual(self._convert(300, 195), self._convert(300, 190), places=3)
+
+    def test_hr_at_or_below_resting_cannot_be_converted(self):
+        self.assertIsNone(self._convert(400, RESTING_HR))
+
+    def test_easy_run_no_longer_inflated(self):
+        """回歸：2026-10-14 實測的輕鬆 10K（5:46、146bpm、HRmax 195、RHR 56）
+        舊公式推出 VDOT 48.5。新公式仍會偏高（次最大推估的已知偏誤），
+        但必須明顯低於舊值。"""
+        converted = estimate_max_effort_pace(346, 146, 195, 56, "10k")
+        vdot = estimate_vdot(project_to_marathon_time_sec("10k", converted))
+        self.assertLess(vdot, 46)
+        self.assertGreater(vdot, 38)
 
 
 class TestSelectCandidateWithHrConversion(unittest.TestCase):
+    def _select(self, activities, **kwargs):
+        kwargs.setdefault("max_hr_bpm", 190)
+        kwargs.setdefault("resting_hr_bpm", RESTING_HR)
+        return select_candidate(activities, reference_date=REFERENCE_DATE, **kwargs)
+
+    def _easy(self, category="10k", days_ago=5):
+        return _activity(days_ago=days_ago, distance_category=category, is_max_effort=False,
+                         avg_hr_bpm=123.5, pace_sec_per_km=400)
+
     def test_low_intensity_activity_is_converted_and_usable(self):
         """低強度活動（65% HRmax）換算後仍可用，且信賴度標記較低。"""
-        activities = [
-            _activity(
-                days_ago=5,
-                distance_category="10k",
-                is_max_effort=False,
-                avg_hr_bpm=123.5,
-                pace_sec_per_km=400,
-            )
-        ]
-        result = select_candidate(activities, reference_date=REFERENCE_DATE, max_hr_bpm=190)
+        result = self._select([self._easy()])
         self.assertTrue(result["available"])
         self.assertEqual(result["confidence"], "low")
         self.assertTrue(result["hr_converted"])
@@ -157,22 +182,15 @@ class TestSelectCandidateWithHrConversion(unittest.TestCase):
         activities = [
             _activity(days_ago=5, distance_category="10k", is_max_effort=False)
         ]
-        result = select_candidate(activities, reference_date=REFERENCE_DATE, max_hr_bpm=190)
-        self.assertFalse(result["available"])
+        self.assertFalse(self._select(activities)["available"])
 
     def test_missing_max_hr_bpm_excludes_non_max_effort_candidates(self):
         """呼叫端未提供 max_hr_bpm 時，非全力候選無法換算，視為不合格。"""
-        activities = [
-            _activity(
-                days_ago=5,
-                distance_category="10k",
-                is_max_effort=False,
-                avg_hr_bpm=123.5,
-                pace_sec_per_km=400,
-            )
-        ]
-        result = select_candidate(activities, reference_date=REFERENCE_DATE, max_hr_bpm=None)
-        self.assertFalse(result["available"])
+        self.assertFalse(self._select([self._easy()], max_hr_bpm=None)["available"])
+
+    def test_missing_resting_hr_excludes_low_intensity_candidates(self):
+        """%HRR 需要靜止心率，缺了就不換算（而不是退回舊的 %HRmax 公式）。"""
+        self.assertFalse(self._select([self._easy()], resting_hr_bpm=None)["available"])
 
     def test_high_intensity_non_max_effort_activity_is_not_downgraded(self):
         """心率已接近全力（>=85% HRmax）的候選，即使 is_max_effort=False 也不需要換算降級。"""
@@ -185,35 +203,33 @@ class TestSelectCandidateWithHrConversion(unittest.TestCase):
                 pace_sec_per_km=330,
             )
         ]
-        result = select_candidate(activities, reference_date=REFERENCE_DATE, max_hr_bpm=190)
+        result = self._select(activities, resting_hr_bpm=None)  # 不需換算，故不需 RHR
         self.assertTrue(result["available"])
         self.assertEqual(result["confidence"], "high")
         self.assertFalse(result["hr_converted"])
         self.assertEqual(result["effective_pace_sec_per_km"], 330)
 
-    def test_converted_low_intensity_candidate_still_wins_on_distance_representativeness(self):
-        """換算後的長距離候選，即使信賴度較低，代表性排序仍優先於短距離全力候選。"""
+    def test_real_effort_beats_converted_candidate_regardless_of_distance(self):
+        """2026-10-14 修正：換算候選即使距離代表性較高，也不能壓過真實全力成績
+        （原本換算的半馬會贏過真實 10K，錯誤的換算因此主導結果）。"""
         activities = [
-            _activity(days_ago=5, distance_category="10k", is_max_effort=True, pace_sec_per_km=300),
-            _activity(
-                days_ago=10,
-                distance_category="half_marathon",
-                is_max_effort=False,
-                avg_hr_bpm=123.5,
-                pace_sec_per_km=400,
-            ),
+            _activity(days_ago=5, distance_category="3k", is_max_effort=True, pace_sec_per_km=280),
+            self._easy(category="half_marathon", days_ago=10),
         ]
-        result = select_candidate(activities, reference_date=REFERENCE_DATE, max_hr_bpm=190)
-        self.assertTrue(result["available"])
-        self.assertEqual(result["distance_category"], "half_marathon")
-        self.assertTrue(result["hr_converted"])
+        result = self._select(activities)
+        self.assertEqual(result["distance_category"], "3k")
+        self.assertFalse(result["hr_converted"])
+
+    def test_converted_candidates_still_ranked_by_distance_among_themselves(self):
+        activities = [self._easy(category="5k"), self._easy(category="half_marathon", days_ago=10)]
+        self.assertEqual(self._select(activities)["distance_category"], "half_marathon")
 
     def test_max_effort_candidate_pace_is_untouched(self):
         """既有全力程度候選（is_max_effort=True）行為不變：不做任何換算。"""
         activities = [
             _activity(days_ago=5, distance_category="10k", is_max_effort=True, pace_sec_per_km=300)
         ]
-        result = select_candidate(activities, reference_date=REFERENCE_DATE, max_hr_bpm=190)
+        result = self._select(activities)
         self.assertTrue(result["available"])
         self.assertFalse(result["hr_converted"])
         self.assertEqual(result["effective_pace_sec_per_km"], 300)
@@ -330,7 +346,8 @@ class TestEstimateVdotAndPaces(unittest.TestCase):
             )
         ]
         result = estimate_vdot_and_paces(
-            activities, max_hr_bpm=190, reference_date=REFERENCE_DATE
+            activities, max_hr_bpm=190, reference_date=REFERENCE_DATE,
+            resting_hr_bpm=RESTING_HR,
         )
         self.assertTrue(result["available"])
         self.assertTrue(result["source_candidate"]["hr_converted"])
