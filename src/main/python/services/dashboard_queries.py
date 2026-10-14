@@ -1251,6 +1251,8 @@ def get_today(
             "wellness_latest": wellness_latest,
             "activity_latest": activity_latest,
             "days_behind": days_behind,
+            # 側邊列底部「最後更新時間」用：同步時刻（UTC，帶 Z）與最新活動的開始時間
+            **{k: v for k, v in _data_freshness(conn, resolved).items() if k != "wellness_latest"},
         },
         "planned": {"today": planned_today, "tomorrow": planned_tomorrow},
         "readiness": {
@@ -1953,6 +1955,7 @@ def _personal_bests(races: list[dict]) -> list[dict]:
 
 def _data_freshness(conn: sqlite3.Connection, athlete_id: int) -> dict:
     """最後更新時間：資料最後一次寫入（同步）的時刻，與最新一筆活動／身體數據。
+    由 /api/today 的 freshness 帶出，顯示在每一頁都看得到的側邊列底部。
 
     last_synced_at 取各同步資料表 fetched_at 的最大值。⚠️ fetched_at 存的是
     **不帶時區的 UTC**（garmin_sync_runner 以 datetime.now(timezone.utc) 去掉
@@ -1990,7 +1993,7 @@ def get_overview(
     range_key: str = DEFAULT_RANGE,
     today: datetime.date | None = None,
 ) -> dict:
-    """總覽頁：區間摘要、資料品質與新鮮度、本週跑量與區間時間、近 2 週跑量、
+    """總覽頁：區間摘要、資料品質、本週跑量與區間時間、近 1 週跑量、
     強度堆疊週跑量、心率區間分佈與 bpm 邊界、VDOT 與歷年走勢、最佳成績。
 
     ATL/CTL/TSB 不在這裡——前端直接用既有的 /api/training-load，不重算一份。
@@ -2030,7 +2033,6 @@ def get_overview(
                 "requires_hr": True,
             },
         },
-        "data_freshness": _data_freshness(conn, resolved),
         "this_week": _this_week_volume(conn, resolved, today),
         "recent_volume": _recent_volume(conn, resolved, today),
         "weekly_intensity": {

@@ -1076,12 +1076,14 @@ class TestOverview(DashboardQueryTestCase):
         self.assertEqual(recent["km"], 19.0)
         self.assertEqual(recent["previous_km"], 5.0)
 
-    def test_data_freshness_marks_sync_time_as_utc(self):
-        f = self._overview()["data_freshness"]
+    def test_today_freshness_marks_sync_time_as_utc(self):
+        """最後更新時間由 /api/today 帶出（側邊列每頁都看得到），總覽不再重複輸出。"""
+        f = queries.get_today(self.conn, today=self.TODAY)["freshness"]
         # fixture 的 fetched_at 是 2026-03-10T00:00:00（UTC，無時區）
         self.assertEqual(f["last_synced_at"], "2026-03-10T00:00:00Z")
         self.assertEqual(f["activity_latest_at"], "2026-03-09T07:00")
         self.assertEqual(f["wellness_latest"], "2026-03-10")
+        self.assertNotIn("data_freshness", self._overview())
 
     def test_hr_zone_bounds_unavailable_without_watch_settings(self):
         bounds = self._overview()["hr_zone_bounds"]
