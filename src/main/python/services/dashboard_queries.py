@@ -1322,7 +1322,8 @@ def get_calendar(
 
     day_state 是狀態分類，不是評價：
         - "rest_ok"：當天無跑步課表（無課表，或課表為 rest），且無跑步活動
-        - "planned_done"：當天有跑步課表，且配對成功（exact/inferred）
+        - "planned_done"：當天有跑步課表，且配對成功（exact/inferred），
+          或同日多場跑步搶同一份課表（單場為 ambiguous，但當天確有執行）
         - "planned_missed"：**今天以前**有跑步課表，但沒有任何活動可配對
         - "today_pending"：**今天**有跑步課表、尚無配對成功的活動——今天
           還沒過完，不可判定為「錯過」，故與 planned_missed 分開
@@ -1379,6 +1380,7 @@ def get_calendar(
 
         activities_out = []
         any_matched = False
+        any_executed = False
         for activity_row in day_activities:
             match = plan_reconciliation.match_activity_to_plan(
                 {"id": activity_row["id"], "activity_type": activity_row["activity_type"]},
@@ -1387,6 +1389,13 @@ def get_calendar(
             )
             if match["state"] in ("exact", "inferred"):
                 any_matched = True
+            # 整天層級只問「有沒有執行」，不問「是哪一場」：熱身另存一場時兩場
+            # 都是 ambiguous，但當天確實有相容活動，不可判成未執行
+            if (
+                match["state"] != "none"
+                and activity_row["activity_type"] in RUNNING_ACTIVITY_TYPES
+            ):
+                any_executed = True
             activities_out.append(
                 {
                     "id": activity_row["id"],
@@ -1411,11 +1420,11 @@ def get_calendar(
 
         if current > today:
             day_state = "future"
-        elif has_running_plan and any_matched:
+        elif has_running_plan and (any_matched or any_executed):
             day_state = "planned_done"
         elif has_running_plan and current == today:
             day_state = "today_pending"
-        elif has_running_plan and not any_matched:
+        elif has_running_plan:
             day_state = "planned_missed"
         elif has_running_activity and not any_matched:
             day_state = "unplanned_activity"

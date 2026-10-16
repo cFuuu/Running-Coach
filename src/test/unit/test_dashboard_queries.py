@@ -780,6 +780,30 @@ class TestCalendar(DashboardQueryTestCase):
         self.assertEqual(len(day["activities"]), 1)
         self.assertEqual(day["activities"][0]["plan_match"]["state"], "inferred")
 
+    def test_two_runs_on_planned_day_is_planned_done_not_missed(self):
+        """熱身另存一場活動時，單場配對是 ambiguous，但「當天有沒有執行」不需
+        知道是哪一場——不可因此把整天判成未執行。"""
+        row = self.conn.execute(
+            "SELECT athlete_id, activity_type FROM activities "
+            "WHERE date(started_at) = '2026-03-09'"
+        ).fetchone()
+        self.conn.execute(
+            "INSERT INTO activities (athlete_id, source, source_version, fetched_at, "
+            "activity_type, title, started_at, distance_km, duration_sec) "
+            "VALUES (?, 'garmin_export', 'test', '2026-03-10T00:00:00', ?, '熱身', "
+            "'2026-03-09T05:00:00', 1.7, 600)",
+            (row["athlete_id"], row["activity_type"]),
+        )
+        self.conn.commit()
+        result = queries.get_calendar(
+            self.conn, start="2026-03-09", end="2026-03-09", today=datetime.date(2026, 3, 10)
+        )
+        day = result["days"][0]
+        self.assertEqual(day["day_state"], "planned_done")
+        # 單場層級仍誠實回報歧義，不替任何一場宣稱執行了課表
+        for activity in day["activities"]:
+            self.assertEqual(activity["plan_match"]["state"], "ambiguous")
+
     def test_planned_day_without_activity_before_today_is_planned_missed(self):
         """2026-03-01 無課表、無活動——先驗證 rest_ok，再驗證有課表無活動的情境。"""
         self.conn.execute(
