@@ -65,6 +65,9 @@ DASHBOARD_ASSETS_DIR = (
     Path(__file__).resolve().parents[2] / "resources" / "assets" / "dashboard"
 )
 
+# 學員檔（賽事名稱來源）預設與資料庫放在同一個資料夾，兩者都在不進版控的 output/
+DEFAULT_PROFILE_FILENAME = "athlete_profile.md"
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 # 等 server 開始接受連線的上限；逾時就放棄開瀏覽器（server 照常跑）
@@ -76,12 +79,16 @@ def create_app(
     assets_dir: Path | None = None,
     chat_config: ChatConfig | None = None,
     analysis_config: AnalysisConfig | None = None,
+    profile_path: Path | None = None,
 ) -> FastAPI:
     """建立 FastAPI 應用程式。db_path 由呼叫端提供，不預設任何路徑。
 
     chat_config 省略時從環境變數讀（見 services/coach_chat.py 的設定表）。
     未設 ANTHROPIC_API_KEY 時 app 仍正常啟動，只有 /api/chat/* 回 503——
     dashboard 的其餘功能不該因為沒設聊天金鑰就整個掛掉。
+
+    profile_path：學員檔（總覽個人最佳的賽事名稱來源），省略時取資料庫同資料夾的
+    athlete_profile.md；檔案不存在不會報錯，賽事名稱退回活動名稱。
     """
     app = FastAPI(
         title="Running Coach Dashboard API",
@@ -106,6 +113,8 @@ def create_app(
     app.dependency_overrides[routes_dashboard.get_conn] = (
         routes_dashboard.make_connection_dependency(db_path)
     )
+    resolved_profile = profile_path or Path(db_path).with_name(DEFAULT_PROFILE_FILENAME)
+    app.dependency_overrides[routes_dashboard.get_profile_path] = lambda: resolved_profile
     config = chat_config if chat_config is not None else ChatConfig.from_env()
     app.dependency_overrides[routes_chat.get_chat_config] = lambda: config
     a_config = analysis_config if analysis_config is not None else AnalysisConfig.from_env()
@@ -155,6 +164,12 @@ def main() -> None:
     )
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"連接埠，預設 {DEFAULT_PORT}")
     ap.add_argument(
+        "--profile-path",
+        type=Path,
+        default=None,
+        help=f"學員檔路徑（賽事名稱來源），預設為資料庫同資料夾的 {DEFAULT_PROFILE_FILENAME}",
+    )
+    ap.add_argument(
         "--no-browser",
         action="store_true",
         help="啟動後不要自動開啟瀏覽器（預設會在 server 就緒後開啟 dashboard）",
@@ -182,7 +197,9 @@ def main() -> None:
             daemon=True,
         ).start()
 
-    uvicorn.run(create_app(args.db_path), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(args.db_path, profile_path=args.profile_path), host=args.host, port=args.port
+    )
 
 
 if __name__ == "__main__":

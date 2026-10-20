@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import datetime
 import sqlite3
+from pathlib import Path
 from typing import Callable, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.main.python.services import dashboard_queries as queries
+from src.main.python.services import race_names
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -55,6 +57,12 @@ def make_connection_dependency(db_path: str) -> Callable[[], Iterator[sqlite3.Co
 # 這個預設實作只是佔位，直接呼叫會報錯而不是連到某個寫死的路徑。
 def get_conn() -> Iterator[sqlite3.Connection]:  # pragma: no cover - 一定會被覆寫
     raise RuntimeError("資料庫連線未設定：請透過 app.create_app(db_path=...) 建立應用程式")
+
+
+# 學員檔路徑（賽事名稱的來源，見 race_names.py），同樣由 app.py 覆寫。
+# 預設 None＝沒有學員檔，賽事名稱一律退回活動名稱。
+def get_profile_path() -> Path | None:
+    return None
 
 
 RangeParam = Query(
@@ -206,10 +214,18 @@ def read_overview(
     ),
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
+    profile_path: Path | None = Depends(get_profile_path),
 ) -> dict:
     """總覽頁：有效訓練數、本週跑量、強度堆疊週跑量、心率區間分佈、VDOT。
 
     ATL/CTL/TSB 由前端另取 /api/training-load，這裡不重複輸出。
     """
     today_date = _parse_date_param(today, "today") if today else None
-    return queries.get_overview(conn, athlete_id, _validate_range(range), today_date)
+    # 每次請求重讀學員檔：Fu 改完賽事名稱重新整理就生效，不必重啟 server
+    return queries.get_overview(
+        conn,
+        athlete_id,
+        _validate_range(range),
+        today_date,
+        race_names=race_names.load_race_names(profile_path),
+    )

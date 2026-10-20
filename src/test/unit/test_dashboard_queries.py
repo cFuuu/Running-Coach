@@ -1125,6 +1125,23 @@ class TestOverview(DashboardQueryTestCase):
         record = self._pb("10k")["records"][0]
         self.assertEqual(record["pace_sec_per_km"], 315)
 
+    def test_race_name_comes_from_profile_with_title_fallback(self):
+        self._add_run("2025-11-23T07:00:00", 10.0, 3150)
+        self._add_run("2026-10-08T07:00:00", 3.0, 839)
+        self._add_run("2025-10-01T07:00:00", 10.0, 3300)
+        bests = queries.get_overview(
+            self.conn,
+            range_key="30d",
+            today=self.TODAY,
+            race_names={"2025-11-23": "城市 10K", "2026-10-08": "跑班 3K 速度測試"},
+        )["personal_bests"]
+        by_date = {r["date"]: r for pb in bests for r in pb["records"]}
+        self.assertEqual(by_date["2025-11-23"]["name"], "城市 10K")
+        self.assertFalse(by_date["2025-11-23"]["personal_test"])
+        self.assertTrue(by_date["2026-10-08"]["personal_test"])
+        # 學員檔沒寫的場次退回活動名稱（_add_run 建的活動沒有 title → None）
+        self.assertEqual(by_date["2025-10-01"]["name"], by_date["2025-10-01"]["title"])
+
     def test_personal_bests_return_every_race_fastest_first(self):
         times = [1530, 1500, 1550, 1510, 1520]
         for i, t in enumerate(times):

@@ -28,6 +28,7 @@ from src.main.python.services import plan_reconciliation
 from src.main.python.services import training_load_queries
 from src.main.python.services import training_plan_generator
 from src.main.python.services import vdot_engine
+from src.main.python.services import race_names as race_names_module
 from src.main.python.services.activity_types import (
     PACE_COMPARABLE_RUNNING_TYPES,
     RUNNING_ACTIVITY_TYPES,
@@ -2007,12 +2008,18 @@ def _garmin_vdot_reference(
 _PERSONAL_BEST_ORDER = ("3k", "5k", "10k", "half_marathon", "marathon")
 
 
-def _race_records(conn: sqlite3.Connection, athlete_id: int) -> list[dict]:
+def _race_records(
+    conn: sqlite3.Connection, athlete_id: int, race_names: dict[str, str] | None = None
+) -> list[dict]:
     """所有標記為比賽的跑步，依日期由舊到新，每筆附 race_result() 的判讀與 VDOT。
 
     最佳成績與 VDOT 走勢共用這份清單（同一套距離歸類、同一個成績、同一條公式）。
     距離對不上任何標準類別的比賽不列入。
+
+    race_names：{日期: 賽事名稱}，來自學員檔（見 race_names.py）。該日沒有
+    名稱時退回活動名稱；名稱含「測驗／測試」的標 personal_test。
     """
+    race_names = race_names or {}
     placeholders, running_types = _running_type_filter()
     rows = conn.execute(
         f"""
@@ -2036,6 +2043,10 @@ def _race_records(conn: sqlite3.Connection, athlete_id: int) -> list[dict]:
                 "id": row["id"],
                 "date": row["activity_date"],
                 "title": row["title"],
+                "name": race_names.get(row["activity_date"]) or row["title"],
+                "personal_test": race_names_module.is_personal_test(
+                    race_names.get(row["activity_date"])
+                ),
                 "distance": category,
                 "label": _DISTANCE_CATEGORY_LABEL[category],
                 "distance_km": _round(row["distance_km"], 2),
@@ -2116,6 +2127,7 @@ def get_overview(
     athlete_id: int | None = None,
     range_key: str = DEFAULT_RANGE,
     today: datetime.date | None = None,
+    race_names: dict[str, str] | None = None,
 ) -> dict:
     """總覽頁：區間摘要、資料品質、本週跑量與區間時間、近 1 週跑量、
     強度堆疊週跑量、心率區間分佈與 bpm 邊界、VDOT 與歷年走勢、最佳成績。
@@ -2134,7 +2146,7 @@ def get_overview(
 
     rows = _fetch_overview_runs(conn, resolved, window["start_date"], window["end_date"])
     runs = [(row, _zone_seconds(row)) for row in rows]
-    races = _race_records(conn, resolved)
+    races = _race_records(conn, resolved, race_names)
 
     end_date = datetime.date.fromisoformat(window["end_date"])
     if window["start_date"]:
