@@ -1751,6 +1751,102 @@ def _recent_volume(conn: sqlite3.Connection, athlete_id: int, today: datetime.da
     }
 
 
+# 有氧效率 EF（速度 ÷ 心率）的比較視窗：近 6 週對近 6 個月（含近 6 週），
+# 取自 TrailRunCoach 總覽「有氧效率」的視窗設計。🔴 推估，未經本學員資料校正。
+EF_RECENT_DAYS = 42
+EF_BASELINE_DAYS = 182
+# 視窗內場次少於此數就不比較——一兩場的天候、補水就能左右平均。🔴 推估。
+EF_MIN_RECENT_RUNS = 3
+EF_MIN_BASELINE_RUNS = 6
+# 只取輕鬆跑：EF 比的是「同樣的有氧強度換到多少速度」，強度課混進來沒有意義。
+_EF_WORKOUT_TYPES = ("easy", "lsd")
+# 只取戶外與田徑場：跑步機的配速來自手腕加速規，誤差比 GPS 大得多。
+_EF_ACTIVITY_TYPES = ("running", "track_running")
+# 太短的跑步整場平均被暖身段主導。🔴 推估。
+EF_MIN_DURATION_SEC = 20 * 60
+
+
+def _aerobic_efficiency(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) -> dict:
+    """輕鬆跑的有氧效率 EF = 平均速度（公尺/分，優先用坡度校正配速）÷ 平均心率。
+
+    只用單場摘要，不需要逐秒資料，因此 API 同步的活動也能算。回傳每場的點
+    （供走勢圖）與近 6 週對近 6 個月的平均變化；變化為正代表同樣心率跑得更快。
+    場次不足時 change 為 None 並附原因。只呈現數字，不判斷好壞。
+    """
+    baseline_start = today - datetime.timedelta(days=EF_BASELINE_DAYS - 1)
+    recent_start = today - datetime.timedelta(days=EF_RECENT_DAYS - 1)
+    type_ph = ",".join("?" for _ in _EF_ACTIVITY_TYPES)
+    wt_ph = ",".join("?" for _ in _EF_WORKOUT_TYPES)
+    rows = conn.execute(
+        f"""
+        SELECT date(started_at) AS activity_date, avg_hr_bpm, avg_pace_sec_per_km,
+               avg_grade_adj_pace_sec_per_km
+        FROM activities
+        WHERE athlete_id = ? AND activity_type IN ({type_ph}) AND workout_type IN ({wt_ph})
+          AND avg_hr_bpm > 0 AND COALESCE(avg_grade_adj_pace_sec_per_km, avg_pace_sec_per_km) > 0
+          AND duration_sec >= ? AND date(started_at) BETWEEN ? AND ?
+        ORDER BY started_at
+        """,
+        (
+            athlete_id,
+            *_EF_ACTIVITY_TYPES,
+            *_EF_WORKOUT_TYPES,
+            EF_MIN_DURATION_SEC,
+            baseline_start.isoformat(),
+            today.isoformat(),
+        ),
+    ).fetchall()
+
+    points = []
+    for row in rows:
+        gap = row["avg_grade_adj_pace_sec_per_km"]
+        pace = gap or row["avg_pace_sec_per_km"]
+        points.append(
+            {
+                "date": row["activity_date"],
+                "ef": round(60000 / pace / row["avg_hr_bpm"], 3),
+                "grade_adjusted": gap is not None,
+            }
+        )
+
+    recent = [p["ef"] for p in points if p["date"] >= recent_start.isoformat()]
+    baseline = [p["ef"] for p in points]
+    result: dict[str, Any] = {
+        "recent_days": EF_RECENT_DAYS,
+        "baseline_days": EF_BASELINE_DAYS,
+        "recent_runs": len(recent),
+        "baseline_runs": len(baseline),
+        "points": points,
+        "change": None,
+        "reason": None,
+    }
+    if len(recent) < EF_MIN_RECENT_RUNS or len(baseline) < EF_MIN_BASELINE_RUNS:
+        result["reason"] = (
+            f"輕鬆跑場次不足：近 {EF_RECENT_DAYS} 天 {len(recent)} 場（需 ≥{EF_MIN_RECENT_RUNS}）、"
+            f"近 {EF_BASELINE_DAYS} 天 {len(baseline)} 場（需 ≥{EF_MIN_BASELINE_RUNS}）"
+        )
+        return result
+
+    recent_mean = sum(recent) / len(recent)
+    baseline_mean = sum(baseline) / len(baseline)
+    bias_codes = ["ef_season_unadjusted"]
+    if not all(p["grade_adjusted"] for p in points):
+        bias_codes.append("ef_pace_not_grade_adjusted")
+    result["change"] = data_confidence.fact(
+        {
+            "recent_ef": round(recent_mean, 3),
+            "baseline_ef": round(baseline_mean, 3),
+            "change_pct": round((recent_mean / baseline_mean - 1) * 100, 1),
+        },
+        source=(
+            f"輕鬆跑／LSD 的平均速度（m/min，坡度校正配速優先）÷ 平均心率，"
+            f"近 {EF_RECENT_DAYS} 天平均對近 {EF_BASELINE_DAYS} 天平均"
+        ),
+        bias_codes=bias_codes,
+    )
+    return result
+
+
 # 手錶五區的顯示名稱（英文沿用 Garmin Connect 用語，Z2 依 Fu 指定為 Easy run），
 # 中文為 Fu 指定譯名
 HR_ZONE_NAMES: dict[int, tuple[str, str]] = {
@@ -2049,6 +2145,7 @@ def get_overview(
         },
         "this_week": _this_week_volume(conn, resolved, today),
         "recent_volume": _recent_volume(conn, resolved, today),
+        "aerobic_efficiency": _aerobic_efficiency(conn, resolved, today),
         "weekly_intensity": {
             "tiers": {tier: list(zones) for tier, zones in INTENSITY_TIER_ZONES.items()},
             "weeks": _weekly_intensity(runs, start_date, end_date),

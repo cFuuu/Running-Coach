@@ -973,6 +973,53 @@ class TestOverview(DashboardQueryTestCase):
         )["this_week"]
         self.assertIsNone(week["planned_km"])
 
+    def _add_easy_run(self, started_at, pace, hr, gap=None, workout_type="easy"):
+        run_id = self._add_run(started_at, 10.0, pace * 10, workout_type=workout_type)
+        self.conn.execute(
+            "UPDATE activities SET avg_hr_bpm = ?, avg_grade_adj_pace_sec_per_km = ? WHERE id = ?",
+            (hr, gap, run_id),
+        )
+
+    def _seed_ef_runs(self):
+        """近 6 週 3 場 EF 較高（6:00、140bpm），更早 4 場 EF 較低（6:00、150bpm）。
+        先把共用 fixture 的輕鬆跑改成未分類，只留這裡建的場次方便算期望值。"""
+        self.conn.execute("UPDATE activities SET workout_type = NULL")
+        for day in ("2026-03-01", "2026-02-20", "2026-02-10"):
+            self._add_easy_run(f"{day}T06:00:00", 360, 140, gap=360)
+        for day in ("2025-12-01", "2025-11-01", "2025-10-15", "2025-10-01"):
+            self._add_easy_run(f"{day}T06:00:00", 360, 150, gap=360)
+
+    def test_aerobic_efficiency_compares_recent_to_baseline(self):
+        self._seed_ef_runs()
+        ef = self._overview()["aerobic_efficiency"]
+        self.assertEqual((ef["recent_runs"], ef["baseline_runs"]), (3, 7))
+        change = ef["change"]["value"]
+        # EF = (60000/360)/HR：近期 166.67/140=1.190；基準 (3×1.190+4×1.111)/7=1.145
+        self.assertEqual(change["recent_ef"], 1.190)
+        # 每場 EF 先四捨五入到 3 位再平均，故實得 3.9 而非精確的 3.96
+        self.assertAlmostEqual(change["change_pct"], 4.0, delta=0.15)
+        codes = {b["code"] for b in ef["change"]["confidence"]["biases"]}
+        self.assertEqual(codes, {"ef_season_unadjusted"})
+
+    def test_aerobic_efficiency_ignores_hard_sessions(self):
+        self._seed_ef_runs()
+        self._add_easy_run("2026-03-02T06:00:00", 300, 170, gap=300, workout_type="interval")
+        self.assertEqual(self._overview()["aerobic_efficiency"]["recent_runs"], 3)
+
+    def test_aerobic_efficiency_flags_missing_gap(self):
+        self._seed_ef_runs()
+        self._add_easy_run("2026-03-02T06:00:00", 360, 140, gap=None)
+        codes = {
+            b["code"]
+            for b in self._overview()["aerobic_efficiency"]["change"]["confidence"]["biases"]
+        }
+        self.assertIn("ef_pace_not_grade_adjusted", codes)
+
+    def test_aerobic_efficiency_needs_enough_runs(self):
+        ef = self._overview()["aerobic_efficiency"]
+        self.assertIsNone(ef["change"])
+        self.assertIn("場次不足", ef["reason"])
+
     def test_vdot_ignores_non_race_runs(self):
         race = self._overview()["vdot"]["race"]
         self.assertIsNone(race["value"])
