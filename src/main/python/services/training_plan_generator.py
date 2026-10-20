@@ -39,6 +39,7 @@ import sqlite3
 from typing import Any
 
 from src.main.python.services import training_plan_store
+from src.main.python.services.activity_types import RUNNING_ACTIVITY_TYPES
 from src.main.python.services.periodization_scheduler import generate_schedule
 from src.main.python.services.vdot_engine import estimate_vdot_and_paces
 
@@ -121,6 +122,20 @@ def get_vdot_candidate_activities(
     return candidates
 
 
+def get_run_dates(conn: sqlite3.Connection, athlete_id: int) -> list[datetime.date]:
+    """所有跑步（含越野、跑步機）的日期，供 VDOT 停訓折減找最長中斷。"""
+    running_types = sorted(RUNNING_ACTIVITY_TYPES)
+    placeholders = ",".join("?" for _ in running_types)
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT date(started_at) AS d FROM activities
+        WHERE athlete_id = ? AND activity_type IN ({placeholders})
+        """,
+        (athlete_id, *running_types),
+    ).fetchall()
+    return [datetime.date.fromisoformat(row["d"]) for row in rows]
+
+
 def race_result(row: Any) -> dict[str, Any] | None:
     """一場比賽的成績：距離類別、完賽時間、配速。VDOT 候選與儀表板最佳成績
     共用這一份規則，兩邊對同一場比賽的判讀必須一致。
@@ -183,6 +198,7 @@ def get_pace_zones(
     result = estimate_vdot_and_paces(
         candidates,
         reference_date=reference_date,
+        run_dates=get_run_dates(conn, athlete_id),
         **_get_hr_profile(conn, athlete_id),
     )
     return result["pace_zones"] if result["available"] else None
@@ -221,6 +237,7 @@ def generate_and_save_plan(
     vdot_result = estimate_vdot_and_paces(
         candidate_activities,
         reference_date=reference_date,
+        run_dates=get_run_dates(conn, athlete_id),
         **_get_hr_profile(conn, athlete_id),
     )
     if not vdot_result["available"]:

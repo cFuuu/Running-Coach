@@ -28,7 +28,10 @@ from src.main.python.services import plan_reconciliation
 from src.main.python.services import training_load_queries
 from src.main.python.services import training_plan_generator
 from src.main.python.services import vdot_engine
-from src.main.python.services.activity_types import RUNNING_ACTIVITY_TYPES
+from src.main.python.services.activity_types import (
+    PACE_COMPARABLE_RUNNING_TYPES,
+    RUNNING_ACTIVITY_TYPES,
+)
 from src.main.python.services import garmin_export_parser as parser
 from src.main.python.services.readiness import DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS
 from . import data_confidence
@@ -1761,7 +1764,7 @@ EF_MIN_BASELINE_RUNS = 6
 # 只取輕鬆跑：EF 比的是「同樣的有氧強度換到多少速度」，強度課混進來沒有意義。
 _EF_WORKOUT_TYPES = ("easy", "lsd")
 # 只取戶外與田徑場：跑步機的配速來自手腕加速規，誤差比 GPS 大得多。
-_EF_ACTIVITY_TYPES = ("running", "track_running")
+_EF_ACTIVITY_TYPES = tuple(sorted(PACE_COMPARABLE_RUNNING_TYPES - {"treadmill_running"}))
 # 太短的跑步整場平均被暖身段主導。🔴 推估。
 EF_MIN_DURATION_SEC = 20 * 60
 
@@ -1924,7 +1927,11 @@ def _race_vdot(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) 
         c for c in training_plan_generator.get_vdot_candidate_activities(conn, athlete_id)
         if c["is_max_effort"] and c["date"] <= today
     ]
-    result = vdot_engine.estimate_vdot_and_paces(candidates, reference_date=today)
+    result = vdot_engine.estimate_vdot_and_paces(
+        candidates,
+        reference_date=today,
+        run_dates=training_plan_generator.get_run_dates(conn, athlete_id),
+    )
     if not result["available"]:
         reason = (
             "資料庫中沒有標記為比賽的成績"
@@ -1935,14 +1942,21 @@ def _race_vdot(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) 
 
     basis = result["source_candidate"]
     label = _DISTANCE_CATEGORY_LABEL.get(basis["distance_category"], basis["distance_category"])
+    detraining = result["detraining"]
+    source = (
+        f"{basis['activity']['date'].isoformat()} {label} 全力成績（標記為比賽）→ "
+        "Daniels VDOT 公式（實際距離與完賽時間）"
+    )
+    bias_codes = ["vdot_race_stale"] if basis["confidence"] == "low" else []
+    if detraining["factor"] < 1:
+        source += (
+            f"；其後最長停跑 {detraining['longest_gap_days']} 天，依 Daniels 表 9.1 "
+            f"×{detraining['factor']}（原 {detraining['unadjusted_vdot']:.1f}）"
+        )
+        bias_codes.append("vdot_detraining_adjusted")
     return {
         "value": data_confidence.fact(
-            round(result["vdot"], 1),
-            source=(
-                f"{basis['activity']['date'].isoformat()} {label} 全力成績（標記為比賽）→ "
-                "Daniels VDOT 公式（實際距離與完賽時間）"
-            ),
-            bias_codes=["vdot_race_stale"] if basis["confidence"] == "low" else [],
+            round(result["vdot"], 1), source=source, bias_codes=bias_codes
         ),
         # 供前端顯示「依據哪一場」，不必去解析 source 字串
         "basis": {"date": basis["activity"]["date"].isoformat(), "distance": label},

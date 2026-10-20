@@ -115,6 +115,35 @@ _PACE_ZONE_FACTORS: dict[str, tuple[float, float]] = {
     "interval": (0.82, 0.87),
 }
 
+# 停訓折減——Daniels《Daniels' Running Formula》表 9.1：停跑 ≤ 5 天 VDOT 不變，
+# 之後每多停一天約 −0.3%。這條線性規則與 TrailRunCoach 研究筆記
+# （docs/research/detraining.md §0）轉引的兩個表值吻合：14 天 ×0.973、
+# 28 天 ×0.931。原書未核對；表的最長一列約 72 天，超過不再外推（🔴 未核對）。
+# 表另有「中斷期間有交叉訓練」一欄（折減約減半），本專案的交叉訓練多為重訓，
+# 不算 Daniels 指的有氧交叉訓練，故一律用不含交叉訓練的那欄（較保守）。
+DETRAINING_GRACE_DAYS = 5
+DETRAINING_RATE_PER_DAY = 0.003
+DETRAINING_MAX_GAP_DAYS = 72
+
+
+def detraining_factor(gap_days: int) -> float:
+    """停跑 gap_days 天後的 VDOT 折減係數（1.0 = 不折減）。"""
+    capped = min(gap_days, DETRAINING_MAX_GAP_DAYS)
+    return 1.0 - DETRAINING_RATE_PER_DAY * max(capped - DETRAINING_GRACE_DAYS, 0)
+
+
+def longest_run_gap_days(
+    run_dates: list[datetime.date], since: datetime.date, until: datetime.date
+) -> int:
+    """since（基準成績當天）之後到 until 之間，最長連續沒跑的天數。
+
+    until 視為「虛擬的下一次跑步」：今天還沒跑不算進中斷。
+    取**最長**而非最近一次中斷——停訓掉的體能不會因為恢復練習就自動回來，
+    要等新的成績證明；Daniels 的折減也是以單次中斷的長度查表、不累加多次。
+    """
+    dates = sorted({d for d in run_dates if since <= d <= until} | {since, until})
+    return max(((b - a).days - 1 for a, b in zip(dates, dates[1:])), default=0)
+
 
 def _freshness_days(reference_date: datetime.date, activity_date: datetime.date) -> int:
     return (reference_date - activity_date).days
@@ -313,8 +342,9 @@ def estimate_vdot_and_paces(
     max_hr_source: str | None = None,
     reference_date: datetime.date | None = None,
     resting_hr_bpm: float | None = None,
+    run_dates: list[datetime.date] | None = None,
 ) -> dict[str, Any]:
-    """完整流程：挑選基準候選 → Daniels VDOT（實際距離）→ 各課種配速區間。
+    """完整流程：挑選基準候選 → Daniels VDOT（實際距離）→ 停訓折減 → 各課種配速區間。
 
     max_hr_source：沿用既有 athlete_profile.max_hr_source 語意
         （'watch_display'/'measured'/'age_formula'/'observed_from_data'），
@@ -322,11 +352,16 @@ def estimate_vdot_and_paces(
 
     resting_hr_bpm：非全力候選的心率換算需要（%HRR），見 select_candidate()。
 
+    run_dates：所有跑步的日期，用來找基準成績之後最長的停跑中斷並依 Daniels
+        表 9.1 折減（見 detraining_factor）。未提供時不折減，detraining 為 None。
+
     回傳：
         可推算時：
             {
                 "available": True,
-                "vdot": float,
+                "vdot": float,           # 已套用停訓折減
+                "detraining": {"longest_gap_days": int, "factor": float,
+                               "unadjusted_vdot": float} | None,
                 "pace_zones": {"easy": {...}, "marathon": {...}, "tempo": {...},
                                 "interval": {...}, "lsd": {...}},
                 "source_candidate": {  # 原樣透傳 select_candidate() 的選中結果
@@ -364,11 +399,26 @@ def estimate_vdot_and_paces(
     vdot = vdot_from_race(
         distance_km, candidate_result["effective_pace_sec_per_km"] * distance_km
     )
+    detraining = None
+    if run_dates is not None:
+        gap_days = longest_run_gap_days(
+            run_dates,
+            candidate_result["activity"]["date"],
+            reference_date or datetime.date.today(),
+        )
+        factor = detraining_factor(gap_days)
+        detraining = {
+            "longest_gap_days": gap_days,
+            "factor": round(factor, 3),
+            "unadjusted_vdot": vdot,
+        }
+        vdot *= factor
     pace_zones = compute_pace_zones(vdot)
 
     return {
         "available": True,
         "vdot": vdot,
+        "detraining": detraining,
         "pace_zones": pace_zones,
         "source_candidate": {
             "distance_category": candidate_result["distance_category"],

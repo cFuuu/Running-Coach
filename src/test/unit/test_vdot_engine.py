@@ -5,9 +5,11 @@ import unittest
 
 from src.main.python.services.vdot_engine import (
     compute_pace_zones,
+    detraining_factor,
     estimate_max_effort_pace,
     estimate_vdot,
     estimate_vdot_and_paces,
+    longest_run_gap_days,
     project_to_marathon_time_sec,
     running_vo2,
     select_candidate,
@@ -395,6 +397,49 @@ class TestEstimateVdotAndPaces(unittest.TestCase):
         result = estimate_vdot_and_paces(activities, max_hr_bpm=190, reference_date=REFERENCE_DATE)
         self.assertFalse(result["available"])
         self.assertIn("reason", result)
+
+
+class DetrainingTest(unittest.TestCase):
+    """Daniels 表 9.1 停訓折減。"""
+
+    def test_factor_matches_daniels_table_points(self):
+        self.assertEqual(detraining_factor(5), 1.0)
+        self.assertAlmostEqual(detraining_factor(14), 0.973, places=3)
+        self.assertAlmostEqual(detraining_factor(28), 0.931, places=3)
+
+    def test_factor_is_capped_at_table_end(self):
+        self.assertEqual(detraining_factor(200), detraining_factor(72))
+
+    def test_longest_gap_between_runs(self):
+        d = datetime.date
+        runs = [d(2026, 8, 1), d(2026, 8, 3), d(2026, 8, 13)]  # 8/3→8/13 中間停 9 天
+        self.assertEqual(longest_run_gap_days(runs, d(2026, 8, 1), d(2026, 8, 15)), 9)
+
+    def test_ongoing_gap_counts_until_reference_date(self):
+        d = datetime.date
+        self.assertEqual(longest_run_gap_days([d(2026, 8, 1)], d(2026, 8, 1), d(2026, 8, 20)), 18)
+
+    def test_gaps_before_the_race_are_ignored(self):
+        d = datetime.date
+        runs = [d(2026, 6, 1), d(2026, 8, 1), d(2026, 8, 2)]
+        self.assertEqual(longest_run_gap_days(runs, d(2026, 8, 1), d(2026, 8, 3)), 0)
+
+    def test_estimate_applies_factor_to_vdot_and_zones(self):
+        race = [_activity(days_ago=30, distance_category="10k", pace_sec_per_km=300)]
+        race_day = REFERENCE_DATE - datetime.timedelta(days=30)
+        # 比賽後停 14 天，之後每天都跑
+        runs = [race_day] + [
+            race_day + datetime.timedelta(days=n) for n in range(15, 31)
+        ]
+        plain = estimate_vdot_and_paces(race, reference_date=REFERENCE_DATE)
+        adjusted = estimate_vdot_and_paces(race, reference_date=REFERENCE_DATE, run_dates=runs)
+        self.assertIsNone(plain["detraining"])
+        self.assertEqual(adjusted["detraining"]["longest_gap_days"], 14)
+        self.assertAlmostEqual(adjusted["vdot"], plain["vdot"] * 0.973, places=6)
+        self.assertGreater(
+            adjusted["pace_zones"]["easy"]["fast_sec_per_km"],
+            plain["pace_zones"]["easy"]["fast_sec_per_km"],
+        )
 
 
 if __name__ == "__main__":
