@@ -100,9 +100,16 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
     ),
     "hr_drift_no_threshold": (
         "low",
-        "心率漂移只呈現數值、不給好壞判定：本專案算的是純前後半心率差"
-        "（分母無配速），與 Friel/TrainingPeaks 的 Pa:HR decoupling 不是"
-        "同一個量，後者的 5% 門檻不適用；實測本專案中位漂移即為 6.2%",
+        "心率漂移只呈現數值、不給好壞判定。drift_pct 是純前後半心率差（分母無"
+        "配速，後半跑快也會算成漂移）；decoupling_pct 才是 Friel 的 Pa:HR。"
+        "Friel 的「< 5%」是教練經驗法則、非同儕審查；且配速未做坡度校正、"
+        "未校正溫濕度（脫水與高溫都會放大漂移）。2026-10-20 實測本專案通過"
+        "拒算條件的 98 場，decoupling 中位數 3.3%、四分位 1.1–6.5%",
+    ),
+    "hr_drift_reference_tier": (
+        "low",
+        "這場的漂移只到「參考」等級：暖身後穩定段不足 40 分鐘，或心率有尖峰／"
+        "突然跳一階（光學心率常見），數字可能被這些因素帶偏，不宜單獨據此判斷",
     ),
     "vdot_race_stale": (
         "low",

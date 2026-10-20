@@ -453,7 +453,12 @@ def get_session_detail(
         ),
         "laps": _build_laps(conn, session_id, row["raw_data_json"]),
         "records": _build_records_block(records),
-        "hr_drift": fit_parser.compute_hr_drift(records)
+        "hr_drift": fit_parser.compute_hr_drift(
+            records,
+            workout_type=row["workout_type"],
+            elevation_gain_m=row["elevation_gain_m"],
+            distance_km=row["distance_km"],
+        )
         if records
         else {"available": False, "reason": "需要逐秒資料才能計算心率漂移"},
         "assessability": _build_assessability(row),

@@ -304,10 +304,11 @@ class CoachPromptTest(unittest.TestCase):
         self.assertIn("不得自行發明閾值", self.text)
 
     def test_hr_drift_5pct_threshold_explicitly_rejected(self):
-        """心率漂移不可套用 5% 門檻——本專案算的非 Pa:HR。"""
+        """心率漂移不可套用 5% 門檻——drift_pct 非 Pa:HR，decoupling_pct 的 5% 也只是經驗法則。"""
         self.assertIn("Pa:HR", self.text)
         self.assertIn("5%", self.text)
-        self.assertIn("6.2%", self.text)
+        self.assertIn("decoupling_pct", self.text)
+        self.assertIn("不可當判定門檻", self.text)
 
     def test_acwr_ratio_thresholds_rejected(self):
         self.assertIn("acwrFactorPercent", self.text)

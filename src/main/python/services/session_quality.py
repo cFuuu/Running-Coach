@@ -338,22 +338,30 @@ def assess_session(
         )
 
     if hr_drift and hr_drift.get("available"):
+        bias_codes = ["hr_drift_no_threshold"]
+        if hr_drift["tier"] == "reference":
+            bias_codes.append("hr_drift_reference_tier")
         dimensions.append(
             {
                 "dimension": "hr_drift",
                 "drift_pct": hr_drift["drift_pct"],
+                "decoupling_pct": hr_drift["decoupling_pct"],
                 "first_half_avg_hr": hr_drift["first_half_avg_hr"],
                 "second_half_avg_hr": hr_drift["second_half_avg_hr"],
+                "tier": hr_drift["tier"],
+                "tier_reasons": hr_drift["tier_reasons"],
                 "detail": (
+                    f"暖身後 {hr_drift['steady_moving_min']:.0f} 分鐘穩定段："
                     f"前半平均心率 {hr_drift['first_half_avg_hr']:.0f}、"
-                    f"後半 {hr_drift['second_half_avg_hr']:.0f}，"
-                    f"漂移 {hr_drift['drift_pct']:+.1f}%"
+                    f"後半 {hr_drift['second_half_avg_hr']:.0f}（心率漂移 "
+                    f"{hr_drift['drift_pct']:+.1f}%），"
+                    f"Pa:HR decoupling {hr_drift['decoupling_pct']:+.1f}%"
                 ),
-                # 刻意不給 verdict：本專案算的是純心率差而非 Pa:HR，
-                # 沒有可用的異常閾值（見 fit_parser.compute_hr_drift 說明）。
+                # 刻意不給 verdict：Friel 的 5% 是教練經驗法則、非同儕審查，
+                # 見 fit_parser.compute_hr_drift 說明。
                 "confidence": {
-                    "level": "low",
-                    "biases": [data_confidence.describe_bias("hr_drift_no_threshold")],
+                    "level": data_confidence.combine_level(bias_codes),
+                    "biases": [data_confidence.describe_bias(c) for c in bias_codes],
                 },
             }
         )

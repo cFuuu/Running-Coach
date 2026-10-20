@@ -133,53 +133,223 @@ def downsample_records(records: list[dict], every_sec: int) -> list[dict]:
     return kept
 
 
-# 心率漂移的最短時長（秒）。短於此不計算——指標本身假設前後半的外部負荷
-# 相同、且身體已進入穩態，短時間活動兩者皆不成立。
-# 🔴 45 分鐘為工程實務決策，文獻未給明確下限，見
-# docs/research/physiological-thresholds.md 主題一。
-MIN_DRIFT_DURATION_SEC = 45 * 60
+# --- 心率品質（光學心率的壞資料）---
+# 門檻參考 TrailRunCoach docs/research/optical-hr-quality.md 的規則，原規則
+# 用 1 秒資料；本專案逐秒紀錄匯入時已降頻為每 10 秒一筆，故「3 秒內升 15」
+# 改成「相鄰兩筆差 15」。全部為 🔴 推估，未經本學員資料校正。
+HR_VALID_MIN_BPM = 30
+HR_VALID_MAX_BPM = 225
+HR_JUMP_BPM = 15
+# 跳升後在此秒數內回到原水準（±HR_RETURN_TOLERANCE_BPM）算尖峰；沒回來、
+# 且配速沒變（相鄰兩筆差 < HR_JUMP_STEADY_PACE_PCT）算「移動中跳一階」。
+HR_SPIKE_RETURN_SEC = 30
+HR_RETURN_TOLERANCE_BPM = 5
+HR_JUMP_STEADY_PACE_PCT = 0.10
+# 「心率 ≈ 2 × 單腳步頻」的鎖步頻偵測刻意不做：2026-10-20 在本專案 243 場
+# 實測，這個簡單重疊規則會標到 62 場（多為節奏跑，真實心率本來就接近步頻），
+# 誤判太多；TrailRunCoach 也因同樣理由暫緩。
 
 
-def compute_hr_drift(records: list[dict]) -> dict:
-    """以逐秒心率計算前後半段的心率漂移。
+def assess_hr_quality(records: list[dict]) -> dict:
+    """標出可疑的心率樣本：超出合理範圍、尖峰、移動中跳一階。
 
-    定義：依 elapsed_sec 中點切成前後兩半，各取平均心率，
-    drift_pct = (後半 - 前半) / 前半 * 100。
-    只回傳數值不做解讀——解讀留給之後的 AI coach 層。
-
-    ⚠️ 這**不是** Friel/TrainingPeaks 的 Pa:HR decoupling：那個指標的分母是
-    配速（效率比值），本函式算的是純心率差，沒有把配速納入，因此後半跑快
-    造成的心率上升會被記成「漂移」。廣為流傳的「5% 為異常」門檻是定義在
-    Pa:HR 上的教練經驗法則（非同儕審查），**不可套用到本函式的輸出**——
-    實測本專案 243 場跑步的中位漂移即為 6.2%、60.9% 超過 5%，套用該門檻
-    會對六成場次誤報。詳見 docs/research/physiological-thresholds.md 主題一。
+    只標記、不改原始資料、不內插。回傳：
+        {"suspect_elapsed_sec": set[int],  # 應排除於平均之外的樣本
+         "out_of_range": int, "spikes": int, "step_jumps": int}
+    「跳一階」只計數不排除——無從判斷跳之前還是之後才是真值；
+    呼叫端據此降低判讀等級即可。停下再起跑的急升不算（真實心率也會急升），
+    以「前後兩筆都在移動、配速變化小」排除。
     """
-    hr_points = [r for r in records if r.get("hr_bpm")]
-    if len(hr_points) < 2:
-        return {"available": False, "reason": "此活動無足夠心率資料可計算漂移"}
+    suspect: set[int] = set()
+    out_of_range = spikes = step_jumps = 0
+    points = [r for r in records if r.get("hr_bpm")]
+    for r in points:
+        if not HR_VALID_MIN_BPM <= r["hr_bpm"] <= HR_VALID_MAX_BPM:
+            suspect.add(r["elapsed_sec"])
+            out_of_range += 1
 
-    duration_sec = hr_points[-1]["elapsed_sec"] - hr_points[0]["elapsed_sec"]
-    if duration_sec < MIN_DRIFT_DURATION_SEC:
-        return {
-            "available": False,
-            "reason": (
-                f"活動時長 {duration_sec / 60:.0f} 分鐘，短於 "
-                f"{MIN_DRIFT_DURATION_SEC // 60} 分鐘下限——心率漂移假設"
-                "前後半外部負荷相同且已進入穩態，短時間活動不滿足此前提"
+    for i in range(1, len(points)):
+        prev, cur = points[i - 1], points[i]
+        if abs(cur["hr_bpm"] - prev["hr_bpm"]) < HR_JUMP_BPM:
+            continue
+        returned_at = next(
+            (
+                j
+                for j in range(i + 1, len(points))
+                if points[j]["elapsed_sec"] - cur["elapsed_sec"] <= HR_SPIKE_RETURN_SEC
+                and abs(points[j]["hr_bpm"] - prev["hr_bpm"]) <= HR_RETURN_TOLERANCE_BPM
             ),
-        }
+            None,
+        )
+        if returned_at is not None:
+            spikes += 1
+            suspect.update(p["elapsed_sec"] for p in points[i:returned_at])
+        elif _steady_pace(prev, cur):
+            step_jumps += 1
 
-    mid = (hr_points[0]["elapsed_sec"] + hr_points[-1]["elapsed_sec"]) / 2
-    first = [r["hr_bpm"] for r in hr_points if r["elapsed_sec"] <= mid]
-    second = [r["hr_bpm"] for r in hr_points if r["elapsed_sec"] > mid]
-    if not first or not second:
-        return {"available": False, "reason": "此活動無足夠心率資料可計算漂移"}
+    return {
+        "suspect_elapsed_sec": suspect,
+        "out_of_range": out_of_range,
+        "spikes": spikes,
+        "step_jumps": step_jumps,
+    }
 
-    first_avg = sum(first) / len(first)
-    second_avg = sum(second) / len(second)
+
+def _steady_pace(prev: dict, cur: dict) -> bool:
+    p0, p1 = prev.get("pace_sec_per_km"), cur.get("pace_sec_per_km")
+    if not p0 or not p1:
+        return False
+    return abs(p1 - p0) / p0 < HR_JUMP_STEADY_PACE_PCT
+
+
+# --- 心率漂移 / Pa:HR decoupling ---
+# 暖身：固定切掉前 10 分鐘，暖身期的心率爬升不該算進前半段。
+# 🔴 推估（TrailRunCoach workout_review.WARMUP_S 同值）。
+DRIFT_WARMUP_SEC = 10 * 60
+# 暖身後的移動時間：≥ 40 分鐘為「標準」（Uphill Athlete 的 AeT 漂移測試最短
+# 40 分鐘）、30–40 分鐘只當「參考」（🔴 推估）、< 30 分鐘不算。
+DRIFT_STANDARD_SEC = 40 * 60
+DRIFT_MIN_SEC = 30 * 60
+# 慢於此配速視為停下／走路，不算移動時間。🔴 推估。
+DRIFT_STOPPED_PACE_SEC_PER_KM = 1200
+# 以下拒算條件皆為 🔴 推估（取自 TrailRunCoach 的 drift_of），2026-10-20
+# 在本專案 142 場夠長的跑步實測：停頓 >5% 擋 21 場、結尾加速 >5% 擋 23 場、
+# 每公里爬升 ≥20m 擋 7 場，合計通過 98 場。
+DRIFT_MAX_STOP_FRACTION = 0.05
+DRIFT_MAX_GAIN_M_PER_KM = 20
+DRIFT_FAST_FINISH_TAIL = 0.10
+DRIFT_MAX_FAST_FINISH = 0.05
+# 視窗內可疑心率樣本超過此比例、或有任何一次移動中跳一階 → 降為參考。🔴 推估。
+DRIFT_MAX_SUSPECT_HR_FRACTION = 0.03
+# 前後半外部負荷不同，算出來沒有意義的課種。
+_DRIFT_EXCLUDED_WORKOUT_TYPES = frozenset({"interval"})
+
+
+def _unavailable(reason: str) -> dict:
+    return {"available": False, "reason": reason}
+
+
+def _speed_m_per_min(pace_sec_per_km: float) -> float:
+    return _M_PER_KM * 60 / pace_sec_per_km
+
+
+def compute_hr_drift(
+    records: list[dict],
+    *,
+    workout_type: str | None = None,
+    elevation_gain_m: float | None = None,
+    distance_km: float | None = None,
+) -> dict:
+    """暖身後的穩定段，比較前後半的心率與有氧效率（Pa:HR decoupling）。
+
+    定義（暖身後、只取移動中的樣本，依移動時間切成前後兩半）：
+        drift_pct      = (後半平均心率 − 前半) / 前半 × 100      純心率差
+        EF             = 平均速度（公尺/分）÷ 平均心率
+        decoupling_pct = (前半 EF − 後半 EF) / 前半 EF × 100     Pa:HR
+    decoupling 為正代表後半段同樣的心跳換到的速度變少。後半自己跑快造成的
+    心率上升，drift_pct 會記成漂移，decoupling 不會——這是兩者的根本差別。
+
+    拒算（前後半外部負荷不同、數字沒有意義）：間歇課、停頓 > 5%、
+    每公里爬升 ≥ 20m（逐筆資料沒有坡度校正配速）、最後 10% 比前段快 > 5%。
+    分級：暖身後移動 ≥ 40 分鐘為 standard，30–40 分鐘或心率品質可疑為 reference。
+
+    只回傳數值不做解讀。Friel 的「Pa:HR < 5%」是教練經驗法則、非同儕審查，
+    本函式不帶任何門檻，見 docs/research/physiological-thresholds.md 主題一。
+    """
+    if workout_type in _DRIFT_EXCLUDED_WORKOUT_TYPES:
+        return _unavailable("間歇課前後半的外部負荷不同，漂移沒有意義")
+    if elevation_gain_m and distance_km and distance_km > 0:
+        gain_per_km = elevation_gain_m / distance_km
+        if gain_per_km >= DRIFT_MAX_GAIN_M_PER_KM:
+            return _unavailable(
+                f"每公里爬升 {gain_per_km:.0f}m，超過 {DRIFT_MAX_GAIN_M_PER_KM}m——"
+                "逐筆資料沒有坡度校正配速，坡道會讓前後半不可比"
+            )
+
+    if not any(r.get("hr_bpm") for r in records):
+        return _unavailable("此活動無心率資料可計算漂移")
+    window = [r for r in records if r["elapsed_sec"] >= DRIFT_WARMUP_SEC]
+    sample_sec = _median_interval(records)
+    quality = assess_hr_quality(window)
+    moving = [
+        r
+        for r in window
+        if r.get("pace_sec_per_km")
+        and r["pace_sec_per_km"] < DRIFT_STOPPED_PACE_SEC_PER_KM
+        and r.get("hr_bpm")
+        and r["elapsed_sec"] not in quality["suspect_elapsed_sec"]
+    ]
+    moving_sec = len(moving) * sample_sec
+    if moving_sec < DRIFT_MIN_SEC:
+        return _unavailable(
+            f"暖身（前 {DRIFT_WARMUP_SEC // 60} 分鐘）後的有效移動時間 "
+            f"{moving_sec / 60:.0f} 分鐘，短於 {DRIFT_MIN_SEC // 60} 分鐘下限——"
+            "漂移假設身體已進入穩態，時間太短不滿足此前提"
+        )
+
+    span_sec = window[-1]["elapsed_sec"] - window[0]["elapsed_sec"] + sample_sec
+    stop_fraction = max(0.0, 1 - moving_sec / span_sec)
+    if stop_fraction > DRIFT_MAX_STOP_FRACTION:
+        return _unavailable(
+            f"暖身後停頓（含心率可疑、走路）占 {stop_fraction:.0%}，超過 "
+            f"{DRIFT_MAX_STOP_FRACTION:.0%}——停下時心率回落，前後半不可比"
+        )
+
+    tail = max(1, round(len(moving) * DRIFT_FAST_FINISH_TAIL))
+    head_speed = _mean_speed(moving[:-tail])
+    fast_finish = _mean_speed(moving[-tail:]) / head_speed - 1
+    if fast_finish > DRIFT_MAX_FAST_FINISH:
+        return _unavailable(
+            f"最後 {DRIFT_FAST_FINISH_TAIL:.0%} 比前段快 {fast_finish:.0%}——"
+            "結尾加速會把後半心率拉高，漂移會被高估"
+        )
+
+    half = len(moving) // 2
+    first, second = moving[:half], moving[half:]
+    first_hr = sum(r["hr_bpm"] for r in first) / len(first)
+    second_hr = sum(r["hr_bpm"] for r in second) / len(second)
+    first_ef = _mean_speed(first) / first_hr
+    second_ef = _mean_speed(second) / second_hr
+
+    tier_reasons: list[str] = []
+    if moving_sec < DRIFT_STANDARD_SEC:
+        tier_reasons.append(
+            f"暖身後移動 {moving_sec / 60:.0f} 分鐘，未達 {DRIFT_STANDARD_SEC // 60} 分鐘"
+        )
+    suspect_fraction = len(quality["suspect_elapsed_sec"]) / len(window)
+    if suspect_fraction > DRIFT_MAX_SUSPECT_HR_FRACTION:
+        tier_reasons.append(f"可疑心率樣本占 {suspect_fraction:.0%}（尖峰或超出範圍）")
+    if quality["step_jumps"]:
+        tier_reasons.append(f"心率在配速穩定時突然跳一階 {quality['step_jumps']} 次")
+
     return {
         "available": True,
-        "first_half_avg_hr": round(first_avg, 1),
-        "second_half_avg_hr": round(second_avg, 1),
-        "drift_pct": round((second_avg - first_avg) / first_avg * 100, 1),
+        "tier": "reference" if tier_reasons else "standard",
+        "tier_reasons": tier_reasons,
+        "steady_moving_min": round(moving_sec / 60, 1),
+        "first_half_avg_hr": round(first_hr, 1),
+        "second_half_avg_hr": round(second_hr, 1),
+        "drift_pct": round((second_hr - first_hr) / first_hr * 100, 1),
+        "first_half_ef": round(first_ef, 3),
+        "second_half_ef": round(second_ef, 3),
+        "decoupling_pct": round((first_ef - second_ef) / first_ef * 100, 1),
+        "hr_quality": {
+            "spikes": quality["spikes"],
+            "step_jumps": quality["step_jumps"],
+            "out_of_range": quality["out_of_range"],
+        },
     }
+
+
+def _mean_speed(records: list[dict]) -> float:
+    """平均速度（公尺/分）。以速度平均而非配速平均——配速是速度的倒數，
+    直接平均配速會偏向慢的樣本。"""
+    return sum(_speed_m_per_min(r["pace_sec_per_km"]) for r in records) / len(records)
+
+
+def _median_interval(records: list[dict]) -> int:
+    """紀錄的取樣間隔（秒）。匯入時已降頻，從資料本身推導，不寫死。"""
+    gaps = sorted(
+        b["elapsed_sec"] - a["elapsed_sec"] for a, b in zip(records, records[1:])
+    )
+    return max(1, gaps[len(gaps) // 2]) if gaps else 1

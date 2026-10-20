@@ -226,9 +226,9 @@ def assess_session_quality(
     ⚠️ **每個維度都帶 `confidence` 標記，回答時必須一併考量**：
     - `level: low` 代表該數字有已知偏誤，`biases` 裡寫明錯在哪、可能錯多少。
       據此下結論時要說明不確定性，不可當精確值使用。
-    - `hr_drift` 刻意沒有 `verdict`：本專案算的是純前後半心率差（分母無配速），
-      與 Friel/TrainingPeaks 的 Pa:HR decoupling 不是同一個量，其 5% 門檻
-      **不適用**（實測本專案中位漂移即為 6.2%）。只描述數值與趨勢，不要判定好壞。
+    - `hr_drift` 刻意沒有 `verdict`：`drift_pct` 是純前後半心率差（分母無配速），
+      `decoupling_pct` 才是 Friel 的 Pa:HR。Friel 的 5% 是教練經驗法則，
+      **不可當判定門檻**；`tier: reference` 的場次更要保守。只描述數值與趨勢，不要判定好壞。
 
     ⚠️ **`not_assessed` 列出的維度不得下結論**，其中的 reason 說明為何不可評
     （最常見是課種為 unknown——那是分類器失敗，該場可能是任何課種）。
@@ -654,9 +654,9 @@ _BEHAVIOR_CONSTRAINTS = """\
 ### 3. 不得自行發明閾值
 - 所有判讀門檻只能來自規則引擎的輸出。你不可以引用訓練文獻裡記得的數字來
   補規則引擎沒給的門檻。
-- **心率漂移特別注意**：本專案算的是純前後半心率差（分母無配速），與
-  Friel/TrainingPeaks 的 Pa:HR decoupling **不是同一個量**，其 5% 門檻
-  **不適用**（本專案實測中位漂移即為 6.2%）。`hr_drift` 刻意沒有 `verdict`，
+- **心率漂移特別注意**：`drift_pct` 是純前後半心率差（分母無配速），
+  `decoupling_pct` 才是 Friel/TrainingPeaks 的 Pa:HR。Friel 的 5% 是教練
+  經驗法則、非同儕審查，**不可當判定門檻**。`hr_drift` 刻意沒有 `verdict`，
   你只描述數值與趨勢，**不判定好壞**。
 - `get_wellness_trend` 的 `acwr` 欄位存的是 Garmin `acwrFactorPercent`
   （0–100 貢獻度分數），**不是**古典的 0.8–1.3 急慢性負荷比，

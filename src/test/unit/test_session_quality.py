@@ -102,7 +102,16 @@ class AssessSessionTest(unittest.TestCase):
         return assess_session(
             _act("easy", 140.0, avg_pace=365.0),
             _records(360, 365),
-            {"available": True, "drift_pct": 4.0, "first_half_avg_hr": 140.0, "second_half_avg_hr": 145.6},
+            {
+                "available": True,
+                "tier": "standard",
+                "tier_reasons": [],
+                "steady_moving_min": 50.0,
+                "drift_pct": 4.0,
+                "decoupling_pct": 3.1,
+                "first_half_avg_hr": 140.0,
+                "second_half_avg_hr": 145.6,
+            },
             MAX_HR,
             RHR,
             "watch_display",
@@ -135,6 +144,23 @@ class AssessSessionTest(unittest.TestCase):
         """本專案算的是純心率差而非 Pa:HR，沒有可用的異常閾值。"""
         drift = next(d for d in self._full()["dimensions"] if d["dimension"] == "hr_drift")
         self.assertNotIn("verdict", drift)
+        self.assertEqual(drift["decoupling_pct"], 3.1)
+
+    def test_reference_tier_drift_carries_extra_bias(self):
+        drift_input = {
+            "available": True,
+            "tier": "reference",
+            "tier_reasons": ["暖身後移動 35 分鐘，未達 40 分鐘"],
+            "steady_moving_min": 35.0,
+            "drift_pct": 4.0,
+            "decoupling_pct": 3.1,
+            "first_half_avg_hr": 140.0,
+            "second_half_avg_hr": 145.6,
+        }
+        got = assess_session(_act("easy", 140.0), [], drift_input, MAX_HR, RHR)
+        drift = next(d for d in got["dimensions"] if d["dimension"] == "hr_drift")
+        codes = {b["code"] for b in drift["confidence"]["biases"]}
+        self.assertIn("hr_drift_reference_tier", codes)
 
     def test_unknown_workout_type_reports_reason_not_silence(self):
         got = assess_session(_act("unknown", 140.0), [], None, MAX_HR, RHR)
