@@ -20,6 +20,7 @@ export var state = {
   calendarMonth: null,   // 'YYYY-MM'，展開月曆時才需要，預設當月
   calendarData: null,    // /api/calendar 回傳的月曆資料（展開後才載入）
   calendarSelectedDate: null, // 'YYYY-MM-DD'，月曆下方明細顯示的是哪一天
+  calendarWeek: null,    // { start, days }：選取日的課表週超出月曆範圍時另抓的那週
   weekDays: null,        // /api/calendar 的本課表週（週一到週日；週條與執行表共用）
 
   // 今日頁的身體狀況趨勢與最近訓練清單。兩者都取固定區間（近 30 天），

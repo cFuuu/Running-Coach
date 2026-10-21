@@ -1,5 +1,6 @@
 /**
- * calendar.js — 行事曆 view：月曆格、當日明細、圖例，以及週條與月曆共用的活動色點
+ * calendar.js — 行事曆 view：月曆格（週日起排）、點選日所屬課表週的執行狀況與當日明細、圖例，
+ *               以及週條與月曆共用的活動色點
  */
 
 import * as C from '../charts.js';
@@ -8,6 +9,7 @@ import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
 import { sundayOf, addDaysISO, dowLabel } from '../core/format.js';
 import { navigate, renderOrDefer } from '../shell/router.js';
+import { planWeekRange, loadPlanWeek, planWeekLabel, renderPlanWeek } from './plan-week.js';
 
 // 週條與行事曆共用 /api/calendar（start/end 起訖日），刻意不走 range
 // 系統——這裡永遠錨定真實今天，與其他 range 圖表錨定「資料庫最新日」
@@ -86,27 +88,25 @@ export function renderCalendarBody() {
   while (cursor <= range.end) {
     var day = byDate[cursor];
     var cell = h('div', 'calendar-cell' + (day ? ' day-' + day.day_state : ''));
+    cell.dataset.date = cursor;
     if (cursor < range.monthStart || cursor > range.monthEnd) cell.classList.add('is-outside-month');
     cell.appendChild(h('span', 'calendar-cell-date', cursor.slice(8, 10)));
     if (day) {
-      // 只要當天有任何活動或課表就可點（不限跑步）——點擊是「看這天發生什麼」，
-      // 不再是「跳到某一場跑步的明細」，所以健走、重訓、純課表日也該能點開。
-      if (day.activities.length > 0 || day.planned.length > 0) {
-        cell.classList.add('is-clickable');
-        cell.setAttribute('role', 'button');
-        cell.setAttribute('tabindex', '0');
-        if (cursor === state.calendarSelectedDate) cell.classList.add('is-selected');
-        (function (date) {
-          cell.addEventListener('click', function () { selectCalendarDate(date); });
-          // 鍵盤操作：格子是 div，不像 button 會自動把 Enter／Space 轉成 click
-          cell.addEventListener('keydown', function (ev) {
-            if (ev.key === 'Enter' || ev.key === ' ') {
-              ev.preventDefault();
-              selectCalendarDate(date);
-            }
-          });
-        }(cursor));
-      }
+      // 有資料的日子都可點——點擊是「看這天所屬的課表週與當天發生什麼」，
+      // 空白日也該能點開看整週的執行狀況。
+      cell.classList.add('is-clickable');
+      cell.setAttribute('role', 'button');
+      cell.setAttribute('tabindex', '0');
+      (function (date) {
+        cell.addEventListener('click', function () { selectCalendarDate(date); });
+        // 鍵盤操作：格子是 div，不像 button 會自動把 Enter／Space 轉成 click
+        cell.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            selectCalendarDate(date);
+          }
+        });
+      }(cursor));
       if (day.activities.length > 0) cell.appendChild(activityDots(day.activities));
       cell.title = cursor + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
     }
@@ -114,39 +114,70 @@ export function renderCalendarBody() {
     cursor = addDaysISO(cursor, 1);
   }
   node.appendChild(grid);
+  markCalendarSelection();
 
   // 月曆重畫後明細要跟著更新（換月、或首次載入都會走到這裡）
   renderCalendarDay();
 }
 
 /**
- * 選取月曆上的某一天：更新選取態並就地渲染下方明細。
- * 刻意不改 hash——當日明細是行事曆的一部分，不是另一個位置；
+ * 選取月曆上的某一天：更新選取態並就地渲染下方的課表週與當日明細。
+ * 刻意不改 hash——明細是行事曆的一部分，不是另一個位置；
  * 換月份時 renderCalendarBody 會重畫格子，選取態靠 state 保留。
  * @param {string} date 'YYYY-MM-DD'
  */
 export function selectCalendarDate(date) {
   // 再點一次同一天＝收起，符合「點開／點關」的直覺
   state.calendarSelectedDate = (state.calendarSelectedDate === date) ? null : date;
-
-  var grid = $('calendar-body').querySelector('.calendar-grid');
-  if (grid) {
-    var cells = grid.querySelectorAll('.calendar-cell');
-    Array.prototype.forEach.call(cells, function (c) { c.classList.remove('is-selected'); });
-  }
-  if (state.calendarSelectedDate) {
-    // 重新標記選取的格子。格子沒帶 data-date，用與繪製時相同的日期序走訪
-    // 太繞，改用 title 前綴比對（title 的開頭就是 ISO 日期，見 renderCalendarBody）。
-    var target = null;
-    Array.prototype.forEach.call(grid ? grid.querySelectorAll('.calendar-cell') : [], function (c) {
-      if (c.title && c.title.indexOf(state.calendarSelectedDate) === 0) target = c;
-    });
-    if (target) target.classList.add('is-selected');
-  }
+  markCalendarSelection();
   renderCalendarDay();
 }
 
-/** 把某一天的課表與活動渲染到月曆下方的明細面板。 */
+/**
+ * 標出選取的那天，以及它所屬課表週（週一到週日）的 7 格。
+ * 月曆從週日排，所以一個課表週會跨兩列（週一～週六在上一列、週日在下一列）。
+ */
+function markCalendarSelection() {
+  var grid = $('calendar-body') && $('calendar-body').querySelector('.calendar-grid');
+  if (!grid) return;
+  var selected = state.calendarSelectedDate;
+  var week = selected ? planWeekRange(selected) : null;
+  Array.prototype.forEach.call(grid.querySelectorAll('.calendar-cell'), function (c) {
+    var d = c.dataset.date;
+    c.classList.toggle('is-selected', d === selected);
+    c.classList.toggle('in-plan-week', !!week && d >= week.start && d <= week.end);
+  });
+}
+
+/**
+ * 選取日所屬課表週的 7 天。月曆資料通常已涵蓋；課表週超出月曆範圍時
+ * （例如月底那週的週日落在下個月）才另外抓，抓回來後重畫明細。
+ * @returns {Array|null} null 表示正在載入
+ */
+function selectedWeekDays(date) {
+  var r = planWeekRange(date);
+  var byDate = {};
+  ((state.calendarData && state.calendarData.days) || []).forEach(function (d) { byDate[d.date] = d; });
+  var days = [];
+  for (var cursor = r.start; cursor <= r.end; cursor = addDaysISO(cursor, 1)) {
+    if (!byDate[cursor]) { days = null; break; }
+    days.push(byDate[cursor]);
+  }
+  if (days) return days;
+  if (state.calendarWeek && state.calendarWeek.start === r.start) return state.calendarWeek.days;
+
+  loadPlanWeek(date).then(function (loaded) {
+    state.calendarWeek = { start: r.start, days: loaded };
+    var sel = state.calendarSelectedDate;
+    if (sel && planWeekRange(sel).start === r.start) renderCalendarDay();
+  }).catch(function (err) {
+    var node = $('calendar-week-body');
+    if (node) showError(node, err.message);
+  });
+  return null;
+}
+
+/** 月曆下方明細：選取日所屬的課表週，接著是當天的課表與活動。 */
 export function renderCalendarDay() {
   var panel = $('panel-calendar-day');
   var node = $('calendar-day-body');
@@ -156,10 +187,22 @@ export function renderCalendarDay() {
   var date = state.calendarSelectedDate;
   if (!date) {
     panel.classList.remove('is-open');
-    node.appendChild(h('p', 'calendar-day-empty', '點選月曆上的日期，這裡會顯示當天的課表與訓練內容。'));
+    node.appendChild(h('p', 'calendar-day-empty', '點選月曆上的日期，這裡會顯示那一週（週一到週日）的課表與執行狀況，以及當天的訓練內容。'));
     return;
   }
   panel.classList.add('is-open');
+
+  // ---- 課表週
+  var weekDays = selectedWeekDays(date);
+  var weekSec = h('div', 'calendar-week');
+  weekSec.appendChild(h('h3', 'calendar-day-title',
+    '課表週　' + (weekDays ? planWeekLabel(weekDays) : planWeekRange(date).start + ' 起')));
+  var weekBody = h('div', null);
+  weekBody.id = 'calendar-week-body';
+  if (weekDays) weekBody.appendChild(renderPlanWeek(weekDays, { selectedDate: date }));
+  else showLoading(weekBody, '載入課表週');
+  weekSec.appendChild(weekBody);
+  node.appendChild(weekSec);
 
   var day = null;
   (state.calendarData && state.calendarData.days ? state.calendarData.days : []).forEach(function (d) {

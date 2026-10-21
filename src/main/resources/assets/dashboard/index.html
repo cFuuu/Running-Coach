@@ -321,8 +321,9 @@
       </section>
 
       <!--
-        點日期後的當日明細，就地顯示在月曆下方，不跳離行事曆——原本點格子會
-        直接 navigate 到訓練紀錄，使用者失去月曆脈絡，要回來還得按上一頁。
+        點日期後就地顯示在月曆下方，不跳離行事曆：先是該日所屬課表週（週一到週日）
+        的課表與執行狀況，接著是當天明細。原本點格子會直接 navigate 到訓練紀錄，
+        使用者失去月曆脈絡，要回來還得按上一頁。
         空的時候由 renderCalendarDay() 放提示文字，不會是一塊空白面板。
       -->
       <section class="panel calendar-day-panel" id="panel-calendar-day" aria-live="polite">

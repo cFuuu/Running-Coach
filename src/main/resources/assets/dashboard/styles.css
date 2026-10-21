@@ -2177,9 +2177,22 @@ body.coach-open .coach-fab {
 
 /* 目前在下方明細面板顯示的那一天。用外框而非底色，因為底色已經被
    day_state（完成／未執行／額外訓練）用掉了，再疊一層會蓋掉狀態資訊。 */
+/* 選取日所屬的課表週（週一到週日，會跨兩列）：底部一條強調色標記。
+   同樣不動底色，理由同下方的 is-selected。 */
+.calendar-cell.in-plan-week {
+  border-color: var(--accent-border);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
 .calendar-cell.is-selected {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.calendar-week {
+  margin-bottom: var(--gap);
+  padding-bottom: var(--gap);
+  border-bottom: 1px solid var(--border);
 }
 
 .calendar-cell.is-outside-month {
