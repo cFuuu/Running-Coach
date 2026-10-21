@@ -2,8 +2,6 @@
  * state.js — 共用狀態、路由表、range 常數、標籤對照表與檢視脈絡
  */
 
-import * as Theme from '../theme.js';
-import { $ } from './dom.js';
 
 export var state = {
   range: '30d',
@@ -91,40 +89,6 @@ export var FALLBACK_WELLNESS_METRICS = [
 
 export function wellnessMetricDefs() {
   return (state.meta && state.meta.wellness_metric_defs) || FALLBACK_WELLNESS_METRICS;
-}
-
-/**
- * 依使用者存的 order/hidden 排出最終要渲染的指標定義清單。
- * 關鍵設計：存的是「順序」與「隱藏清單」，不是「完整可見清單」——
- * 後端新增指標時，不在使用者 order 裡的 key 會排到末端自動出現，
- * 而不是被舊的 localStorage 永久隱藏（這是容易踩到的坑：使用者會
- * 以為新指標沒生效）。已不存在於目前 defs 的舊 key 直接忽略。
- */
-export function orderedVisibleWellnessDefs() {
-  var defs = wellnessMetricDefs();
-  var byKey = {};
-  defs.forEach(function (d) { byKey[d.key] = d; });
-
-  var settings = Theme.getSettings();
-  var wellnessSettings = settings.wellness || {};
-  var order = Array.isArray(wellnessSettings.order) ? wellnessSettings.order : [];
-  var hidden = Array.isArray(wellnessSettings.hidden) ? wellnessSettings.hidden : null;
-  // hidden 為 null（使用者從未動過設定）時，用後端 default_hidden 決定初始顯隱；
-  // 使用者一旦動過設定，hidden 陣列就是完整的隱藏清單（含或不含 default_hidden 的項目）。
-
-  var ordered = [];
-  order.forEach(function (key) {
-    if (byKey[key]) { ordered.push(byKey[key]); delete byKey[key]; }
-  });
-  defs.forEach(function (d) { if (byKey[d.key]) ordered.push(d); }); // 未知/新指標排末端
-
-  return ordered.filter(function (d) {
-    return hidden ? hidden.indexOf(d.key) === -1 : !d.default_hidden;
-  });
-}
-
-export function saveWellnessSettings(order, hidden) {
-  Theme.saveSettings({ wellness: { order: order, hidden: hidden } });
 }
 
 export var WORKOUT_TYPE_LABEL = {

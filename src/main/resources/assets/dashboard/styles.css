@@ -3390,14 +3390,14 @@ body.coach-open .coach-fab {
 
 /* ------------------------------------------------------------ 每日身體狀況：指標自訂面板 */
 
-.wellness-customize {
+.customize {
   position: relative;
   display: flex;
   justify-content: flex-end;
   margin-bottom: 8px;
 }
 
-.wellness-customize-toggle {
+.customize-toggle {
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -3410,11 +3410,11 @@ body.coach-open .coach-fab {
   -webkit-tap-highlight-color: transparent;
 }
 
-.wellness-customize-toggle:hover {
+.customize-toggle:hover {
   border-color: var(--accent);
 }
 
-.wellness-customize-panel {
+.customize-panel {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
@@ -3429,13 +3429,19 @@ body.coach-open .coach-fab {
   box-shadow: 0 4px 16px var(--panel-shadow);
 }
 
-.wellness-customize-list {
+.customize-hint {
+  margin: 0 0 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.customize-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.wellness-customize-row {
+.customize-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3443,17 +3449,17 @@ body.coach-open .coach-fab {
   border-radius: var(--radius-xs);
 }
 
-.wellness-customize-row:hover {
+.customize-row:hover {
   background: var(--surface-sunken);
 }
 
-.wellness-customize-row input[type="checkbox"] {
+.customize-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
 }
 
-.wellness-customize-label {
+.customize-label {
   flex: 1;
   min-width: 0;
   font-size: var(--fs-sm);
@@ -3462,7 +3468,7 @@ body.coach-open .coach-fab {
   white-space: nowrap;
 }
 
-.wellness-customize-move {
+.customize-move {
   min-width: 32px;
   min-height: 32px;
   border: 1px solid var(--border);
@@ -3474,11 +3480,11 @@ body.coach-open .coach-fab {
   -webkit-tap-highlight-color: transparent;
 }
 
-.wellness-customize-move:hover:not(:disabled) {
+.customize-move:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
-.wellness-customize-move:disabled {
+.customize-move:disabled {
   opacity: 0.35;
   cursor: default;
 }
