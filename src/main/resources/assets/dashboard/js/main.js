@@ -32,7 +32,7 @@ import { renderMeta, loadRangeData } from './shell/loader.js';
 import { renderRangeButtons, bindCustomRangePanel } from './shell/range.js';
 import { applyRoute, bindRouter } from './shell/router.js';
 import { bindSyncButtons } from './shell/sync.js';
-import { bindCoachPanel, bindResize } from './shell/coach-frame.js';
+import { bindCoachPanel, bindAnalysisButtons, bindResize } from './shell/coach-frame.js';
 import { initCoach } from './coach.js';
 
 /**
@@ -65,6 +65,7 @@ function init() {
   bindInfoTipDismiss();
   bindCustomRangePanel();
   bindCoachPanel();
+  bindAnalysisButtons();
   bindCoachSetting();
   bindSyncButtons();
   bindRouter();

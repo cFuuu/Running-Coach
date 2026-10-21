@@ -1,12 +1,13 @@
 /**
- * coach-frame.js — AI 教練面板的開合（桌機欄位／平板抽屜／手機全螢幕）與視窗縮放重繪
+ * coach-frame.js — AI 教練面板的開合（桌機欄位／平板抽屜／手機全螢幕）、分析按鈕與視窗縮放重繪
  */
 
 import * as Theme from '../theme.js';
 import { state } from '../core/state.js';
-import { $ } from '../core/dom.js';
+import { $, clear, h } from '../core/dom.js';
 import { syncCoachSettingToggle } from '../views/settings.js';
 import { renderDirtyView } from './router.js';
+import { runAnalysis, showAnalyses } from '../coach.js';
 
 // S1 只負責「殼」：三種寬度的形態（桌機常駐欄／平板抽屜／手機全螢幕 sheet）
 // 與收合狀態的存讀。對話、串流、工具 chip 屬 S2／S3 的 coach.js，這裡不碰。
@@ -65,6 +66,28 @@ export function bindCoachPanel() {
     if (window.innerWidth >= 1280) return;
     if (document.body.classList.contains('coach-open')) setCoachPanel(false, true);
   });
+}
+
+/**
+ * 頂列「分析近況」（跑一次新的 AI 分析）與面板標題列的「分析紀錄」（回看過去的報告）。
+ * 進度與結果都在 AI 面板裡呈現；無法開始時（例如未設定 API key）把原因放在
+ * 內容頂端的提示列，按鈕旁沒有空間放說明文字。
+ */
+export function bindAnalysisButtons() {
+  var btn = $('analyze-btn');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      clear($('notice-bar'));
+      runAnalysis().catch(function (err) {
+        var notice = $('notice-bar');
+        notice.appendChild(h('span', 'state-error-inline',
+          '無法開始分析：' + (err && err.message ? err.message : '原因不明')));
+      }).then(function () { btn.disabled = false; });
+    });
+  }
+  var history = $('coach-history');
+  if (history) history.addEventListener('click', function () { showAnalyses(); });
 }
 
 // 視窗尺寸改變時重繪（X 軸刻度數量依容器寬度決定，需重算）

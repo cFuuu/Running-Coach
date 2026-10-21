@@ -615,16 +615,28 @@ h1, h2, h3 {
   color: var(--text-muted);
 }
 
-/* 主題循環鈕：三個 icon 都在 DOM 裡，只顯示與目前狀態相符的那一個。
-   由 theme.js 設 data-theme-state（見該檔 updateButtons）。 */
-.theme-icon {
-  display: none;
+/* 圖示＋文字的工具鈕（同步資料／分析近況／系統設定）。手機寬度放不下文字，
+   只留圖示，名稱靠 aria-label 與 title。 */
+.tool-btn.has-label {
+  width: auto;
+  gap: 6px;
+  padding: 0 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-#theme-cycle-btn[data-theme-state="light"] .theme-icon[data-icon="light"],
-#theme-cycle-btn[data-theme-state="dark"] .theme-icon[data-icon="dark"],
-#theme-cycle-btn[data-theme-state="system"] .theme-icon[data-icon="system"] {
-  display: flex;
+@media (max-width: 767px) {
+  .tool-btn.has-label {
+    width: 44px;
+    padding: 0;
+  }
+
+  .tool-label {
+    display: none;
+  }
 }
 
 /* ---- view ---- */
@@ -2712,65 +2724,10 @@ body.coach-open .coach-fab {
   padding: 0;
 }
 
-/* 摘要佔較寬的一格（放 AI 分析按鈕），資料品質一格 */
+/* 摘要佔較寬的一格，資料品質一格 */
 .overview-strip {
   display: grid;
   grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr);
-}
-
-.ai-analysis-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-top: 10px;
-}
-
-.ai-analysis-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--on-accent);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.ai-analysis-btn:hover {
-  filter: brightness(1.08);
-}
-
-.ai-analysis-btn:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.ai-analysis-btn:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.ai-analysis-history {
-  min-height: 40px;
-  padding: 0 4px;
-  border: none;
-  background: transparent;
-  color: var(--accent-text);
-  font: inherit;
-  font-size: var(--fs-sm);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.ai-analysis-hint {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
 }
 
 .strip-cell {

@@ -692,7 +692,7 @@ function refreshTitles() {
   }).catch(function () { /* 標題只是顯示，抓不到不影響對話 */ });
 }
 
-// ------------------------------------------------------------ AI 分析報告（總覽按鈕）
+// ------------------------------------------------------------ AI 分析報告（頂列「分析近況」）
 //
 // 由後端 /api/analysis 在背景啟動 Claude Code 無互動 session 產生（不需要
 // ANTHROPIC_API_KEY，因此聊天停用時分析仍可用）。報告顯示在面板裡獨立的
@@ -791,7 +791,7 @@ function renderAnalysis() {
   log.setAttribute('aria-live', 'polite');
   var cur = analysis.current;
   if (!cur) {
-    log.appendChild(h('p', 'coach-placeholder', '按總覽的「AI 分析」按鈕產生一份分析，或從上方選單回看過去的報告。'));
+    log.appendChild(h('p', 'coach-placeholder', '按頂列的「分析近況」產生一份分析，或從上方選單回看過去的報告。'));
     view.appendChild(log);
     return;
   }
@@ -859,7 +859,7 @@ function applyAnalysisEvent(name, data) {
 }
 
 /**
- * 外部入口：打開面板並跑一次新的分析（總覽「AI 分析」按鈕）。
+ * 外部入口：打開面板並跑一次新的分析（頂列「分析近況」）。
  * 不能跑時 reject 一個帶中文說明的 Error，由呼叫端顯示在按鈕旁。
  * @returns {Promise}
  */
@@ -911,7 +911,7 @@ function runAnalysis() {
   });
 }
 
-/** 外部入口：打開面板的分析報告畫面，回看過去的分析（不跑新的）。 */
+/** 外部入口：打開面板的分析報告畫面，回看過去的分析（不跑新的；面板「分析紀錄」鈕）。 */
 function showAnalyses() {
   openCoachPanel();
   showAnalysisView(true);
@@ -952,7 +952,7 @@ function init() {
   });
 }
 
-// init 由 main.js 在 App 殼就緒後呼叫；runAnalysis／showAnalyses 供總覽「AI 分析」按鈕使用
+// init 由 main.js 在 App 殼就緒後呼叫；runAnalysis／showAnalyses 供頂列與面板的分析按鈕使用
 export {
   init as initCoach,
   runAnalysis,

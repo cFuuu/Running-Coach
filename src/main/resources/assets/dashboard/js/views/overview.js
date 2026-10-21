@@ -3,7 +3,6 @@
  */
 
 import * as C from '../charts.js';
-import { runAnalysis, showAnalyses } from '../coach.js';
 import { state } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable, widthOf, wrapChart } from '../core/dom.js';
@@ -104,7 +103,6 @@ export function renderOverviewStrip(ov) {
     weekAvg === null ? '無完整週' : ['完整週平均 ', C.formatNumber(weekAvg, 1), ' km']
   ]);
   summary.classList.add('strip-summary');
-  summary.appendChild(aiAnalysisRow());
   strip.appendChild(summary);
   strip.appendChild(cell('資料品質', rangeChip(ov), [
     ['有效訓練 ', s.effective + '/' + s.total],
@@ -115,43 +113,6 @@ export function renderOverviewStrip(ov) {
     '心率區間：有手錶心率區間停留時間的場次，下方強度堆疊與區間分佈只算得到這些場次。'
   ]));
   node.appendChild(strip);
-}
-
-/**
- * 「AI 分析最近訓練與身體狀況」按鈕：打開右側 AI 面板的分析報告畫面，由後端
- * 在背景啟動 Claude Code 無互動 session 查資料、寫分析（不需要 API key），
- * 過程與報告串流顯示在面板裡並自動保存。分析問題的原文在後端
- * （routes_analysis.ANALYSIS_PROMPT），這裡不帶任何 prompt。
- * 分析刻意不顯示在總覽頁上（D.1：解讀只出現在 AI 面板，2026-10-14 Fu 確認）。
- */
-export function aiAnalysisRow() {
-  var row = h('div', 'ai-analysis-row');
-  var btn = h('button', 'ai-analysis-btn');
-  btn.type = 'button';
-  btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
-    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    + '<use href="#icon-bubble"></use></svg>';
-  btn.appendChild(document.createTextNode('AI 分析最近訓練與身體狀況'));
-  var hint = h('span', 'ai-analysis-hint', '約 1～2 分鐘，結果顯示在右側面板並自動保存');
-  var history = h('button', 'ai-analysis-history', '查看過去的分析');
-  history.type = 'button';
-
-  btn.addEventListener('click', function () {
-    btn.disabled = true;
-    hint.textContent = '分析中…（右側面板可看進度）';
-    runAnalysis().then(function () {
-      hint.textContent = '分析完成，已保存';
-    }, function (err) {
-      hint.textContent = err && err.message ? err.message : '無法開始分析';
-    }).then(function () { btn.disabled = false; });
-  });
-  history.addEventListener('click', function () {
-    showAnalyses();
-  });
-  row.appendChild(btn);
-  row.appendChild(history);
-  row.appendChild(hint);
-  return row;
 }
 
 // ---- 指標卡
