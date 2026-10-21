@@ -1,7 +1,7 @@
 /**
  * plan-week.js — 課表週（週一到週日）的執行狀況：摘要列＋每日課表／實際／狀態
  *
- * 今日頁（本課表週）與行事曆（點選那天所屬的週）共用。
+ * 首頁（本課表週）與行事曆（點選那天所屬的週）共用。
  *
  * 為什麼是週一到週日：課表以一週為一個循環，週末的長距離可能排週六或週日，
  * 比賽通常在週日——用週日起算會把同一個循環切成兩半，「本週課表幾公里」就
@@ -61,21 +61,23 @@ export function planWeekSummary(days) {
   return sum;
 }
 
+/** 摘要列的一個數字（標籤＋大數字＋小單位）；首頁也用它追加 Zone 2。 */
+export function planWeekFig(label, value, unit) {
+  var f = h('div', 'pw-fig');
+  f.appendChild(h('span', 'pw-fig-label', label));
+  var v = h('span', 'pw-fig-value', value);
+  if (unit) v.appendChild(h('small', null, unit));
+  f.appendChild(v);
+  return f;
+}
+
 function summaryNode(days) {
   var s = planWeekSummary(days);
   var wrap = h('div', 'pw-summary');
   var figs = h('div', 'pw-figs');
-  function fig(label, value, unit) {
-    var f = h('div', 'pw-fig');
-    f.appendChild(h('span', 'pw-fig-label', label));
-    var v = h('span', 'pw-fig-value', value);
-    if (unit) v.appendChild(h('small', null, unit));
-    f.appendChild(v);
-    figs.appendChild(f);
-  }
-  fig('實際', C.formatNumber(s.doneKm, 1), 'km');
-  fig('課表', s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—', s.plannedKm > 0 ? 'km' : '');
-  fig('完成', s.doneSessions + '／' + s.plannedSessions, '堂');
+  figs.appendChild(planWeekFig('實際', C.formatNumber(s.doneKm, 1), 'km'));
+  figs.appendChild(planWeekFig('課表', s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—', s.plannedKm > 0 ? 'km' : ''));
+  figs.appendChild(planWeekFig('完成', s.doneSessions + '／' + s.plannedSessions, '堂'));
   wrap.appendChild(figs);
 
   if (s.plannedKm > 0) {

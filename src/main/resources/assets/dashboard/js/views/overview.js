@@ -1,21 +1,21 @@
 /**
- * overview.js — 總覽 view：摘要列、指標卡、週跑量、心率區間、本週課表、個人最佳成績
+ * overview.js — 趨勢頁頂端的區間摘要（原總覽 view 中會隨時間範圍變動的部分）：
+ *               摘要列、近 N 週跑量、每週跑量（強度堆疊）、心率區間分佈
+ *
+ * 2026-10-21 總覽與今日合併為首頁後，VDOT、個人最佳成績、本週 Zone 2、訓練負荷
+ * 這些「現在」的數字移到首頁（views/home.js），這裡只留下吃時間範圍的區塊。
  */
 
 import * as C from '../charts.js';
 import { state } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable, widthOf, wrapChart } from '../core/dom.js';
-import { infoTip, closeInfoPopover, confBadge, kpiCard } from '../core/facts.js';
+import { infoTip, closeInfoPopover, kpiCard } from '../core/facts.js';
 
-import { navigate, renderOrDefer } from '../shell/router.js';
+import { renderOrDefer } from '../shell/router.js';
 
-// 回答「最近狀態怎樣」的跨週數據頁（2026-10-14 依 Fu 的參考圖改版）：
-//   摘要列（區間摘要／資料品質／資料新鮮度）→ 5 張指標卡 → 週跑量＋心率區間並排 → 最佳成績
-// 資料來自兩支端點：
-//   /api/overview       除 ATL/CTL/TSB 以外的全部
-//   /api/training-load  ATL/CTL/TSB（與訓練負荷頁共用 state.loadSeries，不另抓）
-// 每張卡標出時間範圍（window-chip），ⓘ 只寫定義與算法，不寫判讀（判讀屬 AI 教練面板）。
+// 資料來自 /api/overview（吃頂列 range）。每個區塊標出時間範圍（window-chip），
+// ⓘ 只寫定義與算法，不寫判讀（判讀屬 AI 教練面板）。
 // 增減幅度等標籤一律用中性樣式，不用紅綠暗示好壞。
 
 // 強度分層的顯示資訊。分層本身（哪些 zone 算低／中／高）以後端回傳的
@@ -27,9 +27,7 @@ export var INTENSITY_TIERS = [
   { key: 'unknown', name: '未分類', className: 'bar-intensity-unknown' }
 ];
 
-// 最佳成績卡每個距離預設顯示幾場（第 1 名為最佳，其餘為次佳）
-
-export var OVERVIEW_NODE_IDS = ['overview-strip', 'overview-kpis', 'overview-volume', 'overview-zones', 'overview-pbs'];
+export var OVERVIEW_NODE_IDS = ['overview-strip', 'overview-kpis', 'overview-volume', 'overview-zones'];
 
 export function zoneListText(zones) {
   return zones.map(function (z) { return z === 0 ? '低於 Z1' : 'Z' + z; }).join(' + ');
@@ -117,79 +115,6 @@ export function renderOverviewStrip(ov) {
 
 // ---- 指標卡
 
-export function vdotCard(vdot) {
-  var race = vdot.race || {};
-  var ref = vdot.garmin_reference;
-  var refText = null;
-  if (ref && ref.predictions.length > 0) {
-    var vals = ref.predictions.map(function (p) { return p.vdot; });
-    var lo = Math.min.apply(null, vals);
-    var hi = Math.max.apply(null, vals);
-    refText = 'Garmin 對照 ' + C.formatNumber(lo, 1) + (hi !== lo ? '–' + C.formatNumber(hi, 1) : '');
-  }
-  var tip = [
-    'Jack Daniels 的跑力指數：用一場全力成績反推的有氧能力分數。',
-    '只採用標記為比賽或全力測驗的成績（3K／5K／10K 需在 90 天內，半馬／全馬 180 天內），'
-      + '把實際距離與完賽時間代入 Daniels & Gilbert 公式：VDOT ＝ 該配速的攝氧成本 ÷ 能持續該時間的最大攝氧比例。'
-      + '有手動計時成績的場次用手動計時成績。',
-    '走勢線是歷年每場比賽各自算出的 VDOT（不受新鮮度門檻限制）。',
-    '不採用一般訓練經心率換算的推估：那是次最大強度推估，對訓練量少的跑者會偏高。'
-  ];
-  if (ref) {
-    tip.push('Garmin 對照值：把手錶 ' + ref.as_of + ' 的完賽預測（'
-      + ref.predictions.map(function (p) {
-        return p.distance + ' ' + C.formatDuration(p.time_sec) + ' → ' + C.formatNumber(p.vdot, 1);
-      }).join('、')
-      + '）用同一公式換算。Garmin 演算法未公開，僅供對照，不作為依據。');
-  }
-  var history = (vdot.history || []).map(function (x) { return x.vdot; });
-  if (!race.value) {
-    return kpiCard({
-      label: 'VDOT', chip: '最近全力成績', value: '未評',
-      badge: h('span', 'conf-badge conf-none', '無資料'),
-      note: race.reason + (refText ? '；' + refText : ''),
-      series: history.length > 1 ? history : null,
-      tip: tip
-    });
-  }
-  return kpiCard({
-    label: 'VDOT',
-    chip: '最近全力成績',
-    value: C.formatNumber(race.value.value, 1),
-    badge: confBadge(race.value),
-    note: C.shortDate(race.basis.date) + ' ' + race.basis.distance + (refText ? '　' + refText : ''),
-    series: history.length > 1 ? history : null,
-    tip: tip
-  });
-}
-
-export function thisWeekCard(w) {
-  var card = kpiCard({
-    label: '本週跑量',
-    chip: C.shortDate(w.week_start) + '–' + C.shortDate(w.week_end),
-    value: C.formatNumber(w.done_km, 1),
-    unit: w.planned_km !== null ? '/ ' + C.formatNumber(w.planned_km, 1) + ' km' : 'km',
-    note: w.planned_km === null
-      ? '本週無課表'
-      : (w.planned_without_distance > 0 ? '課表另 ' + w.planned_without_distance + ' 堂只給時間' : '課表距離'),
-    tip: [
-      '本週（週一至週日，以今天為準，不受上方時間區間影響）已完成的跑步距離，斜線後為課表距離。',
-      '課表距離只加總有寫距離的課；只寫時間的課（例如 FR 60 分鐘）無法換算距離，另外註明堂數，不拿配速去猜。'
-    ]
-  });
-  if (w.planned_km) {
-    var pct = Math.min(100, (w.done_km / w.planned_km) * 100);
-    var bar = h('div', 'kpi-bar');
-    var fill = h('div', 'kpi-bar-fill');
-    fill.style.width = pct.toFixed(1) + '%';
-    bar.appendChild(fill);
-    bar.setAttribute('role', 'img');
-    bar.setAttribute('aria-label', '本週跑量佔課表距離 ' + Math.round(pct) + '%');
-    card.insertBefore(bar, card.querySelector('.kpi-note'));
-  }
-  return card;
-}
-
 export function recentVolumeCard(r, weeks) {
   // 走勢線：區間內每週總跑量（最後一週可能未完整，仍畫出來讓「現在」看得見）
   var series = weeks.map(function (w) { return w.total_km; });
@@ -209,84 +134,12 @@ export function recentVolumeCard(r, weeks) {
   });
 }
 
-export function zone2Card(w, bounds) {
-  var secs = {};
-  w.zone_seconds.forEach(function (z) { secs[z.zone] = z.seconds; });
-  var total = w.zone_seconds.reduce(function (s, z) { return s + z.seconds; }, 0);
-  var z2 = bounds.zones[1];
-  var range = bounds.available ? '（' + z2.bpm_low + '–' + z2.bpm_high + ' bpm）' : '';
-  var card = kpiCard({
-    label: '本週 Zone 2 時間',
-    chip: C.shortDate(w.week_start) + '–' + C.shortDate(w.week_end),
-    value: total > 0 ? C.formatDuration(secs[2] || 0) : '—',
-    badge: total > 0 ? h('span', 'neutral-badge', '佔本週 ' + C.formatNumber((secs[2] || 0) / total * 100, 0) + '%') : null,
-    note: total > 0
-      ? '本週心率區間共 ' + C.formatDuration(total) + '，' + w.zone_sessions_counted + '/' + w.sessions + ' 場有資料'
-      : (w.sessions > 0 ? '本週跑步皆無心率區間資料' : '本週尚未跑步'),
-    tip: [
-      '本週（週一至週日）跑步在 Z2 輕鬆（Easy）' + range + '的停留時間加總，來自手錶每場記錄的區間時間。',
-      '百分比的分母是本週跑步在 Z1～Z5 的總時間。'
-    ]
-  });
-  if (total > 0) card.insertBefore(zoneSplitBar(w.zone_seconds.map(function (z) {
-    return { zone: z.zone, pct: z.seconds / total * 100 };
-  }), true), card.querySelector('.kpi-note'));
-  return card;
-}
-
-/** 訓練負荷卡：主數字 TSB，附「佔 CTL 的百分比」讓自訂尺度的數字可讀。 */
-export function loadCard() {
-  var rows = (state.loadSeries && state.loadSeries.series) || [];
-  var last = null;
-  for (var i = rows.length - 1; i >= 0; i -= 1) {
-    if (rows[i].tsb && typeof rows[i].tsb.value === 'number') { last = rows[i]; break; }
-  }
-  var tip = [
-    'TSB（訓練壓力平衡）＝ CTL − ATL。ATL 是每日訓練負荷的 7 日指數加權平均（近期疲勞），CTL 是 42 日指數加權平均（長期體能基礎）。',
-    '負荷採 Banister TRIMP：分鐘 × 心率儲備百分比（%HRR）× 隨強度指數上升的權重，'
-      + '一小時輕鬆跑約 85、一小時閾值跑約 165。另外標出 TSB 佔 CTL 的百分比：表示近期負荷比長期基礎高（負）或低（正）多少。',
-    '參考值（Joe Friel，TrainingPeaks〈Applying the Numbers Part 3〉，原為 TSS 尺度的 TSB）：'
-      + '比賽日 +15～+25 通常表現最好（部分選手 +5～+10）；−10～+10 是過渡區，停留時間應短；'
-      + '負值代表處於疲勞、多半不在比賽狀態。',
-    'TRIMP 與 TSS 定義不同（同一小時閾值跑約為 TSS 的 1.6 倍），上面的絕對值不能直接套在 TSB 上。'
-      + 'intervals.icu 的做法是把同一組數字改套在「TSB 佔 CTL 的百分比」，使用者社群常引用 −30% 以下為高風險區'
-      + '——這是社群慣例，不是官方文件或研究定論。以上僅供對照，本頁不據此判讀。'
-  ];
-  if (!last) {
-    return kpiCard({
-      label: '訓練負荷', value: '—', tip: tip,
-      note: state.loadSeries ? '此區間內無訓練負荷資料' : '載入中…'
-    });
-  }
-  var tsb = last.tsb.value;
-  var ctl = last.ctl && last.ctl.value;
-  return kpiCard({
-    label: '訓練負荷',
-    chip: '截至 ' + C.shortDate(last.date),
-    value: (tsb > 0 ? '+' : '') + C.formatNumber(tsb, 0),
-    unit: 'TSB',
-    badge: ctl ? h('span', 'neutral-badge', 'CTL 的 ' + (tsb > 0 ? '+' : '−') + Math.abs(tsb / ctl * 100).toFixed(0) + '%') : null,
-    note: 'ATL ' + C.formatNumber(last.atl && last.atl.value, 0) + ' · CTL ' + C.formatNumber(ctl, 0),
-    series: rows.map(function (r) { return r.tsb ? r.tsb.value : null; }),
-    tip: tip
-  });
-}
-
-export function renderOverviewKpis(ov) {
+/** 近 N 週跑量卡（滾動計算、不受時間範圍影響；走勢線是時間範圍內的每週跑量）。 */
+export function renderOverviewRecent(ov) {
   var node = $('overview-kpis');
   clear(node);
   var strip = h('div', 'kpi-strip overview-kpi-strip');
-  strip.appendChild(vdotCard(ov.vdot));
-  strip.appendChild(thisWeekCard(ov.this_week));
   strip.appendChild(recentVolumeCard(ov.recent_volume, ov.weekly_intensity.weeks));
-  strip.appendChild(zone2Card(ov.this_week, ov.hr_zone_bounds));
-  var load = loadCard();
-  // 信賴度 badge 與「佔 CTL」標籤同列會擠，信賴度改放在 ATL/CTL 那行
-  var lastTsb = null;
-  ((state.loadSeries && state.loadSeries.series) || []).forEach(function (r) { if (r.tsb) lastTsb = r.tsb; });
-  var note = load.querySelector('.kpi-note');
-  if (lastTsb && note) note.appendChild(confBadge(lastTsb));
-  strip.appendChild(load);
   node.appendChild(strip);
 }
 
@@ -432,121 +285,6 @@ export function renderOverviewZones(ov) {
     + (bounds.available ? '　bpm 依手錶 %HRR 設定換算（最大 ' + bounds.max_hr.value + '、靜止 ' + bounds.resting_hr_bpm + '）' : '　尚未設定手錶區間，不顯示 bpm')));
 }
 
-// ---- 最佳成績
-
-// 展開中的距離（distance 代碼）；重繪總覽時保留，切換頁面再回來也還在
-export var pbOpenDistance = null;
-
-/** 卡片上的賽事名稱：個人測驗一律顯示「個人測驗」，完整名稱留給展開清單 */
-export function pbCardName(r) {
-  return r.personal_test ? '個人測驗' : (r.name || '');
-}
-
-export function renderOverviewPbs(ov) {
-  var node = $('overview-pbs');
-  clear(node);
-  var head = overviewHead('個人最佳成績', '生涯', [
-    '標記為 Race 的場次（含個人計時測驗），每個距離只顯示最佳一筆；點卡片可展開該距離的全部成績，由快到慢排列，點清單中任一筆可看單場分析。不受上方時間區間影響。',
-    '成績預設用手錶紀錄的時間；有特別填入時間的場次（大會成績或現場計時）改用填入值，展開清單中標「手動」。配速一律為「時間 ÷ 標準距離」，不用手錶 GPS 量到的距離。',
-    '賽事名稱讀自學員檔 athlete_profile.md 的「比賽成績」表（以日期對應），沒寫的場次用 Garmin 活動名稱；名稱含「測驗」或「測試」的在卡片上顯示為「個人測驗」。每場的 VDOT 用同一條 Daniels 公式算出。'
-  ]);
-  node.appendChild(head);
-
-  var byDistance = {};
-  ov.personal_bests.forEach(function (pb) { byDistance[pb.distance] = pb; });
-  if (pbOpenDistance && !(byDistance[pbOpenDistance] && byDistance[pbOpenDistance].records.length)) {
-    pbOpenDistance = null;
-  }
-
-  var grid = h('div', 'pb-grid');
-  ov.personal_bests.forEach(function (pb) {
-    grid.appendChild(pbCard(pb));
-  });
-  node.appendChild(grid);
-  if (pbOpenDistance) node.appendChild(pbDetail(byDistance[pbOpenDistance]));
-}
-
-export function pbCard(pb) {
-  var count = pb.records.length;
-  var expandable = count > 0;
-  var card = h(expandable ? 'button' : 'div', 'pb-card');
-  if (count === 0) card.className += ' is-empty';
-  if (expandable) {
-    card.type = 'button';
-    card.className += ' is-expandable' + (pbOpenDistance === pb.distance ? ' is-open' : '');
-    card.setAttribute('aria-expanded', pbOpenDistance === pb.distance ? 'true' : 'false');
-    card.setAttribute('aria-controls', 'pb-detail');
-    card.addEventListener('click', function () {
-      pbOpenDistance = pbOpenDistance === pb.distance ? null : pb.distance;
-      renderOverviewPbs(state.overview);
-      var target = pbOpenDistance ? $('pb-detail') : null;
-      if (target) target.focus({ preventScroll: true });
-    });
-  }
-
-  var top = h('div', 'pb-card-head');
-  top.appendChild(h('span', 'pb-distance', pb.label));
-  if (expandable) top.appendChild(h('span', 'pb-count', count > 1 ? '共 ' + count + ' 場' : ''));
-  card.appendChild(top);
-
-  if (count === 0) {
-    card.appendChild(h('div', 'pb-empty-text', '尚無紀錄'));
-    return card;
-  }
-  var best = pb.records[0];
-  card.appendChild(h('div', 'pb-time', C.formatDuration(best.time_sec)));
-  card.appendChild(h('div', 'pb-pace', C.formatPace(best.pace_sec_per_km) + '/km'));
-  card.appendChild(h('div', 'pb-date', best.date));
-  card.appendChild(h('div', 'pb-vdot', 'VDOT ' + C.formatNumber(best.vdot, 1)));
-  var name = h('div', 'pb-name', pbCardName(best));
-  name.title = best.name || '';
-  card.appendChild(name);
-  return card;
-}
-
-export function pbDetail(pb) {
-  var panel = h('div', 'pb-detail');
-  panel.id = 'pb-detail';
-  panel.tabIndex = -1;
-  var head = h('div', 'pb-detail-head');
-  head.appendChild(h('h3', 'pb-detail-title', pb.label + ' 歷史成績（共 ' + pb.records.length + ' 場'
-    + (pb.records.length > 1 ? '，由快到慢）' : '）')));
-  var close = h('button', 'pb-detail-close', '✕');
-  close.type = 'button';
-  close.setAttribute('aria-label', '收合 ' + pb.label + ' 歷史成績');
-  close.addEventListener('click', function () {
-    pbOpenDistance = null;
-    renderOverviewPbs(state.overview);
-  });
-  head.appendChild(close);
-  panel.appendChild(head);
-
-  var list = h('ol', 'pb-list');
-  pb.records.forEach(function (r, i) {
-    var item = h('li');
-    var row = h('button', 'pb-row' + (i === 0 ? ' is-best' : ''));
-    row.type = 'button';
-    row.setAttribute('aria-label', '第 ' + (i + 1) + ' 名 ' + C.formatDuration(r.time_sec) + '，' + r.date + '，' + (r.name || '') + '，檢視單場分析');
-    row.appendChild(h('span', 'pb-row-rank', String(i + 1)));
-    var time = h('span', 'pb-row-time', C.formatDuration(r.time_sec));
-    if (r.official) {
-      var manual = h('span', 'pb-manual', '手動');
-      manual.title = '時間為人工填入（大會成績或現場計時），非手錶紀錄';
-      time.appendChild(manual);
-    }
-    row.appendChild(time);
-    row.appendChild(h('span', 'pb-row-pace', C.formatPace(r.pace_sec_per_km) + '/km'));
-    row.appendChild(h('span', 'pb-row-date', r.date));
-    row.appendChild(h('span', 'pb-row-name', r.name || ''));
-    row.appendChild(h('span', 'pb-row-vdot', 'VDOT ' + C.formatNumber(r.vdot, 1)));
-    row.addEventListener('click', function () { navigate('sessions', r.id); });
-    item.appendChild(row);
-    list.appendChild(item);
-  });
-  panel.appendChild(list);
-  return panel;
-}
-
 export function renderOverview() {
   var ov = state.overview;
   if (!ov) return; // 還沒回來：載入中訊息由 loadOverview() 放
@@ -557,10 +295,9 @@ export function renderOverview() {
     return;
   }
   renderOverviewStrip(ov);
-  renderOverviewKpis(ov);
+  renderOverviewRecent(ov);
   renderOverviewVolume(ov);
   renderOverviewZones(ov);
-  renderOverviewPbs(ov);
 }
 
 export function loadOverview() {

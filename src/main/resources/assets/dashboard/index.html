@@ -61,13 +61,6 @@
   <symbol id="icon-close" viewBox="0 0 24 24">
     <path d="M6 6l12 12M18 6L6 18"></path>
   </symbol>
-  <!-- 總覽：側邊列與手機分頁列共用 -->
-  <symbol id="icon-grid" viewBox="0 0 24 24">
-    <rect x="3" y="3" width="7" height="7" rx="1"></rect>
-    <rect x="14" y="3" width="7" height="7" rx="1"></rect>
-    <rect x="3" y="14" width="7" height="7" rx="1"></rect>
-    <rect x="14" y="14" width="7" height="7" rx="1"></rect>
-  </symbol>
 </defs></svg>
 
 <!--
@@ -92,17 +85,11 @@
       不攔截點擊，讓瀏覽器自己改 hash——上一頁／下一頁因此自動可用。
     -->
     <nav class="sidebar-nav" id="sidebar-nav" aria-label="主導覽">
-      <a class="nav-link" href="#/overview" data-view="overview">
+      <a class="nav-link" href="#/home" data-view="home">
         <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-grid"></use></svg>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h5v-6h4v6h5V10"></path></svg>
         </span>
-        <span class="nav-text">總覽</span>
-      </a>
-      <a class="nav-link" href="#/today" data-view="today">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
-        </span>
-        <span class="nav-text">今日</span>
+        <span class="nav-text">首頁</span>
       </a>
       <a class="nav-link" href="#/calendar" data-view="calendar">
         <span class="nav-icon" aria-hidden="true">
@@ -212,79 +199,59 @@
       </button>
     </div>
 
-    <!-- ======================================================== view：今日 -->
-    <section class="view" id="view-today" hidden aria-labelledby="h-today">
-      <section class="panel panel-today" id="panel-today" aria-labelledby="h-today">
-        <h2 class="panel-title" id="h-today">
-          今日<span class="panel-hint">規則引擎輸出的事實與信賴度，不含判讀建議</span>
-        </h2>
-        <div id="today-body"></div>
-      </section>
-
-      <!--
-        身體狀況趨勢：HRV、靜止心率、睡眠、TSB 各帶一條近 30 天迷你趨勢線，
-        是「今天身體準備好了嗎」的依據。排在「今日」之後、「本課表週」之前——
-        先看今天要做什麼，再看身體狀況，最後才是整週的執行細節。
-        本週跑量與堂數在下方課表週的摘要列，不在這裡重複。
-      -->
-      <section class="panel" id="panel-kpi" aria-labelledby="h-kpi">
-        <h2 class="panel-title" id="h-kpi">
-          身體狀況<span class="panel-hint">近 30 天走勢，不含判讀</span>
-        </h2>
-        <div id="kpi-strip"></div>
-      </section>
-
-      <section class="panel" id="panel-week" aria-labelledby="h-week">
-        <!-- 標題由 js/views/today.js 補上課表週的日期範圍 -->
-        <h2 class="panel-title" id="h-week">本課表週</h2>
-        <div id="week-strip"></div>
-        <!-- 課表週執行表（js/views/plan-week.js）：摘要列＋每天的課表、實際與狀態 -->
-        <div id="week-plan-list"></div>
-        <p class="view-link-row">
-          <a class="view-link" href="#/calendar">查看課表與行事曆 →</a>
-        </p>
-      </section>
-
-      <!-- 最近幾場訓練：原本今日頁只顯示「最近一場」，這裡列出近 8 場 -->
-      <section class="panel" id="panel-recent" aria-labelledby="h-recent">
-        <h2 class="panel-title" id="h-recent">
-          最近訓練<span class="panel-hint">近 8 場，點選可看單場分析</span>
-        </h2>
-        <div id="recent-sessions"></div>
-        <p class="view-link-row">
-          <a class="view-link" href="#/sessions">查看完整訓練紀錄 →</a>
-        </p>
-      </section>
-    </section>
-
     <!--
-      ===================================================== view：總覽
-      跨週數據頁：回答「最近狀態怎樣」（2026-10-14 依 Fu 的參考圖改版）。
-      版面：摘要列 → 5 張指標卡 → 週跑量＋心率區間並排 → 最佳成績。
-      本週課表的執行狀況在今日頁與行事曆（課表週），不在這裡重複（2026-10-21）。
-      只放數字、時間範圍標籤與定義（各區塊的 ⓘ），不放判讀——判讀在 AI 教練面板。
-      資料來自 /api/overview 與 /api/training-load，range 系列吃頂列的區間切換。
-      各區塊的標題由 js/views/overview.js 連同時間範圍與 ⓘ 一起產生（overviewHead）。
+      ======================================================== view：首頁
+      2026-10-21 由「今日」與「總覽」合併。固定看「現在」，不吃頂列的時間範圍——
+      會隨範圍變動的走勢都在趨勢頁。6 個區塊的順序與顯隱由使用者自訂，
+      js/views/home.js 依偏好搬動 #home-grid 的子元素；「今天」與「訓練負荷」
+      相鄰時並排（is-half）。只放事實、定義（各指標的 ⓘ），不放判讀。
     -->
-    <section class="view" id="view-overview" hidden aria-labelledby="content-title">
-      <section class="panel overview-strip-panel" aria-label="區間摘要">
-        <div id="overview-strip"></div>
-      </section>
-
-      <div id="overview-kpis" class="overview-kpis" aria-label="指標"></div>
-
-      <div class="overview-grid">
-        <section class="panel" aria-label="每週跑量">
-          <div id="overview-volume"></div>
-        </section>
-        <section class="panel" aria-label="心率區間分佈">
-          <div id="overview-zones"></div>
-        </section>
+    <section class="view" id="view-home" hidden aria-labelledby="content-title">
+      <div class="home-head">
+        <p class="home-freshness" id="home-freshness"></p>
+        <div id="home-customize"></div>
       </div>
 
-      <section class="panel" aria-label="個人最佳成績">
-        <div id="overview-pbs"></div>
-      </section>
+      <div class="home-grid" id="home-grid">
+        <section class="panel home-block" id="block-today" aria-labelledby="h-today">
+          <h2 class="panel-title" id="h-today">今天<span class="panel-hint">規則引擎輸出的事實與信賴度，不含判讀建議</span></h2>
+          <div id="today-body"></div>
+        </section>
+
+        <section class="panel home-block" id="block-load" aria-labelledby="h-load-now">
+          <h2 class="panel-title" id="h-load-now">訓練負荷<span class="panel-hint">數值截至今天，走勢為近 30 天</span></h2>
+          <div id="home-load"></div>
+        </section>
+
+        <section class="panel home-block" id="block-body" aria-labelledby="h-kpi">
+          <h2 class="panel-title" id="h-kpi">身體狀況<span class="panel-hint">昨夜數值與近 30 天走勢，不含判讀</span></h2>
+          <div id="kpi-strip"></div>
+        </section>
+
+        <section class="panel home-block" id="block-week" aria-labelledby="h-week">
+          <!-- 標題由 js/views/home.js 補上課表週的日期範圍 -->
+          <h2 class="panel-title" id="h-week">本課表週</h2>
+          <div id="week-strip"></div>
+          <!-- 課表週執行表（js/views/plan-week.js）：摘要列＋每天的課表、實際與狀態 -->
+          <div id="week-plan-list"></div>
+          <p class="view-link-row">
+            <a class="view-link" href="#/calendar">在行事曆看其他週</a>
+          </p>
+        </section>
+
+        <section class="panel home-block" id="block-ability" aria-labelledby="h-ability">
+          <h2 class="panel-title" id="h-ability">能力與成績</h2>
+          <div id="home-ability"></div>
+        </section>
+
+        <section class="panel home-block" id="block-recent" aria-labelledby="h-recent">
+          <h2 class="panel-title" id="h-recent">最近訓練<span class="panel-hint">近 8 場，點選可看單場分析</span></h2>
+          <div id="recent-sessions"></div>
+          <p class="view-link-row">
+            <a class="view-link" href="#/sessions">看完整訓練紀錄</a>
+          </p>
+        </section>
+      </div>
     </section>
 
     <!-- ==================================================== view：行事曆 -->
@@ -364,6 +331,25 @@
       兩個 panel 的 id 不變（同步游標與各自的渲染函式都靠 id 查找）。
     -->
     <section class="view" id="view-trends" hidden aria-labelledby="content-title">
+      <!--
+        區間摘要（原總覽頁中會隨時間範圍變動的部分，js/views/overview.js）：
+        摘要列、近 N 週跑量、每週跑量（強度堆疊）、心率區間分佈。
+      -->
+      <section class="panel overview-strip-panel" aria-label="區間摘要">
+        <div id="overview-strip"></div>
+      </section>
+
+      <div id="overview-kpis" class="overview-kpis" aria-label="近期跑量"></div>
+
+      <div class="overview-grid">
+        <section class="panel" aria-label="每週跑量">
+          <div id="overview-volume"></div>
+        </section>
+        <section class="panel" aria-label="心率區間分佈">
+          <div id="overview-zones"></div>
+        </section>
+      </div>
+
       <!--
         #panel-load 必須保留為 #load-chart 與 #trend-charts 的祖先：
         同步游標的 SYNC_GROUPS 以此 id 查找群組容器（js/core/tooltip.js
@@ -537,19 +523,13 @@
 </div>
 
 <!-- ------------------------------------------------------------ 手機 -->
-<!-- 底部分頁列（<768px 顯示）：5 格等寬、56px 高、圖示＋文字 -->
+<!-- 底部分頁列（<768px 顯示）：4 格等寬、56px 高、圖示＋文字 -->
 <nav class="tabbar" id="tabbar" aria-label="主導覽（手機）">
-  <a class="tab-link" href="#/overview" data-view="overview">
+  <a class="tab-link" href="#/home" data-view="home">
     <span class="tab-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-grid"></use></svg>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h5v-6h4v6h5V10"></path></svg>
     </span>
-    <span class="tab-text">總覽</span>
-  </a>
-  <a class="tab-link" href="#/today" data-view="today">
-    <span class="tab-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
-    </span>
-    <span class="tab-text">今日</span>
+    <span class="tab-text">首頁</span>
   </a>
   <a class="tab-link" href="#/calendar" data-view="calendar">
     <span class="tab-icon" aria-hidden="true">

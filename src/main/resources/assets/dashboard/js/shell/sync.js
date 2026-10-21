@@ -7,7 +7,7 @@ import { state } from '../core/state.js';
 import { api, apiPost } from '../core/api.js';
 import { $, clear, h } from '../core/dom.js';
 import { shortDateTime } from '../core/format.js';
-import { loadToday } from '../views/today.js';
+import { loadHome } from '../views/home.js';
 import { loadCalendarBody } from '../views/calendar.js';
 
 // N-19 §7。同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，
@@ -144,8 +144,8 @@ export function requestSync() {
       if (result.activities !== undefined) parts.push('活動 ' + result.activities + ' 筆');
       if (result.wellness !== undefined) parts.push('身體數據 ' + result.wellness + ' 筆');
       setSyncMessage('同步完成：' + (parts.join('　·　') || '無新資料'), 'ok');
-      // 同步會改變資料，今日卡與行事曆必須重讀，否則畫面還停在同步前
-      loadToday();
+      // 同步會改變資料，首頁與行事曆必須重讀，否則畫面還停在同步前
+      loadHome();
       if (state.calendarData) loadCalendarBody();
     });
   }).catch(function (err) {

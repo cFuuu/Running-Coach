@@ -6,7 +6,6 @@ import * as C from '../charts.js';
 import { state, CONFIDENCE_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, widthOf, wrapChart } from '../core/dom.js';
-import { renderOverview } from './overview.js';
 import { renderOrDefer } from '../shell/router.js';
 
 /**
@@ -109,7 +108,6 @@ export function loadLoadSeries() {
   api('/api/training-load?range=' + state.range).then(function (data) {
     state.loadSeries = data;
     renderOrDefer('load', renderLoad);
-    renderOrDefer('overview', renderOverview); // 總覽的 ATL/CTL/TSB 卡吃同一份
   }).catch(function (err) {
     showError($('load-chart'), err.message);
   });

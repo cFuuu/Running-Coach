@@ -25,10 +25,12 @@ export var state = {
   // 與頂列的 range 切換無關——今日頁不吃 range（見 VIEWS.today.hasRange）。
   todayKpi: null,        // { loadSeries, hrvPoints, rhrPoints, sleepPoints, sleepDurationPoints }
   recentSessions: null,  // /api/sessions 近 30 天的場次（取前 8 筆顯示）
-  recentPlans: null,     // 活動 id → 當天對應的課表（最近訓練的「對應課表」欄）
-  overview: null,        // /api/overview（吃 range）；ATL/CTL/TSB 另用 loadSeries
+  overview: null,        // 趨勢頁區間摘要用的 /api/overview（吃 range）
 
-  view: 'overview',      // 目前 view：overview|today|calendar|trends|sessions|settings
+  homeOverview: null,    // 首頁用的 /api/overview（固定 30d，只取 VDOT、最佳成績、本週 Zone 2 等不受範圍影響的欄位）
+  recentPlans: null,     // 活動 id → 當天對應的課表（最近訓練的「對應課表」欄）
+
+  view: 'home',          // 目前 view：home|calendar|trends|sessions|settings
 
   // render-on-activate 的髒標記。widthOf() 對 display:none 的容器回 0，
   // 在隱藏的 view 裡畫圖會得到寬度 0 的空 SVG，所以資料回來時若該 view
@@ -38,18 +40,18 @@ export var state = {
 };
 
 // view 的定義：路由 key → 標題、是否吃 range。
-// 「吃 range」決定內容頂列的區間切換要不要顯示：總覽、趨勢、訓練紀錄顯示，
-// 今日、行事曆與系統設定不受區間影響。
-// 2026-10-21 訓練負荷與身體狀況合併為「趨勢」（舊網址轉址見 router.js）。
+// 「吃 range」決定內容頂列的區間切換要不要顯示：趨勢、訓練紀錄顯示，
+// 首頁、行事曆與系統設定不受區間影響。
+// 2026-10-21 訓練負荷與身體狀況合併為「趨勢」、總覽與今日合併為「首頁」
+// （舊網址轉址見 router.js）。
 export var VIEWS = {
-  overview: { title: '總覽',         hasRange: true },
-  today:    { title: '今日',         hasRange: false },
+  home:     { title: '首頁',         hasRange: false },
   calendar: { title: '行事曆',       hasRange: false },
   trends:   { title: '趨勢',         hasRange: true },
   sessions: { title: '訓練紀錄',     hasRange: true },
   settings: { title: '系統設定',     hasRange: false }
 };
-export var DEFAULT_VIEW = 'overview';
+export var DEFAULT_VIEW = 'home';
 
 // 產品名。分頁標題組成 `<view 標題>｜Running Coach`，<title> 的初始值
 // （index.html）是完整的「Running Coach 訓練儀表板」——前者要短，因為

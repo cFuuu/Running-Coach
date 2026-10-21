@@ -3,7 +3,7 @@
  *
  * 【模組分層】
  *   core/   狀態、資料存取、DOM 小工具、格式化、tooltip、事實呈現元件——不依賴任何 view
- *   views/  各分頁的載入與繪製（today／overview／calendar／sessions／load／wellness／settings）
+ *   views/  各分頁的載入與繪製（home／calendar／trends 的 overview・load・wellness／sessions／settings）
  *   shell/  App 殼：路由、range 切換、載入流程、資料同步、AI 面板開合
  *   charts.js 只負責畫圖（純函式），不做 fetch、不讀寫狀態
  *   coach.js  AI 教練面板
@@ -25,7 +25,7 @@ import { api } from './core/api.js';
 import { $, clear, h } from './core/dom.js';
 import { bindInfoTipDismiss } from './core/facts.js';
 import { bindTooltipDelegation } from './core/tooltip.js';
-import { loadTodayKpi, loadRecentSessions, loadToday, loadWeekStrip } from './views/today.js';
+import { loadHome, initHomeLayout } from './views/home.js';
 import { renderCalendarLegend } from './views/calendar.js';
 import { bindCoachSetting } from './views/settings.js';
 import { renderMeta, loadRangeData } from './shell/loader.js';
@@ -70,6 +70,7 @@ function init() {
   bindSyncButtons();
   bindRouter();
   renderCalendarLegend();
+  initHomeLayout();
 
   // 先套路由再發請求：資料回來時 state.view 已經正確，render-on-activate
   // 才知道該立刻畫還是標髒。反過來會讓首屏的圖表全部畫在隱藏容器裡（寬度 0）。
@@ -89,10 +90,7 @@ function init() {
     renderRangeButtons(); // meta 失敗仍要能操作，退回 FALLBACK_RANGES
   });
 
-  loadToday();
-  loadWeekStrip();
-  loadTodayKpi();
-  loadRecentSessions();
+  loadHome();
   loadRangeData();
 
   // AI 教練面板：原本是 coach.js 自己在 DOMContentLoaded 註冊、排在 app 之後執行，

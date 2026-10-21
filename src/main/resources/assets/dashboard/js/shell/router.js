@@ -13,7 +13,7 @@ import { renderOverview } from '../views/overview.js';
 import { loadSessionDetail } from './loader.js';
 
 // hash 路由 `#/view[/arg]`：
-//   #/overview  #/today  #/calendar  #/calendar/2026-09  #/trends
+//   #/home  #/calendar  #/calendar/2026-09  #/trends
 //   #/sessions  #/sessions/1083  #/settings
 // 每個 view 是 <section class="view" hidden>，切換只動 hidden——不重建 DOM，
 // 圖表與既有容器 id 都原地保留。
@@ -24,10 +24,10 @@ import { loadSessionDetail } from './loader.js';
 
 // 已合併的舊 view → 新 view。舊書籤（#/load、#/wellness）照樣打得開，
 // applyRoute 會把網址改寫成新的正規形式。
-var LEGACY_VIEWS = { load: 'trends', wellness: 'trends' };
+var LEGACY_VIEWS = { load: 'trends', wellness: 'trends', today: 'home', overview: 'home' };
 
-// dirty 區塊 → 所在 view（同名的不必列）
-var DIRTY_VIEW = { load: 'trends', wellness: 'trends' };
+// dirty 區塊 → 所在 view（同名的不必列）。overview 是趨勢頁頂端的區間摘要。
+var DIRTY_VIEW = { load: 'trends', wellness: 'trends', overview: 'trends' };
 
 /** 解析 location.hash → {view, arg}。無效或空的 hash 一律回預設 view。 */
 export function parseHash() {
@@ -140,14 +140,15 @@ export function applySessionRouteArg(arg) {
 
 /** 切到某 view 時，若它的圖表在隱藏期間被標髒就補畫。 */
 export function renderDirtyView(view) {
-  if (view === 'overview' && state.dirty.overview) {
-    state.dirty.overview = false;
-    renderOverview();
-  } else if (view === 'sessions' && state.dirty.sessions) {
+  if (view === 'sessions' && state.dirty.sessions) {
     state.dirty.sessions = false;
     if (state.sessions.length > 0) renderSessionList();
     if (state.sessionDetail) renderSessionDetail();
   } else if (view === 'trends') {
+    if (state.dirty.overview) {
+      state.dirty.overview = false;
+      renderOverview();
+    }
     if (state.dirty.load) {
       state.dirty.load = false;
       if (state.loadSeries) renderLoad();

@@ -164,7 +164,7 @@ function renderMarkdown(text) {
 function suggestionsFor(ctx) {
   if (!ctx) return [];
   switch (ctx.view) {
-    case 'today':
+    case 'home':
       return ['今天照課表練還是調整？', '最近一場練得如何？'];
     case 'calendar':
       return ['這週課表跟實際對得上嗎？'];
@@ -189,7 +189,7 @@ function contextLine(ctx) {
   var parts = ['view=' + ctx.view];
   if (ctx.sessionId) parts.push('session_id=' + ctx.sessionId);
   if (ctx.month) parts.push('month=' + ctx.month);
-  if (ctx.range && ctx.view !== 'today' && ctx.view !== 'calendar') {
+  if (ctx.range && ctx.view !== 'home' && ctx.view !== 'calendar') {
     parts.push('range=' + ctx.range);
   }
   if (ctx.date) parts.push('date=' + ctx.date);

@@ -937,8 +937,8 @@ body.coach-open .coach-panel {
   z-index: 100;
   height: 56px;
   display: grid;
-  /* 5 格（總覽／今日／行事曆／趨勢／紀錄）：390px 寬每格 78px */
-  grid-template-columns: repeat(5, 1fr);
+  /* 4 格（首頁／行事曆／趨勢／紀錄）：390px 寬每格約 97px */
+  grid-template-columns: repeat(4, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
@@ -1523,16 +1523,114 @@ body.coach-open .coach-fab {
   line-height: 1.6;
 }
 
-/* ------------------------------------------------------------ 今日卡
+/* ------------------------------------------------------------ 首頁（js/views/home.js）
  *
- * 今日 view 內的第一塊。三個子卡（課表／準備度／最近一場）用 grid 並排，
- * 窄螢幕自動收成單欄。（舊版橫跨兩欄的 grid-column 已隨版面改版移除。）
+ * 2026-10-21 由今日與總覽合併。區塊順序由使用者自訂，「今天」區塊內的
+ * 課表與準備度兩個子卡上下排列。
  */
 
-.today-freshness {
+.home-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px var(--gap);
+}
+
+.home-freshness {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.home-head .customize {
+  margin-bottom: 0;
+}
+
+/* 區塊預設佔滿整欄；內容欄夠寬時，相鄰的兩個半欄區塊（is-half，由 JS 判斷配對）並排 */
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap);
+}
+
+@container page (min-width: 900px) {
+  .home-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-block {
+    grid-column: 1 / -1;
+  }
+
+  .home-block.is-half {
+    grid-column: auto;
+  }
+}
+
+#today-body {
+  display: grid;
+  gap: 12px;
+}
+
+/* 指標卡片：手機一列 2 張；身體狀況佔滿整欄時一列 4 張 */
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@container page (min-width: 900px) {
+  #block-body .home-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* 卡片下方的補充（HRV 的 7 日均值、Garmin 狀態） */
+.kpi-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  margin-bottom: 10px;
+}
+
+.kpi-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 能力與成績：VDOT 卡＋五個距離的最佳成績卡。
+   寬：一列放完（VDOT 佔兩格）；中：VDOT 獨佔一列、成績 3＋2；窄：VDOT 一列、成績兩兩一列 */
+.ability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ability-grid > .kpi-card {
+  grid-column: 1 / -1;
+}
+
+@container page (min-width: 600px) {
+  .ability-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container page (min-width: 1000px) {
+  .ability-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .ability-grid > .kpi-card {
+    grid-column: span 2;
+  }
 }
 
 /* 「僅供對照」badge。刻意與信賴度 badge（conf-high/low）長得不同：
@@ -1926,12 +2024,6 @@ body.coach-open .coach-fab {
   .rc-hr   { grid-column: 1; grid-row: 2; text-align: left; font-size: var(--fs-xs); }
   .rc-plan { grid-column: 2; grid-row: 2; font-size: var(--fs-xs); }
   .rc-pace { grid-column: 3; grid-row: 2; text-align: right; }
-}
-
-.today-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--gap);
 }
 
 .today-block {
@@ -2758,7 +2850,7 @@ body.coach-open .coach-fab {
   font-variant-numeric: tabular-nums;
 }
 
-@container overview (max-width: 599px) {
+@container page (max-width: 599px) {
   .overview-strip {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2773,11 +2865,12 @@ body.coach-open .coach-fab {
   margin-bottom: var(--gap);
 }
 
-/* 斷點依「總覽內容欄本身的寬度」而非視窗寬度（container query）：桌機開著
-   AI 面板時內容欄會少 360px，用視窗寬度判斷會在 1440px 螢幕上把週跑量圖
+/* 斷點依「內容欄本身的寬度」而非視窗寬度（container query）：桌機開著
+   AI 面板時內容欄會少 360px，用視窗寬度判斷會在 1440px 螢幕上把圖表
    並排壓到看不清。收起面板時內容欄變寬，版面自動切回並排。 */
-#view-overview {
-  container: overview / inline-size;
+#view-home,
+#view-trends {
+  container: page / inline-size;
 }
 
 /* 5 張卡：內容欄夠寬一列 5 張，中等寬度 3+2，手機 2 欄 */
@@ -2785,13 +2878,13 @@ body.coach-open .coach-fab {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-@container overview (min-width: 600px) {
+@container page (min-width: 600px) {
   .overview-kpi-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@container overview (min-width: 1150px) {
+@container page (min-width: 1150px) {
   .overview-kpi-strip {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
@@ -2820,7 +2913,7 @@ body.coach-open .coach-fab {
   gap: var(--gap);
 }
 
-@container overview (min-width: 1150px) {
+@container page (min-width: 1150px) {
   .overview-grid {
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   }
@@ -3073,18 +3166,7 @@ body.coach-open .coach-fab {
 }
 
 /* ---- 個人最佳成績：固定五格（3K／5K／10K／半馬／全馬），每格只放最佳一筆，
-   沒紀錄的格子保留；點卡片在下方整排展開該距離的全部成績 */
-.pb-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-@container overview (min-width: 600px) {
-  .pb-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-}
+   沒紀錄的格子保留；點卡片在下方整排展開該距離的全部成績（排版見 .ability-grid） */
 
 .pb-card {
   position: relative;
@@ -3350,7 +3432,7 @@ body.coach-open .coach-fab {
 
 /* 窄版：名稱換到第二行，其餘維持一列 */
 /* 窄版：第一列「名次 時間 配速 VDOT」，第二列「日期 名稱」 */
-@container overview (max-width: 599px) {
+@container page (max-width: 599px) {
   .pb-row {
     grid-template-columns: 1.6em 6.5em minmax(0, 1fr) auto;
     row-gap: 0;
