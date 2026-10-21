@@ -3,7 +3,8 @@
  *
  * 固定看「現在」，不吃頂列的時間範圍——會隨範圍變動的走勢都在趨勢頁。
  * 6 個區塊，依「回答什麼問題」分（分類見 docs/dev/FRONTEND_REFACTOR.md 階段 6）：
- *   今天（課表＋準備度）、訓練負荷、身體狀況、本課表週、能力與成績、最近訓練
+ *   綜覽（今日課表＋訓練完備程度／本週訓練狀況＋賽事倒數）、訓練負荷、體能狀況、
+ *   當週課表、戰力綜覽、近期活動
  * 區塊的順序與顯隱由使用者自訂（core/customize.js，偏好 key 'home'）。
  *
  * 純呈現層：把三欄位事實（數值/來源/信賴度）與課表原樣顯示出來，
@@ -15,10 +16,10 @@ import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL, HRV_STATUS_CLASS, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
-import { confBadge, kpiCard, closeInfoPopover } from '../core/facts.js';
-import { fmtDelta, addDaysISO, todayISO, dowLabel, planSummary } from '../core/format.js';
+import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
+import { fmtDelta, addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
-import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekFig } from './plan-week.js';
+import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
 import { activityDots, firstRunningActivity } from './calendar.js';
 import { renderSettingsSync } from './settings.js';
 import { zoneSplitBar } from './overview.js';
@@ -27,19 +28,19 @@ import { renderSidebarSync } from '../shell/sync.js';
 
 // ------------------------------------------------------------ 區塊版面
 
-// half：可與相鄰的另一個半欄區塊並排（見 applyHomeLayout）
 var HOME_BLOCKS = [
-  { key: 'today', label: '今天', half: true },
-  { key: 'load', label: '訓練負荷', half: true },
-  { key: 'body', label: '身體狀況' },
-  { key: 'week', label: '本課表週' },
-  { key: 'ability', label: '能力與成績' },
-  { key: 'recent', label: '最近訓練' }
+  { key: 'today', label: '綜覽' },
+  { key: 'load', label: '訓練負荷' },
+  { key: 'body', label: '體能狀況' },
+  { key: 'week', label: '當週課表' },
+  { key: 'ability', label: '戰力綜覽' },
+  { key: 'recent', label: '近期活動' }
 ];
 
 /**
  * 依使用者偏好重排區塊（移動既有 DOM，不重畫內容）並套用顯隱。
- * 半欄區塊只有與另一個半欄區塊相鄰時才並排；落單的佔滿整欄，避免半邊空白。
+ * 任何區塊都能並排：可見區塊由上而下兩兩一組，各佔半欄；最後落單的佔滿整欄，
+ * 避免半邊空白。區塊內容依自身寬度（container query）調整欄數，半欄也排得下。
  */
 export function applyHomeLayout() {
   var grid = $('home-grid');
@@ -54,12 +55,9 @@ export function applyHomeLayout() {
     el.classList.remove('is-half');
     if (!el.hidden) visible.push(b);
   });
-  for (var i = 0; i < visible.length - 1; i += 1) {
-    if (visible[i].half && visible[i + 1].half) {
-      $('block-' + visible[i].key).classList.add('is-half');
-      $('block-' + visible[i + 1].key).classList.add('is-half');
-      i += 1;
-    }
+  for (var i = 0; i + 1 < visible.length; i += 2) {
+    $('block-' + visible[i].key).classList.add('is-half');
+    $('block-' + visible[i + 1].key).classList.add('is-half');
   }
 }
 
@@ -71,7 +69,7 @@ function mountHomeCustomizer() {
     settingsKey: 'home',
     defs: HOME_BLOCKS,
     label: '⚙ 自訂首頁',
-    hint: '調整區塊順序，取消勾選可隱藏。「今天」與「訓練負荷」相鄰時並排。',
+    hint: '調整區塊順序，取消勾選可隱藏。區塊由上而下兩兩並排，落單的佔滿整欄。',
     onChange: function () {
       applyHomeLayout();
       mountHomeCustomizer();
@@ -85,8 +83,12 @@ export function initHomeLayout() {
   mountHomeCustomizer();
 }
 
-// ------------------------------------------------------------ 今天：課表＋準備度
+// ------------------------------------------------------------ 今天：課表＋賽事倒數＋訓練完備程度
 
+/**
+ * 一天的課表：課別＋距離、配速（粗體），後面接教練原文的精簡版（淡色，完整原文在 title）。
+ * 休息日只顯示「休息」——備註只是「Rest」之類的重述（與 plan-week.js 一致）。
+ */
 export function renderTodayPlanRow(label, plan) {
   var row = h('div', 'today-plan-row');
   row.appendChild(h('span', 'today-plan-label', label));
@@ -96,49 +98,253 @@ export function renderTodayPlanRow(label, plan) {
   }
   var text = (WORKOUT_TYPE_LABEL[plan.workout_type] || plan.workout_type || '—');
   if (plan.planned_distance_km !== null && plan.planned_distance_km !== undefined && plan.planned_distance_km > 0) {
-    text += '　' + C.formatNumber(plan.planned_distance_km, 1) + ' km';
-  }
-  if (plan.planned_pace_sec_per_km) {
-    text += '　' + C.formatPace(plan.planned_pace_sec_per_km) + '/km';
+    text += ' ' + C.formatNumber(plan.planned_distance_km, 1) + ' km';
   }
   row.appendChild(h('span', 'today-plan-value', text));
-  if (plan.created_at) {
-    row.appendChild(h('span', 'today-note', '課表版本 ' + plan.created_at.slice(0, 10)));
+  if (plan.planned_pace_sec_per_km) {
+    row.appendChild(h('span', 'today-plan-value', C.formatPace(plan.planned_pace_sec_per_km) + '/km'));
+  }
+  var note = plan.workout_type === 'rest' ? '' : shortPlanNote(plan.notes);
+  // 教練原文開頭的「課程日」只是標籤，移到句尾，讓課表內容緊接在配速後面
+  var tag = note.match(/^課程日\s*/);
+  if (tag) note = note.slice(tag[0].length) + ' 課程日';
+  if (note) {
+    var n = h('span', 'today-plan-note', note);
+    n.title = plan.notes;
+    row.appendChild(n);
   }
   return row;
 }
 
+/** 課表標題：「課表（於 YYYY-MM-DD 更新）」，取今日或明日課表的建立日期。 */
+function planBlockTitle(planned) {
+  var title = h('div', 'today-block-title');
+  title.appendChild(h('span', null, '課表'));
+  var source = planned.today || planned.tomorrow;
+  if (source && source.created_at) {
+    title.appendChild(h('span', 'today-note', '（於' + source.created_at.slice(0, 10) + '更新）'));
+  }
+  return title;
+}
+
+// 判定 → 顯示。顏色之外一律附圖示與文字，不單靠顏色（色盲、列印也看得懂）。
+var READINESS_STATE = {
+  normal: { cls: 'ok', icon: '✓', text: '正常' },
+  low: { cls: 'low', icon: '▼', text: '偏低' },
+  none: { cls: 'none', icon: '–', text: '未評' }
+};
+
+function readinessStateOf(value) {
+  return READINESS_STATE[value === 'low' || value === 'normal' ? value : 'none'];
+}
+
+function readinessPill(value) {
+  var s = readinessStateOf(value);
+  var pill = h('span', 'readiness-pill readiness-' + s.cls);
+  pill.appendChild(h('span', 'readiness-pill-icon', s.icon));
+  pill.appendChild(h('span', null, s.text));
+  return pill;
+}
+
+var READINESS_TIPS = [
+  '訓練完備程度是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
+    + '對「今天身體恢復得夠不夠完備」的判定。顏色一看就懂：'
+    + '綠色 ✓ 正常（查過了，沒有異常訊號）；紅色 ▼ 偏低（至少一個維度觸發）；'
+    + '灰色 – 未評（三個維度都缺資料、無法評估，不等於正常）。',
+  '三個維度，任一觸發就判為「偏低」：①連續訓練天數達閾值（預設 6 天，可個人化）；'
+    + '②TSB 低於你自己歷史分布的第 10 百分位；③當日 HRV 較 7 日均值下降 15% 以上。',
+  '各觸發項旁的標籤是信賴度：連續天數只是數活動日，可信；TSB 取決於最大心率是否實測；'
+    + 'HRV 的百分比門檻尚未經文獻驗證，標為低。',
+  '資料不足的維度會跳過（例如 HRV 近 7 天少於 3 筆、當天尚未同步）。',
+  '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
+    + '與 Garmin 訓練準備度是兩回事，後者只供對照。'
+];
+
+/** 今天還沒同步、改顯示較早一天資料時的說明文字。 */
+function unsyncedNote(dateStr) {
+  return '今日資料尚未同步，以下為 ' + C.shortDate(dateStr) + '（' + dowLabel(dateStr) + '）的資料';
+}
+
+/** 帶正負號的數字（正數補「+」），TSB 與 HRV 變化用。 */
+function signedNumber(v, decimals) {
+  return (v > 0 ? '+' : '') + C.formatNumber(v, decimals);
+}
+
+// 三個判斷維度，依「數值 / 觸發門檻」並列（與本週訓練狀況的「實際 / 課表」同一種讀法）。
+// key 對應後端 readiness 的 measurements，dim 對應 triggers／not_assessed 的 dimension。
+var READINESS_ROWS = [
+  { dim: 'consecutive_training_days', key: 'consecutive_training_days', label: '連續訓練',
+    fmt: function (v) { return String(v); }, unit: ' 天' },
+  { dim: 'tsb', key: 'tsb', label: 'TSB',
+    fmt: function (v) { return signedNumber(v, 1); }, unit: '' },
+  { dim: 'hrv', key: 'hrv_change_pct', label: 'HRV',
+    fmt: function (v) { return signedNumber(v, 1) + '%'; }, unit: '' }
+];
+
+/** 一列「數值 / 門檻」。觸發的維度整列標紅並附信賴度；未評的顯示「—」，滑鼠移上去看原因。 */
+function readinessRow(def, entry) {
+  var m = entry && entry.measurements && entry.measurements[def.key];
+  var trigger = entry && (entry.triggers || []).filter(function (t) { return t.dimension === def.dim; })[0];
+  var skipped = entry && (entry.not_assessed || []).filter(function (na) { return na.dimension === def.dim; })[0];
+  var hasValue = m && m.value !== null && m.value !== undefined;
+
+  var row = h('div', 'wt-row rd-row' + (trigger ? ' is-triggered' : ''));
+  row.appendChild(h('span', 'wt-row-label', def.label));
+  var val = h('span', 'wt-row-value');
+  val.appendChild(h('span', 'rd-value', hasValue ? def.fmt(m.value) : '—'));
+  if (hasValue && m.threshold !== null && m.threshold !== undefined) {
+    val.appendChild(h('span', 'wt-planned', '/ ' + def.fmt(m.threshold) + def.unit));
+  } else if (hasValue && def.unit) {
+    val.appendChild(h('span', 'wt-planned', def.unit.trim()));
+  }
+  row.appendChild(val);
+  if (trigger) {
+    var level = (trigger.confidence && trigger.confidence.level) || 'high';
+    row.appendChild(h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level));
+    row.title = trigger.detail;
+  } else if (skipped) {
+    row.title = skipped.reason;
+  }
+  return row;
+}
+
+/** 右側的判定圖示：實心圓＋符號，下方寫判定文字。 */
+function readinessStatus(value) {
+  var s = readinessStateOf(value);
+  // 狀態文字（兩個字）直接放在圓裡，圓下方不再多佔一行
+  var badge = h('span', 'rd-status-icon readiness-' + s.cls, s.text);
+  badge.title = s.cls === 'none' ? '三個維度都缺資料，無法評估（不等於正常）' : '訓練完備程度：' + s.text;
+  return badge;
+}
+
 export function renderTodayReadinessBlock(readiness) {
+  var block = h('div', 'today-block readiness-block fig-block');
+  var title = h('div', 'today-block-title');
+  title.appendChild(h('span', null, '訓練完備程度'));
+  title.appendChild(infoTip('訓練完備程度', READINESS_TIPS));
+  block.appendChild(title);
+
+  var entry = readiness && readiness.today;
+  var fallback = readiness && readiness.today_fallback;
+  var todayMissing = !entry || entry.readiness === null || entry.readiness === undefined;
+  var unsynced = false;
+  if (todayMissing && fallback) {
+    // 今天還沒同步：先呈現退回窗口內最近一天的判定，日期標在標題旁、說明放在卡片下方
+    unsynced = true;
+    entry = fallback;
+    todayMissing = false;
+  }
+  var shownDate = entry && entry.date ? entry.date : (state.today && state.today.date);
+  if (shownDate) title.appendChild(h('span', 'today-note fig-title-date', C.shortDate(shownDate) + ' (' + dowLabel(shownDate) + ')'));
+
+  // 左側三個維度的數值 / 門檻、右側判定圖示
+  var card = h('div', 'wt-card');
+  var rows = h('div', 'wt-figs');
+  READINESS_ROWS.forEach(function (def) { rows.appendChild(readinessRow(def, todayMissing ? null : entry)); });
+  card.appendChild(rows);
+  card.appendChild(readinessStatus(todayMissing ? null : entry.readiness));
+  block.appendChild(card);
+
+  if (unsynced) block.appendChild(h('div', 'sync-fallback-note', '今日資料尚未同步'));
+  if (todayMissing) {
+    var reasons = (entry && entry.not_assessed || []).map(function (na) { return na.reason; });
+    block.appendChild(h('div', 'today-note wt-note', reasons.length ? reasons[0] : '今日尚無足夠資料可評估'));
+    var latest = readiness && readiness.latest_evaluable;
+    if (latest) {
+      var lrow = h('div', 'today-note');
+      lrow.appendChild(document.createTextNode('最近一次可評估：' + latest.date + '　'));
+      lrow.appendChild(readinessPill(latest.readiness));
+      block.appendChild(lrow);
+    }
+  }
+  return block;
+}
+
+/** 「下場賽事」「目標賽事」剩餘天數。賽事資料來自學員檔（後端 races）。 */
+// 單色線條圖示，用 currentColor 跟著文字變色。內容是固定的字面值，不含任何外部資料。
+var RACE_ICON_SVG = {
+  // 標靶：三圈同心圓加靶心
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>',
+  // 旗子：旗桿加旗面
+  flag: '<path d="M6 21V4"/><path d="M6 5h11l-2.5 3.5L17 12H6"/>'
+};
+
+function raceIcon(kind) {
+  var span = h('span', 'race-icon');
+  span.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + RACE_ICON_SVG[kind] + '</svg>';
+  return span;
+}
+
+// 賽事距離分級（公里）：全馬 42K 與 42.195K 都算全馬，超過 42.5K 才是超馬
+var RACE_TIER_ULTRA_KM = 42.5;
+var RACE_TIER_FULL_KM = 42;
+var RACE_TIER_HALF_KM = 21;
+var RACE_TIER_TEN_KM = 10;
+
+/** 距離 → 顏色級別：ultra 紫、full 紅、half 橘、ten 綠（10K～半馬以下）、short 藍（10K 以下）。 */
+function raceDistanceTier(km) {
+  if (km > RACE_TIER_ULTRA_KM) return 'ultra';
+  if (km >= RACE_TIER_FULL_KM) return 'full';
+  if (km >= RACE_TIER_HALF_KM) return 'half';
+  if (km >= RACE_TIER_TEN_KM) return 'ten';
+  return 'short';
+}
+
+/** 剩餘訓練週數（無條件進位）；7 天內就是賽前最後一週。 */
+function raceWeeksText(daysLeft) {
+  var weeks = Math.ceil(daysLeft / 7);
+  return daysLeft <= 7 ? '賽前' + weeks + '週' : '剩餘' + weeks + '週';
+}
+
+function raceCard(iconKind, label, race, extraClass) {
+  var card = h('div', 'race-card' + (extraClass ? ' ' + extraClass : ''));
+  var labelRow = h('div', 'race-card-label');
+  labelRow.appendChild(raceIcon(iconKind));
+  labelRow.appendChild(h('span', null, label));
+  card.appendChild(labelRow);
+  if (!race) {
+    card.appendChild(h('div', 'today-note', '尚未設定'));
+    return card;
+  }
+  var days = h('div', 'race-card-days');
+  days.appendChild(h('span', 'race-days', race.days_left === 0 ? '比賽日' : String(race.days_left)));
+  if (race.days_left !== 0) {
+    days.appendChild(h('span', 'race-days-unit', '天'));
+    days.appendChild(h('span', 'race-weeks', '/ ' + raceWeeksText(race.days_left)));
+  }
+  card.appendChild(days);
+  var nameRow = h('div', 'race-card-name', race.name);
+  if (race.distance) {
+    // 距離接在名稱後面、字級相同，只靠顏色分級
+    nameRow.appendChild(document.createTextNode(' '));
+    nameRow.appendChild(h('span', 'race-distance race-dist-' + raceDistanceTier(race.distance_km), race.distance));
+  }
+  card.appendChild(nameRow);
+  card.appendChild(h('div', 'today-note', race.date));
+  return card;
+}
+
+/**
+ * 下場賽事與目標賽事各一張卡片，各自記錄剩餘天數。
+ * 下場賽事剛好就是目標賽事時合併成一張（同一個天數不必顯示兩次），
+ * 標題並列兩個身分並加上目標標記。
+ */
+export function renderRaceCountdownBlock(races) {
   var block = h('div', 'today-block');
-  block.appendChild(h('div', 'today-block-title', '準備度（規則引擎）'));
-
-  var today = readiness && readiness.today;
-  if (!today || today.readiness === null || today.readiness === undefined) {
-    var reasons = (today && today.not_assessed || [])
-      .map(function (na) { return na.reason; });
-    block.appendChild(h('div', 'state-msg state-unavailable',
-      reasons.length ? reasons[0] : '今日尚無足夠資料可評估'));
+  block.appendChild(h('div', 'today-block-title', '賽事倒數'));
+  var grid = h('div', 'race-grid');
+  var next = races && races.next;
+  var target = races && races.target;
+  if (next && next.is_target) {
+    grid.classList.add('is-merged');
+    grid.appendChild(raceCard('target', '下場賽事＝目標賽事', next, 'is-target'));
   } else {
-    var row = h('div', 'today-fact-row');
-    row.appendChild(h('span', 'today-fact-label', '今日判定'));
-    row.appendChild(h('span', 'today-fact-value', today.readiness === 'low' ? '低' : '正常'));
-    block.appendChild(row);
-    (today.triggers || []).forEach(function (t) {
-      var trow = h('div', 'today-plan-row');
-      trow.appendChild(h('span', 'today-plan-label', ''));
-      var detailWrap = h('span', 'today-plan-value', t.detail);
-      trow.appendChild(detailWrap);
-      var level = (t.confidence && t.confidence.level) || 'high';
-      trow.appendChild(h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level));
-      block.appendChild(trow);
-    });
+    grid.appendChild(raceCard('flag', '下場賽事', next));
+    grid.appendChild(raceCard('target', '目標賽事', target, 'is-target'));
   }
-
-  var latest = readiness && readiness.latest_evaluable;
-  if (latest && (!today || today.readiness === null || today.readiness === undefined)) {
-    block.appendChild(h('div', 'today-note',
-      '最近一次可評估：' + latest.date + '　' + (latest.readiness === 'low' ? '低' : '正常')));
-  }
+  block.appendChild(grid);
   return block;
 }
 
@@ -173,12 +379,23 @@ export function renderToday() {
   renderSidebarSync();
 
   var planBlock = h('div', 'today-block');
-  planBlock.appendChild(h('div', 'today-block-title', '課表'));
   var planned = data.planned || {};
+  planBlock.appendChild(planBlockTitle(planned));
   planBlock.appendChild(renderTodayPlanRow('今日', planned.today));
   planBlock.appendChild(renderTodayPlanRow('明日', planned.tomorrow));
   node.appendChild(planBlock);
-  node.appendChild(renderTodayReadinessBlock(data.readiness));
+
+  // 訓練完備程度與本週訓練狀況並排（區塊太窄時上下排）
+  var pair = h('div', 'today-pair');
+  pair.appendChild(renderTodayReadinessBlock(data.readiness));
+  var weekTraining = h('div', 'today-block fig-block');
+  weekTraining.id = 'week-training';
+  pair.appendChild(weekTraining);
+  node.appendChild(pair);
+  renderWeekTraining();
+
+  // 賽事倒數放在綜覽最下面
+  node.appendChild(renderRaceCountdownBlock(data.races));
 }
 
 // ------------------------------------------------------------ 訓練負荷卡片
@@ -222,6 +439,7 @@ export function renderHomeLoad() {
   var kpi = state.todayKpi;
   if (!state.today || !kpi) { showLoading(node, '載入訓練負荷'); return; }
   if (!load) { showUnavailable(node, '今日尚無訓練負荷資料'); return; }
+  if (load.as_of) node.appendChild(h('div', 'sync-fallback-note', unsyncedNote(load.as_of)));
 
   var rows = kpi.loadSeries || [];
   var cards = h('div', 'home-cards');
@@ -282,7 +500,7 @@ export function renderHomeLoad() {
   node.appendChild(cards);
 }
 
-// ------------------------------------------------------------ 身體狀況卡片
+// ------------------------------------------------------------ 體能狀況卡片
 
 function numericValues(points) {
   return (points || []).map(function (p) { return p.value; })
@@ -330,7 +548,7 @@ export function renderHomeBody() {
   if (!node) return;
   clear(node);
   var kpi = state.todayKpi;
-  if (!kpi) { showLoading(node, '載入身體狀況'); return; }
+  if (!kpi) { showLoading(node, '載入體能狀況'); return; }
 
   var cards = h('div', 'home-cards');
   var hrv = state.today && state.today.hrv;
@@ -393,7 +611,7 @@ export function renderHomeBody() {
       note: '近 30 天走勢',
       series: readyVals,
       tip: ['Garmin 綜合睡眠、恢復時間、HRV 與近期負荷給出的 0–100 分數，演算法未公開。',
-        '與「今天」區塊的準備度（本專案規則引擎）是兩回事：規則引擎的依據公開、帶信賴度；這個只供對照。']
+        '與「今天」區塊的訓練完備程度（本專案規則引擎）是兩回事：規則引擎的依據公開、帶信賴度；這個只供對照。']
     }));
   }
 
@@ -439,33 +657,53 @@ export function renderWeekPlanList() {
   clear(node);
   if (!state.weekDays) return;
   var title = $('h-week');
-  if (title) title.textContent = '本課表週　' + planWeekLabel(state.weekDays);
+  if (title) title.textContent = '當週課表　' + planWeekLabel(state.weekDays);
   var block = renderPlanWeek(state.weekDays, { selectedDate: todayISO() });
-  var zone2 = zone2Fig();
-  var figs = block.querySelector('.pw-figs');
-  if (zone2 && figs) figs.appendChild(zone2);
+  var zone2 = zone2Tile();
+  var tiles = block.querySelector('.pw-tiles');
+  if (zone2 && tiles) tiles.appendChild(zone2);
   node.appendChild(block);
 }
 
 /**
- * 摘要列追加「Zone 2」：本週（週一到週日）跑步在 Z2 的時間與佔比，來自 /api/overview
+ * 摘要追加「Zone 2」圖卡：本週（週一到週日）跑步在 Z2 的時間與佔比，來自 /api/overview
  * 的 this_week（與課表週同一個週一起算的範圍）。區間資料還沒回來或週不一致時不顯示。
+ * 比例條拆成低強度（Z1–Z2）／中強度（Z3）／高強度（Z4–Z5）三段，並在下方用文字與色點
+ * 寫明每段的佔比；黑線標在 80% 處（80/20 的參考位置，不是判讀）。
  */
-function zone2Fig() {
+function zone2Tile() {
   var ov = state.homeOverview;
   var w = ov && ov.available && ov.this_week;
   if (!w || !state.weekDays || !state.weekDays.length || w.week_start !== state.weekDays[0].date) return null;
   var secs = {};
   w.zone_seconds.forEach(function (z) { secs[z.zone] = z.seconds; });
-  var total = w.zone_seconds.reduce(function (s, z) { return s + z.seconds; }, 0);
+  var total = w.zone_seconds.reduce(function (sum, z) { return sum + z.seconds; }, 0);
   if (total <= 0) return null;
-  var fig = planWeekFig('Zone 2', C.formatDuration(secs[2] || 0),
-    '（' + C.formatNumber((secs[2] || 0) / total * 100, 0) + '%）');
-  fig.title = '本週跑步在 Z2 輕鬆的停留時間，百分比的分母是本週 Z1～Z5 的總時間';
-  fig.appendChild(zoneSplitBar(w.zone_seconds.map(function (z) {
+  function pctOf(zones) {
+    return zones.reduce(function (sum, z) { return sum + (secs[z] || 0); }, 0) / total * 100;
+  }
+
+  var tile = planWeekTile('Zone 2 輕鬆跑');
+  tile.title = '本週跑步在 Z2 的停留時間，百分比的分母是本週 Z1～Z5 的總時間';
+  tile.appendChild(planWeekTileValue(C.formatDuration(secs[2] || 0),
+    '占本週跑步 ' + C.formatNumber(pctOf([2]), 0) + '%'));
+  tile.appendChild(zoneSplitBar(w.zone_seconds.map(function (z) {
     return { zone: z.zone, pct: z.seconds / total * 100 };
   }), true));
-  return fig;
+  var legend = h('div', 'pw-legend');
+  [
+    { cls: 'bar-intensity-low', text: '低強度 Z1–Z2', zones: [1, 2] },
+    { cls: 'bar-intensity-mid', text: '中 Z3', zones: [3] },
+    { cls: 'bar-intensity-high', text: '高 Z4–Z5', zones: [4, 5] }
+  ].forEach(function (item) {
+    var entry = h('span', 'pw-legend-item');
+    entry.appendChild(h('span', 'pw-legend-dot ' + item.cls));
+    entry.appendChild(document.createTextNode(item.text + ' ' + C.formatNumber(pctOf(item.zones), 0) + '%'));
+    legend.appendChild(entry);
+  });
+  legend.appendChild(h('span', 'pw-legend-item', '｜黑線 80% 參考'));
+  tile.appendChild(legend);
+  return tile;
 }
 
 export function renderWeekStrip() {
@@ -489,25 +727,137 @@ export function renderWeekStrip() {
       var wt = day.planned[0].workout_type;
       cell.appendChild(h('span', 'week-cell-workout', WORKOUT_TYPE_LABEL[wt] || wt));
     }
-    if (day.activities.length > 0) cell.appendChild(activityDots(day.activities));
+    // 當週課表只看跑步；健走等其他活動不在這裡標點
+    var runs = day.activities.filter(function (act) { return act.is_running; });
+    if (runs.length > 0) cell.appendChild(activityDots(runs));
     cell.title = day.date + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
     grid.appendChild(cell);
   });
   node.appendChild(grid);
 }
 
-/** 本課表週（週一到週日，見 plan-week.js）：週條與執行表共用同一份資料。 */
+/** 本課表週（週一到週日，見 plan-week.js）：週條、執行表與本週訓練卡共用同一份資料。 */
 export function loadWeekStrip() {
   loadPlanWeek(todayISO()).then(function (days) {
     state.weekDays = days;
     renderWeekStrip();
     renderWeekPlanList();
+    renderWeekTraining();
   }).catch(function (err) {
     showError($('week-strip'), err.message);
+    if ($('week-training')) showError($('week-training'), err.message);
   });
 }
 
-// ------------------------------------------------------------ 能力與成績
+// ------------------------------------------------------------ 本週訓練
+
+// 環形進度圖的半徑（viewBox 單位）；圓周用來換算 stroke-dasharray
+var RING_R = 26;
+var RING_CIRCUMFERENCE = 2 * Math.PI * RING_R;
+
+/** 完成率分級（%）→ 環的顏色：≥80 藍、≥60 綠、≥40 黃、≥20 橘、其餘紅。 */
+var PROGRESS_TIERS = [
+  { min: 80, cls: 'pct-blue' },
+  { min: 60, cls: 'pct-green' },
+  { min: 40, cls: 'pct-yellow' },
+  { min: 20, cls: 'pct-orange' },
+  { min: -Infinity, cls: 'pct-red' }
+];
+
+function progressTierClass(pct) {
+  for (var i = 0; i < PROGRESS_TIERS.length; i += 1) {
+    if (pct >= PROGRESS_TIERS[i].min) return PROGRESS_TIERS[i].cls;
+  }
+  return 'pct-red';
+}
+
+/** 完成率環形圖：中間顯示百分比、環依完成率分級上色。超過 100% 時環畫滿，數字照實顯示。 */
+function progressRing(pct) {
+  var wrap = h('div', 'wt-ring ' + progressTierClass(pct));
+  var filled = Math.max(0, Math.min(100, pct)) / 100 * RING_CIRCUMFERENCE;
+  wrap.innerHTML = '<svg viewBox="3 3 58 58" aria-hidden="true">'
+    + '<circle class="wt-ring-track" cx="32" cy="32" r="' + RING_R + '"/>'
+    + '<circle class="wt-ring-fill" cx="32" cy="32" r="' + RING_R + '" '
+    + 'stroke-dasharray="' + filled.toFixed(1) + ' ' + RING_CIRCUMFERENCE.toFixed(1) + '" '
+    + 'transform="rotate(-90 32 32)"/></svg>';
+  wrap.appendChild(h('span', 'wt-ring-pct', Math.round(pct) + '%'));
+  return wrap;
+}
+
+/** 一列「實際 / 課表」：大數字＋淡化的分母。 */
+function weekFigRow(label, done, planned, unit) {
+  var row = h('div', 'wt-row');
+  row.appendChild(h('span', 'wt-row-label', label));
+  var val = h('span', 'wt-row-value');
+  val.appendChild(h('span', 'wt-done', done));
+  val.appendChild(h('span', 'wt-planned', '/ ' + planned + (unit ? ' ' + unit : '')));
+  row.appendChild(val);
+  return row;
+}
+
+/** 秒 → 小時（小數一位），本週訓練狀況的時間一律用小時呈現。 */
+function hoursText(sec) {
+  return C.formatNumber(sec / 3600, 1);
+}
+
+/**
+ * 本週訓練狀況：本課表週（週一到週日）實際跑量與時間對照課表，環形圖顯示完成率。
+ * 完成率以里程為準；課表沒填距離（只排時間）時改用時間。
+ *
+ * 放在「今天」區塊內、訓練完備程度旁（#week-training 由 renderToday 建立）。
+ * 課表週與今日資料各自載入、先後不定，兩邊資料回來時都會呼叫本函式；
+ * 容器還不存在（今日資料未到）時直接略過，等 renderToday 建好再畫。
+ */
+export function renderWeekTraining() {
+  var node = $('week-training');
+  if (!node) return;
+  clear(node);
+  var title = h('div', 'today-block-title');
+  title.appendChild(h('span', null, '本週訓練狀況'));
+  if (state.weekDays && state.weekDays.length) {
+    var first = state.weekDays[0].date;
+    var last = state.weekDays[state.weekDays.length - 1].date;
+    title.appendChild(h('span', 'today-note fig-title-date',
+      C.shortDate(first) + ' (' + dowLabel(first) + ') ~ ' + C.shortDate(last) + ' (' + dowLabel(last) + ')'));
+  }
+  node.appendChild(title);
+
+  var body = h('div');
+  node.appendChild(body);
+  if (!state.weekDays) { showLoading(body, '載入本週訓練狀況'); return; }
+
+  var s = planWeekSummary(state.weekDays);
+  if (s.plannedSessions === 0) {
+    showUnavailable(body, '本週沒有課表，無法計算完成量');
+    return;
+  }
+
+  // 里程與時間兩列在左、完成率環形圖在右；說明文字放在下方整列
+  var card = h('div', 'wt-card');
+  var figs = h('div', 'wt-figs');
+  figs.appendChild(weekFigRow('里程',
+    C.formatNumber(s.doneKm, 1),
+    s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—', 'km'));
+  figs.appendChild(weekFigRow('時間',
+    hoursText(s.doneSec),
+    s.plannedSec > 0 ? hoursText(s.plannedSec) : '—', 'h'));
+  card.appendChild(figs);
+
+  var pct = s.plannedKm > 0 ? s.doneKm / s.plannedKm * 100
+    : (s.plannedSec > 0 ? s.doneSec / s.plannedSec * 100 : null);
+  if (pct !== null) {
+    var ring = progressRing(pct);
+    ring.title = (s.plannedKm > 0 ? '以里程計算' : '課表未填距離，以時間計算')
+      + '：' + Math.round(pct) + '%';
+    card.appendChild(ring);
+  }
+  body.appendChild(card);
+  body.appendChild(h('div', 'today-note wt-note',
+    '完成 ' + s.doneSessions + '／' + s.plannedSessions + ' 堂'
+    + (s.plannedUntimed > 0 ? '；' + s.plannedUntimed + ' 堂課表無時間或配速，未計入預計時間' : '')));
+}
+
+// ------------------------------------------------------------ 戰力綜覽
 
 function vdotCard(vdot) {
   var race = vdot.race || {};
@@ -645,13 +995,20 @@ function pbDetail(pb) {
 }
 
 /** VDOT 卡＋各距離個人最佳成績卡（點卡片展開該距離的全部成績）。 */
+var ABILITY_PB_ORDER = ['half_marathon', 'marathon', '3k', '5k', '10k'];
+
+function abilityPbRank(distance) {
+  var i = ABILITY_PB_ORDER.indexOf(distance);
+  return i === -1 ? ABILITY_PB_ORDER.length : i;
+}
+
 export function renderAbility() {
   var node = $('home-ability');
   if (!node) return;
   closeInfoPopover(false); // 重繪會換掉 ⓘ 按鈕，開著的說明要先關
   clear(node);
   var ov = state.homeOverview;
-  if (!ov) { showLoading(node, '載入能力與成績'); return; }
+  if (!ov) { showLoading(node, '載入戰力綜覽'); return; }
   if (!ov.available) { showUnavailable(node, ov.reason); return; }
 
   var byDistance = {};
@@ -660,9 +1017,13 @@ export function renderAbility() {
     pbOpenDistance = null;
   }
 
+  // 顯示順序：跑力、半馬、全馬；3K、5K、10K（一列三張，長距離在前）。
+  // API 回傳的是由短到長，這只是呈現順序；沒列在 ABILITY_PB_ORDER 的距離排在最後
   var grid = h('div', 'ability-grid');
   grid.appendChild(vdotCard(ov.vdot));
-  ov.personal_bests.forEach(function (pb) { grid.appendChild(pbCard(pb)); });
+  ov.personal_bests.slice().sort(function (a, b) {
+    return abilityPbRank(a.distance) - abilityPbRank(b.distance);
+  }).forEach(function (pb) { grid.appendChild(pbCard(pb)); });
   node.appendChild(grid);
   node.appendChild(h('p', 'chart-note',
     '個人最佳成績為生涯紀錄：標記為 Race 的場次（含個人計時測驗），每個距離顯示最佳一筆，點卡片看全部成績。'
@@ -690,7 +1051,7 @@ export function renderRecentSessions() {
   var node = $('recent-sessions');
   if (!node) return;
   clear(node);
-  if (!state.recentSessions) { showLoading(node, '載入最近訓練'); return; }
+  if (!state.recentSessions) { showLoading(node, '載入近期活動'); return; }
   if (state.recentSessions.length === 0) {
     node.appendChild(h('div', 'state-msg state-unavailable', '近 30 天沒有跑步場次'));
     return;

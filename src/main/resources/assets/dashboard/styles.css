@@ -137,12 +137,35 @@
   --conf-high-bg: var(--surface-sunken);
   --conf-high-border: var(--border);
   --conf-high-text: var(--text-muted);
-  --conf-low-bg: var(--badge-clipped-bg);
-  --conf-low-border: var(--badge-clipped-border);
-  --conf-low-text: var(--badge-clipped-text);
+  /* 低信心度徽章用中性灰：只是提醒「數字有已知偏誤」，不該像警告一樣搶眼 */
+  --conf-low-bg: var(--surface-sunken);
+  --conf-low-border: var(--border);
+  --conf-low-text: var(--text-muted);
   --conf-none-bg: var(--surface-sunken);
   --conf-none-border: var(--border);
   --conf-none-text: var(--text-muted);
+
+  /* 賽事距離分級色：紫＝超馬、紅＝全馬、橘＝半馬、綠＝10K～半馬以下、藍＝10K 以下 */
+  --dist-ultra: #7b3fb3;
+  --dist-full: #c0392b;
+  --dist-half: #c26a00;
+  --dist-ten: #1f7a3a;
+  --dist-short: #1f5fae;
+
+  /* 本週訓練完成率分級色 */
+  --pct-blue: #2563a8;
+  --pct-green: #2e8b4a;
+  --pct-yellow: #c9a100;
+  --pct-orange: #d9730d;
+  --pct-red: #c0392b;
+
+  /* 完備程度狀態色：綠＝正常、紅＝偏低；無法評估沿用中性灰 */
+  --ready-ok-bg: #dff3e4;
+  --ready-ok-border: #9fd3ac;
+  --ready-ok-text: #1d6b34;
+  --ready-low-bg: #fbe0dc;
+  --ready-low-border: #eaa89f;
+  --ready-low-text: #a12a1c;
 
   /* 行事曆／週條的日狀態底色——刻意用低飽和度，因為 day_state 是狀態
      分類不是評價（見 dashboard_queries.get_calendar 說明），配色不該
@@ -161,13 +184,25 @@
   --day-planned-missed-text: var(--badge-clipped-text);
   --day-unplanned-text: var(--tag-planned-text);
 
-  /* 首頁卡片的類別色（標題列底色、框線、文字、區塊標題左側短條）。
-     顏色代表「這張卡屬於哪一類數據」，是分類不是評價：刻意都用冷色、
-     低飽和，也避開琥珀（低信賴徽章）與紅綠（容易被讀成好壞）。 */
-  --cat-load-bg: #dde9f6;
-  --cat-load-border: #c2d6ec;
-  --cat-load-text: #1b4a7a;
-  --cat-load-strong: #2563a8;
+  /* 首頁區塊的類別色（標題列底色、框線、文字、區塊標題左側短條）。
+     顏色代表「這塊屬於哪一類數據」，是分類不是評價（2026-10-22 Fu 指定）：
+     綜覽藍、訓練負荷橘、體能狀況紫、戰力綜覽綠、當週課表淺藍、近期活動黃。 */
+  --cat-overview-bg: #dde9f6;
+  --cat-overview-border: #c2d6ec;
+  --cat-overview-text: #1b4a7a;
+  --cat-overview-strong: #2563a8;
+  --cat-load-bg: #fbe6d4;
+  --cat-load-border: #f0cba8;
+  --cat-load-text: #7a3e0f;
+  --cat-load-strong: #d9730d;
+  --cat-week-bg: #dcf1f9;
+  --cat-week-border: #b8e0ef;
+  --cat-week-text: #155e75;
+  --cat-week-strong: #38a8d6;
+  --cat-recent-bg: #fbf1cc;
+  --cat-recent-border: #ecd98f;
+  --cat-recent-text: #6b5300;
+  --cat-recent-strong: #d4a900;
   --cat-body-bg: #ebe2f5;
   --cat-body-border: #d5c6e9;
   --cat-body-text: #4a3470;
@@ -1584,19 +1619,24 @@ body.coach-open .coach-fab {
   }
 }
 
+/* 每個區塊都可能被排成半欄，內部欄數依「區塊自身寬度」決定，而不是整頁寬度 */
+.home-block {
+  container: block / inline-size;
+}
+
 #today-body {
   display: grid;
   gap: 12px;
 }
 
-/* 指標卡片：手機一列 2 張；身體狀況佔滿整欄時一列 4 張 */
+/* 指標卡片：一列 2 張；體能狀況區塊夠寬（佔滿整欄）時一列 4 張 */
 .home-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-@container page (min-width: 900px) {
+@container block (min-width: 820px) {
   #block-body .home-cards {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1621,25 +1661,22 @@ body.coach-open .coach-fab {
   gap: 4px;
 }
 
-/* 能力與成績：VDOT 卡＋五個距離的最佳成績卡。
-   寬：一列放完（VDOT 佔兩格）；中：VDOT 獨佔一列、成績 3＋2；窄：VDOT 一列、成績兩兩一列 */
+/* 戰力綜覽：VDOT 卡＋五個距離的最佳成績卡，共 6 張。
+   寬：一列放完（VDOT 佔兩格）；中：3＋3 兩列；窄：兩兩一列共三列。
+   VDOT 只佔一格、不獨佔整列（2026-10-22 Fu：VDOT 佔比太大，整塊少一列） */
 .ability-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.ability-grid > .kpi-card {
-  grid-column: 1 / -1;
-}
-
-@container page (min-width: 600px) {
+@container block (min-width: 540px) {
   .ability-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@container page (min-width: 1000px) {
+@container block (min-width: 940px) {
   .ability-grid {
     grid-template-columns: repeat(7, minmax(0, 1fr));
   }
@@ -1664,7 +1701,7 @@ body.coach-open .coach-fab {
 
 /* 標籤與標題：主色＋粗體，不再是淡灰細字 */
 #view-home .kpi-label,
-#view-home .pw-fig-label,
+#view-home .pw-tile-label,
 #view-home .today-block-title,
 #view-home .today-plan-label,
 #view-home .today-fact-label {
@@ -1674,7 +1711,7 @@ body.coach-open .coach-fab {
 
 /* 數字已放大到 34px，字重用半粗即可；再粗反而糊成一團（Fu 回饋） */
 #view-home .kpi-value,
-#view-home .pw-fig-value,
+#view-home .pw-big,
 #view-home .pb-time {
   font-weight: 600;
 }
@@ -1689,8 +1726,21 @@ body.coach-open .coach-fab {
   color: var(--text);
 }
 
-/* 卡片標題列：底色代表類別（訓練負荷／身體狀況／能力與成績），區塊標題左側同色短條
-   把面板與裡面的卡片串成同一類。比膠囊好辨認，也不會和信賴度徽章混淆（2026-10-21）。 */
+/* 卡片標題列：底色代表類別，區塊標題左側同色短條把面板與裡面的卡片串成同一類。
+   比膠囊好辨認，也不會和信賴度徽章混淆（2026-10-21）。綜覽／當週課表／近期活動
+   沒有指標卡，只用左側短條（2026-10-22）。 */
+#block-today {
+  --hdr-strong: var(--cat-overview-strong);
+}
+
+#block-week {
+  --hdr-strong: var(--cat-week-strong);
+}
+
+#block-recent {
+  --hdr-strong: var(--cat-recent-strong);
+}
+
 #block-load {
   --hdr-bg: var(--cat-load-bg); --hdr-border: var(--cat-load-border);
   --hdr-text: var(--cat-load-text); --hdr-strong: var(--cat-load-strong);
@@ -1706,6 +1756,9 @@ body.coach-open .coach-fab {
   --hdr-text: var(--cat-ability-text); --hdr-strong: var(--cat-ability-strong);
 }
 
+#block-today > .panel-title,
+#block-week > .panel-title,
+#block-recent > .panel-title,
 #block-load > .panel-title,
 #block-body > .panel-title,
 #block-ability > .panel-title {
@@ -1939,8 +1992,14 @@ body.coach-open .coach-fab {
   vector-effect: non-scaling-stroke;
 }
 
+/* 最後一點：零長度線段＋圓端點，配 non-scaling-stroke 以螢幕像素繪製，
+   不受 preserveAspectRatio:none 的非等比拉伸影響，永遠是正圓（用 <circle> 會被壓成橢圓） */
 .sparkline-dot {
-  fill: var(--accent);
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
 /* ---- 今日頁：本週課表一覽 ---- */
@@ -1958,37 +2017,133 @@ body.coach-open .coach-fab {
   margin-top: var(--gap);
 }
 
-.pw-figs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 28px;
+/* 摘要圖卡：左邊「里程＋完成堂數」上下合成一張，右邊（首頁）是 Zone 2，右邊給較多寬度。
+   區塊窄時上下排，夠寬（≥640px）左右並排。 */
+.pw-tiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
 }
 
-.pw-fig-label {
-  display: block;
+@container block (min-width: 640px) {
+  .pw-tiles {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+}
+
+.pw-tile {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.pw-tile-label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.pw-tile-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pw-big {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.pw-of {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* 里程完成度：進度條＋下方文字寫明「里程完成 N%」 */
+.pw-bar {
+  height: 8px;
+  margin-top: 8px;
+  border-radius: 4px;
+  background: var(--bar-track);
+  overflow: hidden;
+}
+
+.pw-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.pw-pct {
+  margin-left: auto;
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-muted);
 }
 
-.pw-fig-value {
-  font-size: var(--fs-xl);
-  font-weight: 700;
+/* 圖卡內的上下區段：里程在上、完成堂數在下，中間一條分隔線 */
+.pw-sec + .pw-sec {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.pw-sec-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* 完成堂數：每堂一個圓點，已完成塗滿 */
+.pw-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.pw-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  box-sizing: border-box;
+}
+
+.pw-dot.is-done {
+  background: var(--accent);
+}
+
+/* Zone 2 比例條下方的圖例：色點＋文字＋佔比 */
+.pw-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.pw-fig-value small {
-  margin-left: 3px;
-  font-size: var(--fs-sm);
-  font-weight: 400;
-  color: var(--text-muted);
+.pw-legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 50%;
 }
 
-/* 五欄：星期、日期、課表、實際、狀態。課表與實際給最多空間，其餘是短字串。
+/* 四欄：日期（10/19 (一)）、課表、實際、狀態。課表與實際給最多空間，其餘是短字串。
    課表欄可能有第二行備註，故靠上對齊。 */
 .wp-row {
   display: grid;
-  grid-template-columns: 2rem 3.2rem minmax(0, 1.3fr) minmax(0, 1fr) 5rem;
+  grid-template-columns: 6.2rem minmax(0, 1.3fr) minmax(0, 1fr) 4.4rem;
   align-items: start;
   gap: 8px;
   padding: 8px 12px;
@@ -2051,19 +2206,8 @@ body.coach-open .coach-fab {
   outline-offset: 2px;
 }
 
-.wp-other {
-  display: block;
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
 .wp-row + .wp-row {
   border-top: 1px solid var(--border);
-}
-
-.wp-dow {
-  font-weight: 600;
-  color: var(--text);
 }
 
 .wp-date,
@@ -2092,7 +2236,7 @@ body.coach-open .coach-fab {
 /* 手機：欄位太多會擠成一團，改成兩行流式排列 */
 @media (max-width: 560px) {
   .wp-row {
-    grid-template-columns: 2rem 3.2rem minmax(0, 1fr) auto;
+    grid-template-columns: 6.2rem minmax(0, 1fr) auto;
     row-gap: 2px;
   }
 
@@ -2101,17 +2245,17 @@ body.coach-open .coach-fab {
   }
 
   .wp-plan {
-    grid-column: 3;
+    grid-column: 2;
   }
 
   .wp-state {
-    grid-column: 4;
+    grid-column: 3;
     grid-row: 1;
     text-align: right;
   }
 
   .wp-actual {
-    grid-column: 3 / -1;
+    grid-column: 2 / -1;
   }
 }
 
@@ -2181,8 +2325,9 @@ body.coach-open .coach-fab {
   text-align: right;
 }
 
-/* 手機：第一行 日期｜類型｜距離，第二行 心率｜對應課表｜配速 */
-@media (max-width: 560px) {
+/* 區塊窄（手機，或首頁排成半欄）時兩行：第一行 日期｜類型｜距離，第二行 心率｜對應課表｜配速。
+   依區塊寬度而非螢幕寬度判斷，半欄時才不會把距離、配速擠到換行 */
+@container block (max-width: 600px) {
   .recent-row {
     grid-template-columns: 3.4rem minmax(0, 1fr) auto;
     row-gap: 2px;
@@ -2233,6 +2378,18 @@ body.coach-open .coach-fab {
   font-weight: 700;
 }
 
+/* 課表的教練原文（精簡版）：接在粗體課別／配速之後，淡色、可換行 */
+.today-plan-note {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.today-plan-row {
+  flex-wrap: wrap;
+}
+
 .today-fact-row {
   display: flex;
   align-items: center;
@@ -2252,6 +2409,419 @@ body.coach-open .coach-fab {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* 賽事倒數：左側標籤＋賽事名稱與日期，右側大數字天數 */
+.race-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* 合併時只有一張卡，佔滿整列 */
+.race-grid.is-merged {
+  grid-template-columns: 1fr;
+}
+
+.race-card {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.race-card.is-target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.race-card-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+/* 賽事距離：接在賽事名稱後的膠囊，字級與名稱相同；底色與框線取自分級色的淡化 */
+.race-distance {
+  display: inline-block;
+  padding: 0 8px;
+  margin-left: 2px;
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.race-dist-ultra { color: var(--dist-ultra); }
+.race-dist-full { color: var(--dist-full); }
+.race-dist-half { color: var(--dist-half); }
+.race-dist-ten { color: var(--dist-ten); }
+.race-dist-short { color: var(--dist-short); }
+
+.race-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.race-card-days {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+/* 天數旁的訓練週說明：淡化、字級比天數小 */
+.race-weeks {
+  margin-left: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.race-card-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.race-days {
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.race-days-unit {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* 完備程度判定膠囊：顏色＋圖示＋文字三重表達 */
+.readiness-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid;
+}
+
+.readiness-pill-icon {
+  font-size: 0.85em;
+}
+
+.readiness-ok {
+  background: var(--ready-ok-bg);
+  border-color: var(--ready-ok-border);
+  color: var(--ready-ok-text);
+}
+
+.readiness-low {
+  background: var(--ready-low-bg);
+  border-color: var(--ready-low-border);
+  color: var(--ready-low-text);
+}
+
+.readiness-none {
+  background: var(--conf-none-bg);
+  border-color: var(--conf-none-border);
+  border-style: dashed;
+  color: var(--conf-none-text);
+}
+
+/* 今天尚未同步、改顯示較早一天資料時的說明列 */
+.sync-fallback-note {
+  margin-bottom: 8px;
+  padding: 4px 10px;
+  border-left: 3px solid var(--badge-clipped-border);
+  background: var(--badge-clipped-bg);
+  color: var(--badge-clipped-text);
+  font-size: var(--fs-xs);
+  border-radius: 4px;
+}
+
+/* 訓練完備程度區塊收小：字級降一階、列距收緊，讓課表與賽事倒數是視覺主體 */
+.readiness-block {
+  font-size: var(--fs-sm);
+}
+
+.readiness-block .today-fact-row {
+  padding: 2px 0;
+}
+
+.readiness-block .today-plan-row {
+  padding: 3px 0;
+  font-size: var(--fs-xs);
+}
+
+.readiness-block .today-plan-value {
+  font-weight: 400;
+}
+
+.readiness-block .readiness-pill {
+  padding: 1px 8px;
+  font-size: var(--fs-xs);
+}
+
+.readiness-block .state-msg {
+  padding: 6px 10px;
+  font-size: var(--fs-xs);
+}
+
+/* 「今天」區塊內：訓練完備程度與本週訓練狀況並排；區塊窄時上下排 */
+.today-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+/* 兩張都是「左側數值 / 參考值、右側圖示」的同一種版面，等寬並排 */
+@container block (min-width: 400px) {
+  .today-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* fig-block：訓練完備程度與本週訓練狀況共用的版面。圖示一律在數值右側，
+   空間窄時縮小圖示與間距 */
+.fig-block {
+  container: wt / inline-size;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 卡片與下方說明之間留空；說明列貼在區塊最底部（區塊被並排的鄰居撐高時也一樣） */
+.fig-block .wt-card {
+  margin-bottom: 12px;
+}
+
+.fig-block .sync-fallback-note {
+  margin-top: auto;
+  margin-bottom: 0;
+}
+
+.fig-block .wt-row-value {
+  white-space: nowrap;
+}
+
+@container wt (max-width: 250px) {
+  .fig-block .wt-card {
+    gap: 6px;
+  }
+
+  .fig-block .wt-row {
+    gap: 6px;
+  }
+
+  .fig-block .wt-row-label {
+    font-size: var(--fs-xs);
+  }
+
+  .fig-block .rd-row .wt-row-label {
+    min-width: 4em;
+  }
+
+  /* 放不下時「/ 門檻」「/ 課表」換到數值下一行，不壓到右側圖示 */
+  .fig-block .wt-row-value {
+    white-space: normal;
+    flex-wrap: wrap;
+    column-gap: 4px;
+    row-gap: 0;
+  }
+
+  .fig-block .wt-planned {
+    font-size: var(--fs-xs);
+  }
+
+  .fig-block .wt-done {
+    font-size: var(--fs-lg);
+  }
+
+  .fig-block .rd-value {
+    font-size: var(--fs-md);
+  }
+
+  .fig-block .wt-ring {
+    width: 44px;
+    height: 44px;
+  }
+
+  .fig-block .wt-ring-pct {
+    font-size: 11px;
+  }
+
+  .fig-block .rd-status-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 14px;
+  }
+}
+
+.fig-block .today-block-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  /* 兩張並排卡片的標題下方間距必須相同，圖示才會平行 */
+  margin-bottom: 8px;
+}
+
+/* 標題第一行固定高度：有 ⓘ 按鈕的（訓練完備程度）與沒有的（本週訓練狀況）一樣高 */
+.fig-block .today-block-title > :first-child {
+  min-height: 24px;
+  line-height: 24px;
+}
+
+/* ⓘ 說明鈕靠標題列最右邊（與指標卡片的 ⓘ 同位置） */
+.fig-block .today-block-title .info-tip-btn {
+  margin-left: auto;
+}
+
+/* 日期一律獨佔標題的第二行：兩張並排卡片的標題高度一致，下方的圖示才會對齊 */
+.fig-block .fig-title-date {
+  flex-basis: 100%;
+}
+
+/* 並排時空間只剩一半，數字降一階 */
+.fig-block .wt-done {
+  font-size: var(--fs-xl);
+}
+
+/* ---- 訓練完備程度：三個維度的數值 / 門檻＋右側判定圖示 ---- */
+.rd-value {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.rd-row .wt-row-label {
+  min-width: 4.2em;
+}
+
+.rd-row .conf-badge {
+  align-self: center;
+}
+
+/* 觸發的維度整列標紅（數值與門檻都看得出是哪一項造成「偏低」） */
+.rd-row.is-triggered .rd-value,
+.rd-row.is-triggered .wt-row-label {
+  color: var(--ready-low-text);
+}
+
+.rd-status-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+
+/* ---- 本週訓練狀況：左側實際／課表數字，右側完成率環形圖 ---- */
+.wt-card {
+  display: flex;
+  /* 圖示靠上對齊：兩張並排的卡片左側列數不同（3 列與 2 列），置中的話兩個圖示高度會錯開 */
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wt-figs {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wt-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.wt-row-label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  min-width: 2.5em;
+}
+
+.wt-row-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-done {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.wt-planned {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.wt-ring {
+  position: relative;
+  flex-shrink: 0;
+  width: 60px;
+  height: 60px;
+}
+
+.wt-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.wt-ring-track {
+  fill: none;
+  stroke: var(--bar-track);
+  stroke-width: 6;
+}
+
+.wt-ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+/* 完成率分級色：≥80 藍、≥60 綠、≥40 黃、≥20 橘、<20 紅 */
+.wt-ring.pct-blue .wt-ring-fill { stroke: var(--pct-blue); }
+.wt-ring.pct-green .wt-ring-fill { stroke: var(--pct-green); }
+.wt-ring.pct-yellow .wt-ring-fill { stroke: var(--pct-yellow); }
+.wt-ring.pct-orange .wt-ring-fill { stroke: var(--pct-orange); }
+.wt-ring.pct-red .wt-ring-fill { stroke: var(--pct-red); }
+
+.wt-ring-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-note {
+  margin-top: 8px;
 }
 
 .today-note {
@@ -4324,10 +4894,22 @@ body.coach-open .coach-fab {
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --cat-load-bg: #1c2b3c;
-  --cat-load-border: #2c4562;
-  --cat-load-text: #a7c8ef;
-  --cat-load-strong: #6aa9dd;
+  --cat-overview-bg: #1c2b3c;
+  --cat-overview-border: #2c4562;
+  --cat-overview-text: #a7c8ef;
+  --cat-overview-strong: #6aa9dd;
+  --cat-load-bg: #3a2a1c;
+  --cat-load-border: #5c4128;
+  --cat-load-text: #f3c193;
+  --cat-load-strong: #f0a35a;
+  --cat-week-bg: #17313b;
+  --cat-week-border: #23505f;
+  --cat-week-text: #9fdcf0;
+  --cat-week-strong: #5cc3e6;
+  --cat-recent-bg: #353015;
+  --cat-recent-border: #574d22;
+  --cat-recent-text: #ead98b;
+  --cat-recent-strong: #e6c84f;
   --cat-body-bg: #292236;
   --cat-body-border: #3f3456;
   --cat-body-text: #cbb8ec;
@@ -4410,6 +4992,25 @@ body.coach-open .coach-fab {
   --badge-mock-bg: #322a3a;
   --badge-mock-border: #4a3d5c;
   --badge-mock-text: #c4a8e0;
+
+  --dist-ultra: #c9a3ee;
+  --dist-full: #f0a08c;
+  --dist-half: #f0b266;
+  --dist-ten: #7fd196;
+  --dist-short: #7fb5ee;
+
+  --pct-blue: #6aa9dd;
+  --pct-green: #6cc488;
+  --pct-yellow: #e6c84f;
+  --pct-orange: #f0a35a;
+  --pct-red: #ef8577;
+
+  --ready-ok-bg: #1f3526;
+  --ready-ok-border: #2f5a3b;
+  --ready-ok-text: #7fd196;
+  --ready-low-bg: #3d2420;
+  --ready-low-border: #6a3a33;
+  --ready-low-text: #f0a08c;
 
   --tag-interval-bg: #3a2620;
   --tag-interval-border: #5c3a2e;

@@ -96,9 +96,9 @@ export function wellnessMetricDefs() {
 export var WORKOUT_TYPE_LABEL = {
   easy: '輕鬆跑',
   tempo: '節奏跑',
-  interval: '間歇',
-  lsd: '長距離慢跑',
-  race: 'Race',
+  interval: '間歇跑',
+  lsd: 'LSD',
+  race: '比賽日',
   recovery: '恢復跑',
   unknown: '未分類',
   rest: '休息',
@@ -137,12 +137,12 @@ export var DAY_STATE_LABEL = {
   rest_ok: '休息',
   planned_done: '完成',
   planned_missed: '未執行',
-  today_pending: '今天待完成',
+  today_pending: '待執行',
   unplanned_activity: '額外訓練',
   future: '尚未發生'
 };
 
-export var CONFIDENCE_LABEL = { high: '可信', low: '低信賴', unusable: '不可用' };
+export var CONFIDENCE_LABEL = { high: '可信', low: '低信心度', unusable: '不可用' };
 
 // Garmin（Firstbeat）的 HRV 狀態分類。值來自 daily_wellness.hrv_status，
 // 由手錶端演算法判定，本專案只做顯示與標注偏誤，不重新計算也不覆寫。

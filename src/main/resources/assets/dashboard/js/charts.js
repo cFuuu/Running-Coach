@@ -959,11 +959,13 @@ function sparkline(values, opts) {
   }).join(' ');
   svg.appendChild(el('path', { d: d, class: 'sparkline-path' }));
 
-  // 最後一點畫實心圓：讓「現在在哪」一眼可見
-  svg.appendChild(el('circle', {
-    cx: xOf(nums.length - 1).toFixed(1),
-    cy: yOf(nums[nums.length - 1]).toFixed(1),
-    r: 2.5,
+  // 最後一點畫實心圓：讓「現在在哪」一眼可見。
+  // 不用 <circle>：上方 preserveAspectRatio:none 會把它非等比拉成橢圓。改畫零長度
+  // 線段，圓端點加 non-scaling-stroke（見 .sparkline-dot）以螢幕像素繪製，維持正圓。
+  var lastX = xOf(nums.length - 1).toFixed(1);
+  var lastY = yOf(nums[nums.length - 1]).toFixed(1);
+  svg.appendChild(el('path', {
+    d: 'M' + lastX + ' ' + lastY + ' L' + lastX + ' ' + lastY,
     class: 'sparkline-dot'
   }));
   return svg;
