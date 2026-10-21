@@ -10,6 +10,16 @@ import { shortDateTime } from '../core/format.js';
 import { loadToday } from '../views/today.js';
 import { loadCalendarBody } from '../views/calendar.js';
 
+// N-19 §7。同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，
+// 90 天約 7.5 分鐘），所以流程刻意分兩步：
+//
+//   1. dry_run=True 拿 estimate.summary（「45 天／226 次請求／約 3 分 46 秒」）
+//   2. 使用者確認後才真的執行
+//
+// 這是 2026-09-01 與 Fu 議定的行為，CLI 與 MCP 都照做，dashboard 沒有理由
+// 自己發明一套。兩顆鈕（右上角工具列與設定頁）都標了 data-action="sync"，
+// 狀態一起更新——否則會出現「設定頁顯示同步中、右上角還能再按一次」。
+
 /**
  * 「最後同步」的共用渲染。取 /api/today 的 freshness，只顯示較新的那個
  * 日期與落後天數——側邊列空間窄，完整的兩個日期留在今日卡（見 renderToday
@@ -168,9 +178,3 @@ export function bindSyncButtons() {
     // status 拿不到就維持 HTML 的 disabled 預設值，不猜
   });
 }
-
-//
-// N-19 §4。所有設定都存在 theme.js 的 `rc-dashboard-settings` 這一個
-// localStorage key 裡（透過 getSettings/saveSettings），不另開新 key。
-// 主題三選一與「與系統同步」開關由 theme.js 自己綁定與連動，本節只處理
-// AI 教練面板預設與資料同步兩塊。

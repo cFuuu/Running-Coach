@@ -892,9 +892,8 @@ body.coach-open .coach-panel {
   z-index: 100;
   height: 56px;
   display: grid;
-  /* 6 格（今日／總覽／行事曆／紀錄／負荷／身體）：390px 寬每格 65px，
-     仍大於 44px 觸控下限 */
-  grid-template-columns: repeat(6, 1fr);
+  /* 5 格（總覽／今日／行事曆／趨勢／紀錄）：390px 寬每格 78px */
+  grid-template-columns: repeat(5, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
 }

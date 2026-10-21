@@ -5,11 +5,12 @@
 import * as Theme from '../theme.js';
 import { state } from '../core/state.js';
 import { $ } from '../core/dom.js';
-import { renderSessionDetail } from '../views/sessions.js';
-import { renderLoad, renderTrends } from '../views/load.js';
-import { renderWellness } from '../views/wellness.js';
-import { renderOverview } from '../views/overview.js';
 import { syncCoachSettingToggle } from '../views/settings.js';
+import { renderDirtyView } from './router.js';
+
+// S1 只負責「殼」：三種寬度的形態（桌機常駐欄／平板抽屜／手機全螢幕 sheet）
+// 與收合狀態的存讀。對話、串流、工具 chip 屬 S2／S3 的 coach.js，這裡不碰。
+// 收合偏好沿用既有的 Theme.saveSettings，不另開 localStorage key。
 
 /**
  * 設定面板展開狀態。
@@ -73,21 +74,13 @@ export function bindResize() {
   window.addEventListener('resize', function () {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
-      if (state.view === 'overview') {
-        renderOverview();
-      } else if (state.view === 'sessions') {
-        if (state.sessionDetail) renderSessionDetail();
-      } else if (state.view === 'load') {
-        if (state.loadSeries) renderLoad();
-        if (state.sessions.length > 0) renderTrends();
-      } else if (state.view === 'wellness') {
-        if (state.wellness) renderWellness();
-      }
-      // 非目前 view 的圖表在隱藏狀態下寬度為 0，畫了也是空的：標髒等切過去再畫
-      state.dirty.overview = state.dirty.overview || state.view !== 'overview';
-      state.dirty.sessions = state.dirty.sessions || state.view !== 'sessions';
-      state.dirty.load = state.dirty.load || state.view !== 'load';
-      state.dirty.wellness = state.dirty.wellness || state.view !== 'wellness';
+      // 有圖表的區塊全部標髒，再交給路由的補畫邏輯：目前 view 立刻重畫，
+      // 其餘（隱藏中寬度為 0）等切過去再畫。行事曆沒有依寬度決定的圖表，不必重畫。
+      state.dirty.overview = true;
+      state.dirty.sessions = true;
+      state.dirty.load = true;
+      state.dirty.wellness = true;
+      renderDirtyView(state.view);
 
       // 縮到 1280px 以下時，常駐欄變成覆蓋式抽屜／sheet：若維持展開會蓋住
       // 內容，故自動收起（不寫入偏好——這是版面因應，不是使用者的選擇）。

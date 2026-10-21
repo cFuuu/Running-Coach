@@ -29,24 +29,25 @@ export var state = {
   overview: null,        // /api/overview（吃 range）；ATL/CTL/TSB 另用 loadSeries
   overviewWeek: null,    // 總覽「本週課表」：/api/calendar 的本 ISO 週（週一起算）
 
-  view: 'overview',      // 目前 view：today|overview|calendar|sessions|load|wellness
+  view: 'overview',      // 目前 view：overview|today|calendar|trends|sessions|settings
 
   // render-on-activate 的髒標記。widthOf() 對 display:none 的容器回 0，
   // 在隱藏的 view 裡畫圖會得到寬度 0 的空 SVG，所以資料回來時若該 view
   // 不在畫面上就只標髒、不畫；切過去時才補畫（見 renderDirtyView）。
+  // key 是「區塊」：load 與 wellness 同屬趨勢頁，各自標髒、切到趨勢頁時一起補畫。
   dirty: { overview: false, sessions: false, load: false, wellness: false, calendar: false }
 };
 
 // view 的定義：路由 key → 標題、是否吃 range。
-// 「吃 range」決定內容頂列的區間切換要不要顯示（D.2：只有訓練紀錄／
-// 訓練負荷／身體狀況 三個 view 顯示，今日、行事曆與系統設定不受區間影響）。
+// 「吃 range」決定內容頂列的區間切換要不要顯示：總覽、趨勢、訓練紀錄顯示，
+// 今日、行事曆與系統設定不受區間影響。
+// 2026-10-21 訓練負荷與身體狀況合併為「趨勢」（舊網址轉址見 router.js）。
 export var VIEWS = {
-  today:    { title: '今日',         hasRange: false },
   overview: { title: '總覽',         hasRange: true },
+  today:    { title: '今日',         hasRange: false },
   calendar: { title: '行事曆',       hasRange: false },
+  trends:   { title: '趨勢',         hasRange: true },
   sessions: { title: '訓練紀錄',     hasRange: true },
-  load:     { title: '訓練負荷',     hasRange: true },
-  wellness: { title: '身體狀況',     hasRange: true },
   settings: { title: '系統設定',     hasRange: false }
 };
 export var DEFAULT_VIEW = 'overview';

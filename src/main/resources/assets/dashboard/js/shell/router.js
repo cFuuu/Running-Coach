@@ -12,12 +12,29 @@ import { renderWellness } from '../views/wellness.js';
 import { renderOverview } from '../views/overview.js';
 import { loadSessionDetail } from './loader.js';
 
+// hash 路由 `#/view[/arg]`：
+//   #/overview  #/today  #/calendar  #/calendar/2026-09  #/trends
+//   #/sessions  #/sessions/1083  #/settings
+// 每個 view 是 <section class="view" hidden>，切換只動 hidden——不重建 DOM，
+// 圖表與既有容器 id 都原地保留。
+//
+// 為什麼不在切換時無條件重畫：widthOf() 對 display:none 的容器回 0，
+// 隱藏 view 內畫出來的 SVG 寬度會是 0。所以資料載入只渲染「目前」view，
+// 其餘標髒（state.dirty），切過去時才補畫。
+
+// 已合併的舊 view → 新 view。舊書籤（#/load、#/wellness）照樣打得開，
+// applyRoute 會把網址改寫成新的正規形式。
+var LEGACY_VIEWS = { load: 'trends', wellness: 'trends' };
+
+// dirty 區塊 → 所在 view（同名的不必列）
+var DIRTY_VIEW = { load: 'trends', wellness: 'trends' };
+
 /** 解析 location.hash → {view, arg}。無效或空的 hash 一律回預設 view。 */
 export function parseHash() {
   var raw = (window.location.hash || '').replace(/^#/, '');
   if (raw.indexOf('/') !== 0) return { view: DEFAULT_VIEW, arg: null };
   var parts = raw.slice(1).split('/');
-  var view = parts[0];
+  var view = LEGACY_VIEWS[parts[0]] || parts[0];
   if (!VIEWS[view]) return { view: DEFAULT_VIEW, arg: null };
   return { view: view, arg: parts.length > 1 && parts[1] !== '' ? parts[1] : null };
 }
@@ -130,13 +147,16 @@ export function renderDirtyView(view) {
     state.dirty.sessions = false;
     if (state.sessions.length > 0) renderSessionList();
     if (state.sessionDetail) renderSessionDetail();
-  } else if (view === 'load' && state.dirty.load) {
-    state.dirty.load = false;
-    if (state.loadSeries) renderLoad();
-    if (state.sessions.length > 0) renderTrends();
-  } else if (view === 'wellness' && state.dirty.wellness) {
-    state.dirty.wellness = false;
-    if (state.wellness) renderWellness();
+  } else if (view === 'trends') {
+    if (state.dirty.load) {
+      state.dirty.load = false;
+      if (state.loadSeries) renderLoad();
+      if (state.sessions.length > 0) renderTrends();
+    }
+    if (state.dirty.wellness) {
+      state.dirty.wellness = false;
+      if (state.wellness) renderWellness();
+    }
   } else if (view === 'calendar' && state.dirty.calendar) {
     state.dirty.calendar = false;
     if (!state.calendarMonth) state.calendarMonth = todayISO().slice(0, 7);
@@ -147,11 +167,11 @@ export function renderDirtyView(view) {
 /**
  * 標記某個 view 的圖表需要重畫。若它正好是目前的 view 就立刻畫，
  * 否則只標髒——這是所有「資料回來了要重繪」路徑的統一入口。
- * @param {string} key dirty 的 key（sessions|load|wellness|calendar）
+ * @param {string} key dirty 的 key（overview|sessions|load|wellness|calendar）
  * @param {Function} renderFn 真正的渲染函式
  */
 export function renderOrDefer(key, renderFn) {
-  if (state.view === key) renderFn();
+  if (state.view === (DIRTY_VIEW[key] || key)) renderFn();
   else state.dirty[key] = true;
 }
 
@@ -175,24 +195,8 @@ export function updateSessionsMobileStage() {
   }
 }
 
-//
-// N-19 §7。同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，
-// 90 天約 7.5 分鐘），所以流程刻意分兩步：
-//
-//   1. dry_run=True 拿 estimate.summary（「45 天／226 次請求／約 3 分 46 秒」）
-//   2. 使用者確認後才真的執行
-//
-// 這是 2026-09-01 與 Fu 議定的行為，CLI 與 MCP 都照做，dashboard 沒有理由
-// 自己發明一套。兩顆鈕（右上角工具列與設定頁）都標了 data-action="sync"，
-// 狀態一起更新——否則會出現「設定頁顯示同步中、右上角還能再按一次」。
-
 export function bindRouter() {
   window.addEventListener('hashchange', applyRoute);
   var back = $('session-back');
   if (back) back.addEventListener('click', function () { navigate('sessions'); });
 }
-
-//
-// S1 只負責「殼」：三種寬度的形態（桌機常駐欄／平板抽屜／手機全螢幕 sheet）
-// 與收合狀態的存讀。對話、串流、工具 chip 屬 S2／S3 的 coach.js，這裡不碰。
-// 收合偏好沿用既有的 Theme.saveSettings，不另開 localStorage key。

@@ -7,6 +7,11 @@ import { $ } from '../core/dom.js';
 import { renderSyncFreshness } from '../shell/sync.js';
 import { setCoachPanel } from '../shell/coach-frame.js';
 
+// N-19 §4。所有設定都存在 theme.js 的 `rc-dashboard-settings` 這一個
+// localStorage key 裡（透過 getSettings/saveSettings），不另開新 key。
+// 主題三選一與「與系統同步」開關由 theme.js 自己綁定與連動，本節只處理
+// AI 教練面板預設與資料同步兩塊。
+
 export function renderSettingsSync() {
   renderSyncFreshness('settings-sync', false);
 }

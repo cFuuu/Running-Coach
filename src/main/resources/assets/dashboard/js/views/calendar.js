@@ -9,6 +9,10 @@ import { $, clear, h, showLoading, showError } from '../core/dom.js';
 import { sundayOf, addDaysISO, dowLabel } from '../core/format.js';
 import { navigate, renderOrDefer } from '../shell/router.js';
 
+// 週條與行事曆共用 /api/calendar（start/end 起訖日），刻意不走 range
+// 系統——這裡永遠錨定真實今天，與其他 range 圖表錨定「資料庫最新日」
+// 的語意不同（見後端 dashboard_queries.get_calendar 說明）。
+
 /** 建立一格週條／行事曆格內的活動色點列（全部運動類型，見 get_calendar）。 */
 export function activityDots(activities) {
   var wrap = h('div', 'week-cell-dots');

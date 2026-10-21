@@ -128,14 +128,3 @@ export function bindCustomRangePanel() {
     if (container && !container.contains(evt.target)) closePanel();
   });
 }
-
-//
-// hash 路由 `#/view[/arg]`：
-//   #/today  #/calendar  #/calendar/2026-09  #/sessions  #/sessions/1083
-//   #/load   #/wellness
-// 五個 view 是 <section class="view" hidden>，切換只動 hidden——不重建 DOM，
-// 圖表與既有容器 id 都原地保留。
-//
-// 為什麼不在切換時無條件重畫：widthOf() 對 display:none 的容器回 0，
-// 隱藏 view 內畫出來的 SVG 寬度會是 0。所以資料載入只渲染「目前」view，
-// 其餘標髒（state.dirty），切過去時才補畫。

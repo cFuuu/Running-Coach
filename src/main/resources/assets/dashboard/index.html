@@ -86,7 +86,7 @@
     桌機 ≥1280px  三欄  240px | minmax(0,1fr) | 360px（側邊列｜內容｜AI 教練）
     平板 768~1279 側邊列縮成 72px 圖示欄；AI 面板改右側 overlay 抽屜
     手機 <768px   側邊列消失，改底部分頁列；AI 面板為全螢幕 sheet
-  五個 view 各自是 <section class="view" hidden>，切換只動 hidden（見 js/shell/router.js 路由）。
+  每個 view 各自是 <section class="view" hidden>，切換只動 hidden（見 js/shell/router.js 路由）。
   既有容器 id 全部保留，只是搬進對應 view——charts.js 與同步游標都靠 id 查找。
 -->
 <div class="app-shell">
@@ -121,23 +121,17 @@
         </span>
         <span class="nav-text">行事曆</span>
       </a>
+      <a class="nav-link" href="#/trends" data-view="trends">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l5-6 4 4 5-7 4 5"></path></svg>
+        </span>
+        <span class="nav-text">趨勢</span>
+      </a>
       <a class="nav-link" href="#/sessions" data-view="sessions">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9M10 18V5M16 18v-6M22 18H2"></path></svg>
         </span>
         <span class="nav-text">訓練紀錄</span>
-      </a>
-      <a class="nav-link" href="#/load" data-view="load">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l5-6 4 4 5-7 4 5"></path></svg>
-        </span>
-        <span class="nav-text">訓練負荷</span>
-      </a>
-      <a class="nav-link" href="#/wellness" data-view="wellness">
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 3 10 2-5h7"></path></svg>
-        </span>
-        <span class="nav-text">身體狀況</span>
       </a>
       <!--
         系統設定刻意不放在這裡，也不放進手機底部分頁列——唯一入口是右上角
@@ -383,8 +377,12 @@
       </section>
     </section>
 
-    <!-- ================================================== view：訓練負荷 -->
-    <section class="view" id="view-load" hidden aria-labelledby="h-load">
+    <!--
+      ===================================================== view：趨勢
+      2026-10-21 由「訓練負荷」與「身體狀況」兩個 view 合併，共用頂列的時間範圍。
+      兩個 panel 的 id 不變（同步游標與各自的渲染函式都靠 id 查找）。
+    -->
+    <section class="view" id="view-trends" hidden aria-labelledby="content-title">
       <!--
         #panel-load 必須保留為 #load-chart 與 #trend-charts 的祖先：
         同步游標的 SYNC_GROUPS 以此 id 查找群組容器（js/core/tooltip.js
@@ -395,10 +393,7 @@
         <div id="load-chart"></div>
         <div id="trend-charts"></div>
       </section>
-    </section>
 
-    <!-- ================================================== view：身體狀況 -->
-    <section class="view" id="view-wellness" hidden aria-labelledby="h-wellness">
       <section class="panel" id="panel-wellness" aria-labelledby="h-wellness">
         <h2 class="panel-title" id="h-wellness">
           每日身體狀況<span class="panel-hint">淡色背景為訓練日</span>
@@ -557,7 +552,7 @@
 </div>
 
 <!-- ------------------------------------------------------------ 手機 -->
-<!-- 底部分頁列（<768px 顯示）：6 格等寬、56px 高、圖示＋文字 -->
+<!-- 底部分頁列（<768px 顯示）：5 格等寬、56px 高、圖示＋文字 -->
 <nav class="tabbar" id="tabbar" aria-label="主導覽（手機）">
   <a class="tab-link" href="#/overview" data-view="overview">
     <span class="tab-icon" aria-hidden="true">
@@ -577,23 +572,17 @@
     </span>
     <span class="tab-text">行事曆</span>
   </a>
+  <a class="tab-link" href="#/trends" data-view="trends">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l5-6 4 4 5-7 4 5"></path></svg>
+    </span>
+    <span class="tab-text">趨勢</span>
+  </a>
   <a class="tab-link" href="#/sessions" data-view="sessions">
     <span class="tab-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9M10 18V5M16 18v-6M22 18H2"></path></svg>
     </span>
     <span class="tab-text">紀錄</span>
-  </a>
-  <a class="tab-link" href="#/load" data-view="load">
-    <span class="tab-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l5-6 4 4 5-7 4 5"></path></svg>
-    </span>
-    <span class="tab-text">負荷</span>
-  </a>
-  <a class="tab-link" href="#/wellness" data-view="wellness">
-    <span class="tab-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 3 10 2-5h7"></path></svg>
-    </span>
-    <span class="tab-text">身體</span>
   </a>
 </nav>
 

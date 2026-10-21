@@ -172,10 +172,8 @@ function suggestionsFor(ctx) {
       return ctx.sessionId
         ? ['解讀這場訓練的品質', '心率漂移的數值代表什麼？']
         : [];
-    case 'load':
-      return ['目前負荷該增量、維持還是降量？'];
-    case 'wellness':
-      return ['近期身體數據有什麼要注意？'];
+    case 'trends':
+      return ['目前負荷該增量、維持還是降量？', '近期身體數據有什麼要注意？'];
     default:
       return [];
   }

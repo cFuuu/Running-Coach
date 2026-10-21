@@ -231,11 +231,6 @@ export function renderSessionDetail() {
   renderRecoveryImpact();
 }
 
-//
-// 週條與行事曆共用 /api/calendar（start/end 起訖日），刻意不走 range
-// 系統——這裡永遠錨定真實今天，與其他 range 圖表錨定「資料庫最新日」
-// 的語意不同（見後端 dashboard_queries.get_calendar 說明）。
-
 /**
  * 場次列表：桌機為表格，手機（<768px）由 CSS 改為卡片式堆疊，
  * 不使用橫向捲動的多欄表格。

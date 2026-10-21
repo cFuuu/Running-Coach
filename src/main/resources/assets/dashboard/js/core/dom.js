@@ -61,26 +61,3 @@ export function wrapChart(svg) {
   wrap.appendChild(svg);
   return wrap;
 }
-
-//
-// 6 張圖共用同一套命中/顯示邏輯，統一在此處理，不在 charts.js 逐圖各寫一份
-// （charts.js 的架構契約禁止該檔碰 addEventListener／document，見該檔檔頭）。
-//
-// 互動模式分兩種：
-//   離散模式（心率區間圖）：沒有連續時間軸（X 軸是 Z1~Z5 分類），維持單圖
-//   浮動 tooltip，不參與同步游標。
-//
-//   連續模式（其餘 5 張）：仿 Garmin 的「跨圖同步垂直參考線」——滑鼠在
-//   同一個同步群組內任一圖上移動時，同一群組的每張圖都會在對應的邏輯 X
-//   位置畫一條垂直線＋圓點，並在圖表右上角顯示該點數值。三個群組各自獨立
-//   （X 軸基準不同，見 SYNC_GROUPS 常數），不跨群組同步。
-//
-// 綁事件的方式是「事件委派到 document.body，只綁一次」而非替每個 SVG 各綁
-// 一次：app.js 在 resize 後會整批 clear() + 重新產生 SVG（見 bindResize），
-// 若事件綁在個別 SVG 上，重繪後監聽器會全部消失。委派到穩定的 body 則不受
-// 重繪影響，重繪再多次也不用重綁。
-//
-// 座標轉換：charts.js 的 SVG 內部座標系是固定 viewBox（720 寬，見該檔
-// VB_WIDTH），與螢幕實際像素無關，不能直接用 event.offsetX。改用
-// getScreenCTM().inverse() 把螢幕座標換算回 viewBox 座標，這是全站唯一
-// 一處做這個轉換的地方。

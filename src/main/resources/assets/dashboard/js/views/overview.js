@@ -11,6 +11,14 @@ import { infoTip, closeInfoPopover, confBadge, kpiCard } from '../core/facts.js'
 import { mondayOf, addDaysISO, todayISO, dowLabel } from '../core/format.js';
 import { navigate, renderOrDefer } from '../shell/router.js';
 
+// 回答「最近狀態怎樣」的跨週數據頁（2026-10-14 依 Fu 的參考圖改版）：
+//   摘要列（區間摘要／資料品質／資料新鮮度）→ 5 張指標卡 → 週跑量＋心率區間並排 → 最佳成績
+// 資料來自兩支端點：
+//   /api/overview       除 ATL/CTL/TSB 以外的全部
+//   /api/training-load  ATL/CTL/TSB（與訓練負荷頁共用 state.loadSeries，不另抓）
+// 每張卡標出時間範圍（window-chip），ⓘ 只寫定義與算法，不寫判讀（判讀屬 AI 教練面板）。
+// 增減幅度等標籤一律用中性樣式，不用紅綠暗示好壞。
+
 // 強度分層的顯示資訊。分層本身（哪些 zone 算低／中／高）以後端回傳的
 // weekly_intensity.tiers 為準，這裡只決定顏色與名稱。
 export var INTENSITY_TIERS = [
