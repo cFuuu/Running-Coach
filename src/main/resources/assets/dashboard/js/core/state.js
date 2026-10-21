@@ -29,7 +29,6 @@ export var state = {
   recentSessions: null,  // /api/sessions 近 30 天的場次（取前 8 筆顯示）
   recentPlans: null,     // 活動 id → 當天對應的課表（最近訓練的「對應課表」欄）
   overview: null,        // /api/overview（吃 range）；ATL/CTL/TSB 另用 loadSeries
-  overviewWeek: null,    // 總覽「本週課表」：/api/calendar 的本 ISO 週（週一起算）
 
   view: 'overview',      // 目前 view：overview|today|calendar|trends|sessions|settings
 

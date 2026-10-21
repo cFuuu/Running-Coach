@@ -279,7 +279,8 @@
     <!--
       ===================================================== view：總覽
       跨週數據頁：回答「最近狀態怎樣」（2026-10-14 依 Fu 的參考圖改版）。
-      版面：摘要列 → 5 張指標卡 → 週跑量＋心率區間並排 → 本週課表 → 最佳成績。
+      版面：摘要列 → 5 張指標卡 → 週跑量＋心率區間並排 → 最佳成績。
+      本週課表的執行狀況在今日頁與行事曆（課表週），不在這裡重複（2026-10-21）。
       只放數字、時間範圍標籤與定義（各區塊的 ⓘ），不放判讀——判讀在 AI 教練面板。
       資料來自 /api/overview 與 /api/training-load，range 系列吃頂列的區間切換。
       各區塊的標題由 js/views/overview.js 連同時間範圍與 ⓘ 一起產生（overviewHead）。
@@ -299,10 +300,6 @@
           <div id="overview-zones"></div>
         </section>
       </div>
-
-      <section class="panel" aria-label="本週課表">
-        <div id="overview-plan"></div>
-      </section>
 
       <section class="panel" aria-label="個人最佳成績">
         <div id="overview-pbs"></div>

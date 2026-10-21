@@ -4,11 +4,11 @@
 
 import * as C from '../charts.js';
 import { runAnalysis, showAnalyses } from '../coach.js';
-import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL } from '../core/state.js';
+import { state } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable, widthOf, wrapChart } from '../core/dom.js';
 import { infoTip, closeInfoPopover, confBadge, kpiCard } from '../core/facts.js';
-import { mondayOf, addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
+
 import { navigate, renderOrDefer } from '../shell/router.js';
 
 // 回答「最近狀態怎樣」的跨週數據頁（2026-10-14 依 Fu 的參考圖改版）：
@@ -30,7 +30,7 @@ export var INTENSITY_TIERS = [
 
 // 最佳成績卡每個距離預設顯示幾場（第 1 名為最佳，其餘為次佳）
 
-export var OVERVIEW_NODE_IDS = ['overview-strip', 'overview-kpis', 'overview-volume', 'overview-zones', 'overview-plan', 'overview-pbs'];
+export var OVERVIEW_NODE_IDS = ['overview-strip', 'overview-kpis', 'overview-volume', 'overview-zones', 'overview-pbs'];
 
 export function zoneListText(zones) {
   return zones.map(function (z) { return z === 0 ? '低於 Z1' : 'Z' + z; }).join(' + ');
@@ -471,87 +471,6 @@ export function renderOverviewZones(ov) {
     + (bounds.available ? '　bpm 依手錶 %HRR 設定換算（最大 ' + bounds.max_hr.value + '、靜止 ' + bounds.resting_hr_bpm + '）' : '　尚未設定手錶區間，不顯示 bpm')));
 }
 
-// ---- 本週課表
-
-export function renderOverviewPlan() {
-  var node = $('overview-plan');
-  if (!node || !state.overviewWeek) return;
-  clear(node);
-  var days = state.overviewWeek;
-  var today = todayISO();
-  var hasPlan = days.some(function (d) { return d.planned.length > 0; });
-  // 課表來源寫在標題旁一次就好（逐日重複標示只是雜訊）
-  var sources = {};
-  days.forEach(function (d) { d.planned.forEach(function (p) { sources[p.plan_source] = true; }); });
-  var sourceText = [sources.external ? '跑班課表' : null, sources.generated ? '系統課表' : null]
-    .filter(Boolean).join('＋');
-  var head = overviewHead('本週課表',
-    C.shortDate(days[0].date) + '–' + C.shortDate(days[days.length - 1].date)
-      + (sourceText ? ' · ' + sourceText : ''), [
-      '本週（週一至週日）每天的課表與實際跑步。標題旁標示課表來源：跑班課表＝教練給的外部課表，系統課表＝系統自動產生。'
-        + '每天第二行是教練原文（hover 可看完整內容）。',
-      '實際一欄是當天的跑步距離與平均配速，點一下可看該場的單場分析。'
-        + '課表與活動是用「同一天＋運動類型相符」推論配對的，當天若臨時改課，配對可能不對。',
-      '狀態只描述有沒有對應的活動（完成／未執行／今天待完成／額外訓練），不評斷練得好不好。'
-    ]);
-  node.appendChild(head);
-  if (!hasPlan) {
-    node.appendChild(h('div', 'state-msg state-unavailable', '本週沒有課表'));
-  }
-
-  var grid = h('div', 'plan-week');
-  days.forEach(function (day) {
-    var cell = h('div', 'plan-day day-' + day.day_state + (day.date === today ? ' is-today' : ''));
-    var top = h('div', 'plan-day-top');
-    top.appendChild(h('span', 'plan-dow', '週' + dowLabel(day.date)));
-    top.appendChild(h('span', 'plan-date', C.shortDate(day.date)));
-    cell.appendChild(top);
-
-    if (day.planned.length === 0) {
-      cell.appendChild(h('div', 'plan-type plan-rest', '—'));
-    }
-    day.planned.forEach(function (p) {
-      cell.appendChild(h('div', 'plan-type' + (p.workout_type === 'rest' ? ' plan-rest' : ''), planSummary(p)));
-      var note = shortPlanNote(p.notes);
-      if (note && p.workout_type !== 'rest') {
-        var n = h('div', 'plan-note', note);
-        n.title = p.notes;
-        cell.appendChild(n);
-      }
-    });
-
-    var runs = day.activities.filter(function (a) { return a.is_running; });
-    runs.forEach(function (a) {
-      var btn = h('button', 'plan-actual');
-      btn.type = 'button';
-      var pace = a.distance_km ? a.duration_sec / a.distance_km : null;
-      btn.textContent = '實際 ' + C.formatNumber(a.distance_km, 1) + ' km'
-        + (pace ? ' · ' + C.formatPace(pace) + '/km' : '');
-      btn.setAttribute('aria-label', day.date + ' 實際跑步 ' + C.formatNumber(a.distance_km, 1) + ' 公里，檢視單場分析');
-      btn.addEventListener('click', function () { navigate('sessions', a.id); });
-      cell.appendChild(btn);
-    });
-
-    if (day.day_state !== 'rest_ok' && day.day_state !== 'future') {
-      cell.appendChild(h('span', 'plan-state', DAY_STATE_LABEL[day.day_state] || day.day_state));
-    }
-    grid.appendChild(cell);
-  });
-  node.appendChild(grid);
-}
-
-/** 本週課表用的 ISO 週（週一～週日）日曆資料，錨定真實今天、與頂列區間無關。 */
-export function loadOverviewWeek() {
-  var start = mondayOf(todayISO()).toISOString().slice(0, 10);
-  var end = addDaysISO(start, 6);
-  api('/api/calendar?start=' + start + '&end=' + end).then(function (data) {
-    state.overviewWeek = data.days || [];
-    renderOrDefer('overview', renderOverview);
-  }).catch(function (err) {
-    showError($('overview-plan'), err.message);
-  });
-}
-
 // ---- 最佳成績
 
 // 展開中的距離（distance 代碼）；重繪總覽時保留，切換頁面再回來也還在
@@ -680,13 +599,11 @@ export function renderOverview() {
   renderOverviewKpis(ov);
   renderOverviewVolume(ov);
   renderOverviewZones(ov);
-  renderOverviewPlan();
   renderOverviewPbs(ov);
 }
 
 export function loadOverview() {
   OVERVIEW_NODE_IDS.forEach(function (id) { showLoading($(id), '載入總覽'); });
-  loadOverviewWeek();
   api('/api/overview?range=' + state.range).then(function (data) {
     state.overview = data;
     renderOrDefer('overview', renderOverview);

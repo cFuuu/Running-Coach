@@ -1761,14 +1761,10 @@ body.coach-open .coach-fab {
 }
 
 /* 執行狀態文字與格子底色同色系：分類不是評價，刻意不用紅綠 */
-.day-planned_done .wp-state,
-.day-planned_done .plan-state { color: var(--day-planned-done-text); }
-.day-planned_missed .wp-state,
-.day-planned_missed .plan-state { color: var(--day-planned-missed-text); }
+.day-planned_done .wp-state { color: var(--day-planned-done-text); }
+.day-planned_missed .wp-state { color: var(--day-planned-missed-text); }
 .day-today_pending .wp-state,
-.day-today_pending .plan-state,
-.day-unplanned_activity .wp-state,
-.day-unplanned_activity .plan-state { color: var(--day-unplanned-text); }
+.day-unplanned_activity .wp-state { color: var(--day-unplanned-text); }
 
 .wp-actual {
   color: var(--text);
@@ -3077,113 +3073,6 @@ body.coach-open .coach-fab {
 
 .kpi-note .conf-badge {
   margin-left: 6px;
-}
-
-/* ---- 本週課表：7 格（週一～週日），內容欄窄時改成直排清單 */
-.plan-week {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-}
-
-@container overview (min-width: 760px) {
-  .plan-week {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-  }
-}
-
-.plan-day {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--day-rest-border);
-  border-radius: var(--radius);
-  background: var(--day-rest-bg);
-}
-
-.plan-day.day-planned_done {
-  background: var(--day-planned-done-bg);
-  border-color: var(--day-planned-done-border);
-}
-
-.plan-day.day-planned_missed {
-  background: var(--day-planned-missed-bg);
-  border-color: var(--day-planned-missed-border);
-}
-
-.plan-day.day-unplanned_activity {
-  background: var(--day-unplanned-bg);
-  border-color: var(--day-unplanned-border);
-}
-
-.plan-day.is-today {
-  box-shadow: 0 0 0 2px var(--day-today-ring);
-}
-
-.plan-day-top {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.plan-dow {
-  font-weight: 700;
-  font-size: var(--fs-sm);
-}
-
-.plan-date {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
-.plan-type {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-}
-
-.plan-type.plan-rest {
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-/* 教練原文：最多 3 行，完整內容在 title */
-.plan-note {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  line-height: 1.45;
-  word-break: break-word;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.plan-actual {
-  align-self: flex-start;
-  min-height: 32px;
-  padding: 2px 8px;
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--accent-text);
-  font: inherit;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.plan-actual:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.plan-state {
-  margin-top: auto;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--text-muted);
 }
 
 /* ---- 個人最佳成績：固定五格（3K／5K／10K／半馬／全馬），每格只放最佳一筆，
