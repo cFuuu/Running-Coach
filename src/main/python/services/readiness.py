@@ -258,6 +258,11 @@ def assess_readiness(
             "not_assessed": list[dict],  # 未評的維度與原因，{"dimension", "reason"}
             "threshold_source": "default" | "personalized",
             "consecutive_training_days": int,
+            "measurements": {  # 各維度「數值 / 觸發門檻」，未評的維度 value 為 None
+                "consecutive_training_days": {"value", "threshold"},  # 天
+                "tsb": {"value", "threshold"},  # 門檻為個人 TSB 分布 P10，樣本不足為 None
+                "hrv_change_pct": {"value", "threshold"},  # 當日較 7 日均值變化 %，門檻 -15
+            },
         }
         涵蓋輸入 training_load_series 的整段日期範圍（或 output_from_date 之後）。
         輸入為空清單時回傳空清單。
@@ -369,6 +374,26 @@ def assess_readiness(
         else:
             readiness = "low" if triggers else "normal"
 
+        # 各維度的「數值 / 觸發門檻」，供呈現端並列顯示離觸發還有多遠。
+        # 只列判斷時實際用到的量，不另做判讀；未評的維度數值為 None。
+        hrv_change_pct = None
+        if "hrv" in dimensions_evaluated:
+            hrv_change_pct = round((hrv_ms - hrv_weekly_avg_ms) / hrv_weekly_avg_ms * 100, 1)
+        measurements = {
+            "consecutive_training_days": {
+                "value": None if no_data_today else consecutive_days,
+                "threshold": threshold,
+            },
+            "tsb": {
+                "value": round(day["tsb"], 1) if "tsb" in dimensions_evaluated else None,
+                "threshold": round(tsb_threshold, 1) if tsb_threshold is not None else None,
+            },
+            "hrv_change_pct": {
+                "value": hrv_change_pct,
+                "threshold": -HRV_DROP_PCT_THRESHOLD * 100,
+            },
+        }
+
         results.append(
             {
                 "date": date,
@@ -378,6 +403,7 @@ def assess_readiness(
                 "not_assessed": not_assessed,
                 "threshold_source": threshold_source,
                 "consecutive_training_days": consecutive_days,
+                "measurements": measurements,
             }
         )
 

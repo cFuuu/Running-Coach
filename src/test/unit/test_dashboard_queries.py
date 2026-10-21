@@ -695,7 +695,7 @@ class TestToday(DashboardQueryTestCase):
 
     def test_hrv_fallback_does_not_reach_beyond_window(self):
         """N-13：退回窗口只為涵蓋「今天還沒同步」，不是資料補洞。
-        超出 _HRV_FALLBACK_DAYS 後必須誠實回 None，不可拿舊資料充數。"""
+        超出 _TODAY_FALLBACK_DAYS 後必須誠實回 None，不可拿舊資料充數。"""
         far_future = datetime.date(2026, 6, 1)
         result = queries.get_today(self.conn, today=far_future)
         self.assertIsNone(result["hrv"])
@@ -738,6 +738,57 @@ class TestToday(DashboardQueryTestCase):
             with self.subTest(key=key):
                 self.assertIn("confidence", result["load"][key])
                 self.assertIn("value", result["load"][key])
+
+    def test_unsynced_today_falls_back_to_yesterday_with_as_of(self):
+        """今天還沒同步時，準備度與負荷退回昨天的資料，並標明日期。"""
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 11))
+        self.assertIsNone(result["readiness"]["today"]["readiness"])
+        self.assertEqual(result["readiness"]["today_fallback"]["date"], "2026-03-10")
+        self.assertIsNotNone(result["load"])
+        self.assertEqual(result["load"]["as_of"], "2026-03-10")
+
+    def test_readiness_carries_measurements(self):
+        """今日卡的訓練完備程度要並列各維度的數值 / 門檻。"""
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        m = result["readiness"]["today"]["measurements"]
+        for key in ("consecutive_training_days", "tsb", "hrv_change_pct"):
+            with self.subTest(key=key):
+                self.assertIn("value", m[key])
+                self.assertIn("threshold", m[key])
+
+    def test_load_tsb_matches_readiness_tsb(self):
+        """同一頁的訓練負荷 TSB 與訓練完備程度的 TSB 必須是同一個數字。"""
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        readiness_tsb = result["readiness"]["today"]["measurements"]["tsb"]["value"]
+        self.assertIsNotNone(readiness_tsb)
+        self.assertEqual(result["load"]["tsb"]["value"], readiness_tsb)
+
+    def test_today_with_data_has_no_fallback(self):
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        self.assertIsNone(result["readiness"]["today_fallback"])
+        self.assertIsNone(result["load"]["as_of"])
+
+    def test_fallback_does_not_reach_beyond_window(self):
+        """N-13：超出退回窗口就不拿舊資料代替今天，準備度與負荷都誠實給 None。"""
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 20))
+        self.assertIsNone(result["readiness"]["today_fallback"])
+        self.assertIsNone(result["load"])
+
+    def test_races_countdown_from_schedule(self):
+        schedule = {
+            "target": {"name": "目標馬", "date": "2026-03-20"},
+            "upcoming": [{"name": "暖身賽", "date": "2026-03-15"}],
+        }
+        result = queries.get_today(
+            self.conn, today=datetime.date(2026, 3, 10), race_schedule=schedule
+        )
+        self.assertEqual(result["races"]["next"]["name"], "暖身賽")
+        self.assertEqual(result["races"]["next"]["days_left"], 5)
+        self.assertEqual(result["races"]["target"]["days_left"], 10)
+
+    def test_races_is_none_without_schedule(self):
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        self.assertIsNone(result["races"])
 
     def test_no_athlete_returns_safe_defaults(self):
         empty_conn = get_connection(":memory:")

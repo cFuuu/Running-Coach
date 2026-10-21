@@ -1037,10 +1037,14 @@ def get_today(
     conn: sqlite3.Connection,
     athlete_id: int | None = None,
     today: datetime.date | None = None,
+    race_schedule: dict | None = None,
 ) -> dict:
     """今日卡：今日／明日課表、規則引擎的準備度判讀、訓練負荷、最近一場活動。
 
     today 可覆寫（預設系統今天）——供測試與需要重現特定日期畫面時使用。
+
+    race_schedule：學員檔的目標賽事與賽程（race_names.load_race_schedule()），
+    用來輸出 races（下場賽事／目標賽事剩餘天數）；省略時 races 為 None。
 
     純呈現層：本函式不解讀「今天該不該練」，只把規則引擎
     （readiness.py／training_load.py）已經算出的事實依 §7.3 三欄位契約
@@ -1050,11 +1054,13 @@ def get_today(
     resolved = resolve_athlete_id(conn, athlete_id)
     today = today or datetime.date.today()
     tomorrow = today + datetime.timedelta(days=1)
+    races = race_names_module.race_countdown(race_schedule, today) if race_schedule else None
 
     if resolved is None:
         return {
             "date": today.isoformat(),
             "freshness": None,
+            "races": races,
             "planned": {"today": None, "tomorrow": None},
             "readiness": None,
             "load": None,
@@ -1096,19 +1102,44 @@ def get_today(
         None,
     )
 
+    # 今天常常還沒同步（手錶隔天早上才上傳）。準備度與負荷都退回
+    # _TODAY_FALLBACK_DAYS 天內最近一個有資料的日子，並標明是哪一天
+    # （與下方 HRV 的退回同一個窗口；超出窗口就誠實顯示無資料）。
+    fallback_start = today - datetime.timedelta(days=_TODAY_FALLBACK_DAYS)
+    today_fallback = None
+    if (today_readiness is None or today_readiness["readiness"] is None) and latest_evaluable \
+            and latest_evaluable["date"] >= fallback_start:
+        today_fallback = latest_evaluable
+
     # N-13 同一原則套用到負荷面板：compute_daily_loads() 對「今天」一律填
     # load=0.0 才能遞推 ATL/CTL/TSB，今天完全無資料時這個 0 是假設而非
     # 事實，直接顯示出來的 TSB 會跟 readiness.today 為 None 互相矛盾
     # （一邊說「未評」，另一邊卻煞有介事顯示數字）。故今天若在
-    # get_dates_without_any_data() 裡，today 的負荷同樣不輸出。
-    today_has_no_data = today in training_load_queries.get_dates_without_any_data(
-        conn, resolved, today, today
+    # get_dates_without_any_data() 裡，改用窗口內最近一個有資料日子的負荷，
+    # 並以 as_of 標明日期；窗口內都沒資料才不輸出。
+    no_data_dates = training_load_queries.get_dates_without_any_data(
+        conn, resolved, fallback_start, today
+    )
+    load_date = next(
+        (
+            today - datetime.timedelta(days=offset)
+            for offset in range(_TODAY_FALLBACK_DAYS + 1)
+            if today - datetime.timedelta(days=offset) not in no_data_dates
+        ),
+        None,
     )
 
-    load_series = training_load_queries.compute_training_load_for_athlete(
-        conn, resolved, today, today
+    # 起點刻意與上方準備度序列相同（lookback_start）：ATL/CTL 是指數加權遞推，
+    # 暖機起點不同會讓同一天算出略有差異的 TSB，同一頁上「訓練負荷」與
+    # 「訓練完備程度」就會各說各話（實測 -14.1 vs -14.4）。
+    load_series = (
+        training_load_queries.compute_training_load_for_athlete(
+            conn, resolved, lookback_start, load_date
+        )
+        if load_date is not None
+        else []
     )
-    load_today = load_series[0] if load_series else None
+    load_today = load_series[-1] if load_series else None
 
     hrmax_row = conn.execute(
         "SELECT max_hr_source FROM athlete_profile WHERE id = ?", (resolved,)
@@ -1117,7 +1148,7 @@ def get_today(
     hrmax_biases = data_confidence.hrmax_bias_codes(max_hr_source)
 
     load_fact = None
-    if load_today is not None and not today_has_no_data:
+    if load_today is not None:
         tsb_bias_codes = [*hrmax_biases, "tsb_percentile_engineering"]
         load_fact = {
             "atl": data_confidence.fact(
@@ -1132,6 +1163,8 @@ def get_today(
                 _round(load_today["tsb"]), source="TSB = CTL − ATL",
                 bias_codes=tsb_bias_codes,
             ),
+            # 非 None 代表今天尚未同步，數值是這一天的；前端必須標注
+            "as_of": None if load_date == today else load_date.isoformat(),
         }
 
     wellness_today_row = conn.execute(
@@ -1146,14 +1179,13 @@ def get_today(
     # 今天的身體數據常常還沒同步（手錶隔天早上才上傳），此時整張 HRV 卡
     # 會是空的，但昨天的資料其實在庫裡。退回最近一筆並標明是哪一天。
     #
-    # 【窗口為何只有 _HRV_FALLBACK_DAYS 天，不沿用 readiness 的 14 天】
+    # 【窗口為何只有 _TODAY_FALLBACK_DAYS 天，不沿用 readiness 的 14 天】
     # N-13 的硬規則是「沒資料就不可假裝評估過」。HRV 是逐日變動的生理
     # 指標，兩週前的數值拿來當「今日 HRV」已不是延遲、而是錯的資訊。
     # 只涵蓋「手錶還沒同步今天」這一種情況，超出窗口一律回 None，
     # 讓卡片誠實地顯示無資料。日期一定隨值回傳，前端必須標注。
     hrv_as_of: str | None = None
     if wellness_today_row is None or wellness_today_row["hrv_ms"] is None:
-        fallback_start = today - datetime.timedelta(days=_HRV_FALLBACK_DAYS)
         fallback_row = conn.execute(
             """
             SELECT date, hrv_ms, hrv_weekly_avg_ms, hrv_status,
@@ -1263,10 +1295,13 @@ def get_today(
             # 側邊列底部「最後更新時間」用：同步時刻（UTC，帶 Z）與最新活動的開始時間
             **{k: v for k, v in _data_freshness(conn, resolved).items() if k != "wellness_latest"},
         },
+        "races": races,
         "planned": {"today": planned_today, "tomorrow": planned_tomorrow},
         "readiness": {
             "today": _serialize_readiness_entry(today_readiness),
             "latest_evaluable": _serialize_readiness_entry(latest_evaluable),
+            # 今天不可評、但退回窗口內有可評日時，給前端代替今日顯示（須標注日期）
+            "today_fallback": _serialize_readiness_entry(today_fallback),
         },
         "load": load_fact,
         "hrv": hrv_fact,
@@ -1279,9 +1314,9 @@ def get_today(
 # 太久，今日卡不再往回找，交由 freshness.days_behind 呈現這個事實即可。
 _READINESS_LOOKBACK_DAYS = 14
 
-# 今日卡 HRV 的退回窗口（天）。只為了涵蓋「手錶今天還沒同步」，
-# 不是資料補洞機制——超過這個天數就誠實顯示無資料（見 get_today）。
-_HRV_FALLBACK_DAYS = 2
+# 今日卡的退回窗口（天）：HRV、準備度、訓練負荷共用。只為了涵蓋「手錶今天
+# 還沒同步」，不是資料補洞機制——超過這個天數就誠實顯示無資料（見 get_today）。
+_TODAY_FALLBACK_DAYS = 2
 
 
 
@@ -1295,8 +1330,8 @@ def _fetch_personalized_threshold(conn: sqlite3.Connection, athlete_id: int) -> 
 
 def _serialize_readiness_entry(entry: dict | None) -> dict | None:
     """把 readiness.assess_readiness() 一筆輸出轉成今日卡要的形狀
-    （date 轉字串，其餘原樣透傳）。entry 為 None 時（該區間內完全沒有
-    可評的日子）回傳 None。
+    （date 轉字串，其餘挑今日卡要的欄位透傳）。entry 為 None 時（該區間內
+    完全沒有可評的日子）回傳 None。measurements 是各維度的「數值 / 門檻」。
     """
     if entry is None:
         return None
@@ -1306,6 +1341,7 @@ def _serialize_readiness_entry(entry: dict | None) -> dict | None:
         "triggers": entry["triggers"],
         "dimensions_evaluated": entry["dimensions_evaluated"],
         "not_assessed": entry["not_assessed"],
+        "measurements": entry["measurements"],
     }
 
 

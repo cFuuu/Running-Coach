@@ -163,13 +163,17 @@ def read_today(
     ),
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
+    profile_path: Path | None = Depends(get_profile_path),
 ) -> dict:
-    """今日卡：今日／明日課表、規則引擎的準備度判讀、訓練負荷、最近一場活動。
+    """今日卡：今日／明日課表、規則引擎的準備度判讀、訓練負荷、最近一場活動、
+    下場／目標賽事剩餘天數（來自學員檔）。
 
     純呈現層薄封裝——實際邏輯全在 dashboard_queries.get_today()。
     """
     today = _parse_date_param(date, "date") if date else None
-    return queries.get_today(conn, athlete_id, today)
+    return queries.get_today(
+        conn, athlete_id, today, race_schedule=race_names.load_race_schedule(profile_path)
+    )
 
 
 @router.get("/calendar")

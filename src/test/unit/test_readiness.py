@@ -248,6 +248,42 @@ class TestAssessReadinessGeneral(unittest.TestCase):
         )
 
 
+class TestAssessReadinessMeasurements(unittest.TestCase):
+    """measurements：各維度「數值 / 觸發門檻」，與判斷實際用到的量一致。"""
+
+    def test_all_dimensions_report_value_and_threshold(self):
+        series = _tsb_series_with_low_day(load=100.0)
+        last = len(series) - 1
+        wellness = _wellness(
+            {
+                last - 2: {"hrv_ms": 60.0, "hrv_weekly_avg_ms": 60.0},
+                last - 1: {"hrv_ms": 60.0, "hrv_weekly_avg_ms": 60.0},
+                last: {"hrv_ms": 40.0, "hrv_weekly_avg_ms": 60.0},
+            }
+        )
+        m = assess_readiness(series, wellness)[-1]["measurements"]
+        self.assertEqual(m["consecutive_training_days"], {"value": len(series), "threshold": 6})
+        self.assertEqual(m["tsb"]["value"], -100.0)
+        self.assertEqual(m["tsb"]["threshold"], 0.0)  # 其餘天全為 0，P10 為 0
+        self.assertEqual(m["hrv_change_pct"], {"value": -33.3, "threshold": -15.0})
+
+    def test_unassessed_dimensions_have_none_value(self):
+        """TSB 樣本不足、HRV 無資料時，數值為 None，不可填 0 假裝評過。"""
+        m = assess_readiness(_load_series([0.0]), [])[0]["measurements"]
+        self.assertIsNone(m["tsb"]["value"])
+        self.assertIsNone(m["tsb"]["threshold"])
+        self.assertIsNone(m["hrv_change_pct"]["value"])
+        self.assertEqual(m["consecutive_training_days"]["value"], 0)
+
+    def test_date_without_any_data_has_no_values(self):
+        series = _load_series([0.0, 0.0])
+        result = assess_readiness(series, [], dates_without_any_data={series[-1]["date"]})
+        m = result[-1]["measurements"]
+        self.assertIsNone(m["consecutive_training_days"]["value"])
+        self.assertIsNone(m["tsb"]["value"])
+        self.assertIsNone(m["hrv_change_pct"]["value"])
+
+
 class TestAssessReadinessDatesWithoutAnyData(unittest.TestCase):
     """N-13：完全無資料的日期應回報 readiness=None，不是 normal。"""
 
