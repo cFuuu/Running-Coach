@@ -1639,15 +1639,109 @@ body.coach-open .coach-fab {
   overflow: hidden;
 }
 
-/* 六欄固定比例：星期、日期、課表、實際、狀態。
-   課表與實際給最多空間，其餘是短字串。 */
+/* ---- 課表週（js/views/plan-week.js）：摘要列＋每日執行表 ---- */
+
+.pw-summary {
+  margin-top: var(--gap);
+}
+
+.pw-figs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+
+.pw-fig-label {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.pw-fig-value {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pw-fig-value small {
+  margin-left: 3px;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* 五欄：星期、日期、課表、實際、狀態。課表與實際給最多空間，其餘是短字串。
+   課表欄可能有第二行備註，故靠上對齊。 */
 .wp-row {
   display: grid;
-  grid-template-columns: 2.5rem 3.2rem minmax(0, 1fr) minmax(0, 1fr) 4.5rem;
-  align-items: center;
+  grid-template-columns: 2rem 3.2rem minmax(0, 1.3fr) minmax(0, 1fr) 5rem;
+  align-items: start;
   gap: 8px;
   padding: 8px 12px;
   font-size: var(--fs-sm);
+}
+
+.wp-row.wp-head {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+}
+
+.wp-row.is-selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.wp-plan {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wp-plan-main {
+  font-weight: 600;
+}
+
+.wp-plan-main.plan-rest {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.wp-plan-note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wp-actual-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wp-actual-link:hover {
+  text-decoration: underline;
+}
+
+.wp-actual-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.wp-other {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
 }
 
 .wp-row + .wp-row {
@@ -1676,12 +1770,10 @@ body.coach-open .coach-fab {
 .day-unplanned_activity .wp-state,
 .day-unplanned_activity .plan-state { color: var(--day-unplanned-text); }
 
-.wp-plan,
 .wp-actual {
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .wp-actual {
@@ -1691,17 +1783,26 @@ body.coach-open .coach-fab {
 /* 手機：欄位太多會擠成一團，改成兩行流式排列 */
 @media (max-width: 560px) {
   .wp-row {
-    grid-template-columns: 2.5rem 3.2rem minmax(0, 1fr);
+    grid-template-columns: 2rem 3.2rem minmax(0, 1fr) auto;
     row-gap: 2px;
   }
 
-  .wp-actual {
+  .wp-row.wp-head {
+    display: none;
+  }
+
+  .wp-plan {
     grid-column: 3;
   }
 
   .wp-state {
-    grid-column: 1 / -1;
+    grid-column: 4;
+    grid-row: 1;
     text-align: right;
+  }
+
+  .wp-actual {
+    grid-column: 3 / -1;
   }
 }
 
@@ -1715,7 +1816,7 @@ body.coach-open .coach-fab {
 
 .recent-row {
   display: grid;
-  grid-template-columns: 3.4rem 4.5rem minmax(0, 1fr) minmax(0, 1fr) 4.8rem;
+  grid-template-columns: 3.4rem 5.5rem minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 0.8fr) 4.8rem;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -1752,6 +1853,14 @@ body.coach-open .coach-fab {
   font-weight: 600;
 }
 
+/* 對應課表：課表週的同一套文字（planSummary），沒有對應的顯示「—」 */
+.rc-plan {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rc-km,
 .rc-pace,
 .rc-hr {
@@ -1763,20 +1872,19 @@ body.coach-open .coach-fab {
   text-align: right;
 }
 
+/* 手機：第一行 日期｜類型｜距離，第二行 心率｜對應課表｜配速 */
 @media (max-width: 560px) {
   .recent-row {
-    grid-template-columns: 3.4rem 4.5rem minmax(0, 1fr);
+    grid-template-columns: 3.4rem minmax(0, 1fr) auto;
     row-gap: 2px;
   }
 
-  .rc-pace {
-    grid-column: 3;
-  }
-
-  .rc-hr {
-    grid-column: 1 / -1;
-    text-align: right;
-  }
+  .rc-date { grid-column: 1; grid-row: 1; }
+  .rc-type { grid-column: 2; grid-row: 1; }
+  .rc-km   { grid-column: 3; grid-row: 1; text-align: right; }
+  .rc-hr   { grid-column: 1; grid-row: 2; text-align: left; font-size: var(--fs-xs); }
+  .rc-plan { grid-column: 2; grid-row: 2; font-size: var(--fs-xs); }
+  .rc-pace { grid-column: 3; grid-row: 2; text-align: right; }
 }
 
 .today-grid {

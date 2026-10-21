@@ -1,5 +1,5 @@
 /**
- * today.js — 今日 view：今日卡、KPI 條、本週週條與課表一覽、最近訓練
+ * today.js — 今日 view：今日卡、身體狀況趨勢、本課表週（週條＋執行表）、最近訓練
  *
  * 純呈現層：把 /api/today 的三欄位事實（數值/來源/信賴度）與課表原樣
  * 顯示出來，不做任何「今天該不該練」的判讀——判讀留給 MCP 對話中的
@@ -7,11 +7,12 @@
  */
 
 import * as C from '../charts.js';
-import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL, HRV_STATUS_CLASS, RUNNING_ACTIVITY_TYPES_CLIENT } from '../core/state.js';
+import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL, HRV_STATUS_CLASS } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
 import { factValueNode, kpiCard } from '../core/facts.js';
-import { fmtDelta, sundayOf, addDaysISO, todayISO, dowLabel } from '../core/format.js';
+import { fmtDelta, addDaysISO, todayISO, dowLabel, planSummary } from '../core/format.js';
+import { loadPlanWeek, planWeekLabel, renderPlanWeek } from './plan-week.js';
 import { activityDots, firstRunningActivity } from './calendar.js';
 import { renderSettingsSync } from './settings.js';
 import { navigate } from '../shell/router.js';
@@ -187,46 +188,7 @@ export function renderToday() {
   }
   grid.appendChild(loadBlock);
 
-  // 最近一場活動卡
-  var lastBlock = h('div', 'today-block');
-  lastBlock.appendChild(h('div', 'today-block-title', '最近一場'));
-  if (!data.last_activity) {
-    lastBlock.appendChild(h('div', 'state-msg state-unavailable', '尚無活動紀錄'));
-  } else {
-    var la = data.last_activity;
-    var btn = h('button', 'session-card session-card-inline', null);
-    btn.type = 'button';
-    var text = la.date + '　' + (ACTIVITY_TYPE_LABEL[la.activity_type] || la.activity_type);
-    if (la.distance_km) text += '　' + C.formatNumber(la.distance_km, 1) + ' km';
-    if (la.avg_pace_sec_per_km) text += '　' + C.formatPace(la.avg_pace_sec_per_km) + '/km';
-    btn.textContent = text;
-    if (la.activity_type && RUNNING_ACTIVITY_TYPES_CLIENT.indexOf(la.activity_type) !== -1) {
-      btn.addEventListener('click', function () { navigate('sessions', la.id); });
-    } else {
-      btn.disabled = true;
-      btn.title = '非跑步活動，無單場分析頁可跳轉';
-    }
-    lastBlock.appendChild(btn);
-  }
-  grid.appendChild(lastBlock);
-
   node.appendChild(grid);
-}
-
-/** 本週（週日起算，與行事曆一致）已完成的跑步距離與本週課表總距離。 */
-export function weekVolumeSummary() {
-  var days = state.weekDays || [];
-  var done = 0;
-  var planned = 0;
-  days.forEach(function (d) {
-    (d.activities || []).forEach(function (a) {
-      if (a.is_running && a.distance_km) done += a.distance_km;
-    });
-    (d.planned || []).forEach(function (p) {
-      if (p.planned_distance_km) planned += p.planned_distance_km;
-    });
-  });
-  return { done: done, planned: planned };
 }
 
 export function renderKpiStrip() {
@@ -234,67 +196,13 @@ export function renderKpiStrip() {
   if (!node) return;
   clear(node);
 
-  // weekDays 與 todayKpi 是兩支不同的請求，任一支還沒回來就先顯示載入中，
-  // 避免畫出一半的卡片再跳動
-  if (!state.weekDays || !state.todayKpi) {
-    showLoading(node, '載入近期概況');
+  if (!state.todayKpi) {
+    showLoading(node, '載入身體狀況');
     return;
   }
 
   var strip = h('div', 'kpi-strip');
   var kpi = state.todayKpi;
-
-  // ---- 本週跑量進度
-  var vol = weekVolumeSummary();
-  var volCard = kpiCard({
-    label: '本週跑量',
-    value: C.formatNumber(vol.done, 1),
-    unit: 'km',
-    note: vol.planned > 0
-      ? '課表 ' + C.formatNumber(vol.planned, 1) + ' km'
-      : '本週無課表距離'
-  });
-  if (vol.planned > 0) {
-    var pct = Math.min(100, (vol.done / vol.planned) * 100);
-    var bar = h('div', 'kpi-bar');
-    var fill = h('div', 'kpi-bar-fill');
-    fill.style.width = pct.toFixed(1) + '%';
-    bar.appendChild(fill);
-    bar.setAttribute('role', 'img');
-    bar.setAttribute('aria-label',
-      '本週跑量 ' + C.formatNumber(vol.done, 1) + ' km，課表 '
-      + C.formatNumber(vol.planned, 1) + ' km，達成 ' + Math.round(pct) + '%');
-    volCard.appendChild(bar);
-    volCard.appendChild(h('div', 'kpi-note kpi-note-pct', '達成 ' + Math.round(pct) + '%'));
-  }
-  strip.appendChild(volCard);
-
-  // ---- 本週跑步次數
-  var runCount = 0;
-  (state.weekDays || []).forEach(function (d) {
-    (d.activities || []).forEach(function (a) { if (a.is_running) runCount += 1; });
-  });
-  strip.appendChild(kpiCard({
-    label: '本週跑步次數',
-    value: String(runCount),
-    unit: '次',
-    note: '週日起算'
-  }));
-
-  // ---- TSB（訓練壓力平衡）
-  var loadSeries = kpi.loadSeries || [];
-  var tsbVals = loadSeries.map(function (p) {
-    return p.tsb && typeof p.tsb.value === 'number' ? p.tsb.value : null;
-  }).filter(function (v) { return v !== null; });
-  if (tsbVals.length > 0) {
-    var lastTsb = tsbVals[tsbVals.length - 1];
-    strip.appendChild(kpiCard({
-      label: 'TSB（CTL − ATL）',
-      value: (lastTsb > 0 ? '+' : '') + C.formatNumber(lastTsb, 1),
-      note: '近 30 天走勢',
-      series: tsbVals
-    }));
-  }
 
   // ---- HRV
   var hrvVals = (kpi.hrvPoints || []).map(function (p) { return p.value; })
@@ -323,6 +231,37 @@ export function renderKpiStrip() {
     }));
   }
 
+  // ---- 睡眠分數（附昨夜睡眠時長）
+  var sleepVals = (kpi.sleepPoints || []).map(function (p) { return p.value; })
+    .filter(function (v) { return typeof v === 'number' && isFinite(v); });
+  if (sleepVals.length > 0) {
+    var durs = (kpi.sleepDurationPoints || []).filter(function (p) {
+      return typeof p.value === 'number' && isFinite(p.value);
+    });
+    var lastDur = durs.length > 0 ? durs[durs.length - 1].value : null;
+    strip.appendChild(kpiCard({
+      label: '睡眠分數',
+      value: C.formatNumber(sleepVals[sleepVals.length - 1], 0),
+      note: lastDur ? '時長 ' + Math.floor(lastDur / 3600) + ' 小時 ' + Math.round((lastDur % 3600) / 60) + ' 分' : '近 30 天走勢',
+      series: sleepVals
+    }));
+  }
+
+  // ---- TSB（訓練壓力平衡）
+  var loadSeries = kpi.loadSeries || [];
+  var tsbVals = loadSeries.map(function (p) {
+    return p.tsb && typeof p.tsb.value === 'number' ? p.tsb.value : null;
+  }).filter(function (v) { return v !== null; });
+  if (tsbVals.length > 0) {
+    var lastTsb = tsbVals[tsbVals.length - 1];
+    strip.appendChild(kpiCard({
+      label: 'TSB（CTL − ATL）',
+      value: (lastTsb > 0 ? '+' : '') + C.formatNumber(lastTsb, 1),
+      note: '近 30 天走勢',
+      series: tsbVals
+    }));
+  }
+
   node.appendChild(strip);
 }
 
@@ -342,50 +281,24 @@ export function loadTodayKpi() {
     state.todayKpi = {
       loadSeries: (load && load.series) || [],
       hrvPoints: (metrics.hrv_ms && metrics.hrv_ms.points) || [],
-      rhrPoints: (metrics.resting_hr_bpm && metrics.resting_hr_bpm.points) || []
+      rhrPoints: (metrics.resting_hr_bpm && metrics.resting_hr_bpm.points) || [],
+      sleepPoints: (metrics.sleep_score && metrics.sleep_score.points) || [],
+      sleepDurationPoints: (metrics.sleep_duration_sec && metrics.sleep_duration_sec.points) || []
     };
     renderKpiStrip();
   });
 }
 
-// ------------------------------------------- 今日頁：本週課表一覽
+// ------------------------------------------- 今日頁：本課表週
 
 export function renderWeekPlanList() {
   var node = $('week-plan-list');
   if (!node) return;
   clear(node);
   if (!state.weekDays) return;
-
-  var list = h('div', 'week-plan-list');
-  state.weekDays.forEach(function (day) {
-    var row = h('div', 'wp-row day-' + day.day_state);
-    row.appendChild(h('span', 'wp-dow', dowLabel(day.date)));
-    row.appendChild(h('span', 'wp-date', day.date.slice(5)));
-
-    var planText = '\u2014';
-    if (day.planned && day.planned.length > 0) {
-      var pl = day.planned[0];
-      planText = WORKOUT_TYPE_LABEL[pl.workout_type] || pl.workout_type;
-      if (pl.planned_distance_km) planText += ' ' + C.formatNumber(pl.planned_distance_km, 1) + ' km';
-    }
-    row.appendChild(h('span', 'wp-plan', planText));
-
-    // 實際：把當天所有跑步距離加總，其餘類型只標類型名
-    var runKm = 0;
-    var otherTypes = [];
-    (day.activities || []).forEach(function (a) {
-      if (a.is_running && a.distance_km) runKm += a.distance_km;
-      else if (!a.is_running) otherTypes.push(ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type);
-    });
-    var actParts = [];
-    if (runKm > 0) actParts.push(C.formatNumber(runKm, 1) + ' km');
-    if (otherTypes.length > 0) actParts.push(otherTypes.join('、'));
-    row.appendChild(h('span', 'wp-actual', actParts.length > 0 ? actParts.join('　') : '\u2014'));
-
-    row.appendChild(h('span', 'wp-state', DAY_STATE_LABEL[day.day_state] || day.day_state));
-    list.appendChild(row);
-  });
-  node.appendChild(list);
+  var title = $('h-week');
+  if (title) title.textContent = '本課表週　' + planWeekLabel(state.weekDays);
+  node.appendChild(renderPlanWeek(state.weekDays, { selectedDate: todayISO() }));
 }
 
 // ------------------------------------------- 今日頁：最近訓練清單
@@ -408,6 +321,8 @@ export function renderRecentSessions() {
 
     row.appendChild(h('span', 'rc-date', s.date.slice(5)));
     row.appendChild(h('span', 'rc-type', WORKOUT_TYPE_LABEL[s.workout_type] || s.workout_type || '未分類'));
+    var plan = state.recentPlans && state.recentPlans[s.id];
+    row.appendChild(h('span', 'rc-plan', plan ? planSummary(plan) : '—'));
     row.appendChild(h('span', 'rc-km', s.distance_km ? C.formatNumber(s.distance_km, 2) + ' km' : '\u2014'));
     row.appendChild(h('span', 'rc-pace', s.avg_pace_sec_per_km ? C.formatPace(s.avg_pace_sec_per_km) + '/km' : '\u2014'));
     row.appendChild(h('span', 'rc-hr', s.avg_hr_bpm ? s.avg_hr_bpm + ' bpm' : '\u2014'));
@@ -416,9 +331,27 @@ export function renderRecentSessions() {
   node.appendChild(list);
 }
 
+/**
+ * 近 30 天的場次，連同各場對應的課表。/api/sessions 不含課表，故另取同一段
+ * 期間的 /api/calendar，以活動 id 找到當天課表（plan_match 為 none 的不算對應）。
+ * 行事曆抓不到時只是少了課表欄，不影響清單本身。
+ */
 export function loadRecentSessions() {
-  api('/api/sessions?range=30d').then(function (data) {
-    state.recentSessions = (data && data.sessions) || [];
+  var today = todayISO();
+  Promise.all([
+    api('/api/sessions?range=30d'),
+    api('/api/calendar?start=' + addDaysISO(today, -29) + '&end=' + today).catch(function () { return null; })
+  ]).then(function (res) {
+    state.recentSessions = (res[0] && res[0].sessions) || [];
+    var plans = {};
+    ((res[1] && res[1].days) || []).forEach(function (d) {
+      var p = (d.planned || [])[0];
+      if (!p) return;
+      (d.activities || []).forEach(function (a) {
+        if (a.plan_match && a.plan_match.state !== 'none') plans[a.id] = p;
+      });
+    });
+    state.recentPlans = plans;
     renderRecentSessions();
   }).catch(function (err) {
     showError($('recent-sessions'), err.message);
@@ -466,17 +399,12 @@ export function renderWeekStrip() {
   node.appendChild(grid);
 }
 
+/** 本課表週（週一到週日，見 plan-week.js）：週條與執行表共用同一份資料。 */
 export function loadWeekStrip() {
-  var weekStart = sundayOf(todayISO());
-  var start = weekStart.toISOString().slice(0, 10);
-  var sunday = addDaysISO(start, 6); // 週日 + 6 天 = 週六，本週的最後一天
-  api('/api/calendar?start=' + start + '&end=' + sunday).then(function (data) {
-    state.weekDays = data.days || [];
+  loadPlanWeek(todayISO()).then(function (days) {
+    state.weekDays = days;
     renderWeekStrip();
-    // 本週課表一覽與 KPI 的「本週跑量」都吃同一份 weekDays，
-    // 不另發請求，資料回來時一併更新
     renderWeekPlanList();
-    renderKpiStrip();
   }).catch(function (err) {
     showError($('week-strip'), err.message);
   });

@@ -8,7 +8,7 @@ import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable, widthOf, wrapChart } from '../core/dom.js';
 import { infoTip, closeInfoPopover, confBadge, kpiCard } from '../core/facts.js';
-import { mondayOf, addDaysISO, todayISO, dowLabel } from '../core/format.js';
+import { mondayOf, addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
 import { navigate, renderOrDefer } from '../shell/router.js';
 
 // 回答「最近狀態怎樣」的跨週數據頁（2026-10-14 依 Fu 的參考圖改版）：
@@ -472,25 +472,6 @@ export function renderOverviewZones(ov) {
 }
 
 // ---- 本週課表
-
-/**
- * 教練原文的精簡版：去掉開頭的「D2：」編號，並在第一個全形括號（我們寫入時
- * 附的換算說明）之前截斷。完整原文放在 title，hover／長按看得到。
- */
-export function shortPlanNote(notes) {
-  if (!notes) return '';
-  var text = notes.replace(/^D\d+[：:]\s*/, '');
-  var cut = text.indexOf('（');
-  return cut > 0 ? text.slice(0, cut) : text;
-}
-
-export function planSummary(p) {
-  var parts = [WORKOUT_TYPE_LABEL[p.workout_type] || p.workout_type];
-  if (p.planned_distance_km) parts.push(C.formatNumber(p.planned_distance_km, 1) + ' km');
-  else if (p.planned_duration_sec) parts.push(Math.round(p.planned_duration_sec / 60) + ' 分');
-  if (p.planned_pace_sec_per_km) parts.push('@' + C.formatPace(p.planned_pace_sec_per_km));
-  return parts.join(' ');
-}
 
 export function renderOverviewPlan() {
   var node = $('overview-plan');

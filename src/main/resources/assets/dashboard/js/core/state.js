@@ -20,12 +20,13 @@ export var state = {
   calendarMonth: null,   // 'YYYY-MM'，展開月曆時才需要，預設當月
   calendarData: null,    // /api/calendar 回傳的月曆資料（展開後才載入）
   calendarSelectedDate: null, // 'YYYY-MM-DD'，月曆下方明細顯示的是哪一天
-  weekDays: null,        // /api/calendar 的本週資料（週條用）
+  weekDays: null,        // /api/calendar 的本課表週（週一到週日；週條與執行表共用）
 
-  // 今日頁的 KPI 條與最近訓練清單。兩者都取固定區間（近 30 天），
+  // 今日頁的身體狀況趨勢與最近訓練清單。兩者都取固定區間（近 30 天），
   // 與頂列的 range 切換無關——今日頁不吃 range（見 VIEWS.today.hasRange）。
-  todayKpi: null,        // { loadSeries, hrvPoints, rhrPoints }
+  todayKpi: null,        // { loadSeries, hrvPoints, rhrPoints, sleepPoints, sleepDurationPoints }
   recentSessions: null,  // /api/sessions 近 30 天的場次（取前 8 筆顯示）
+  recentPlans: null,     // 活動 id → 當天對應的課表（最近訓練的「對應課表」欄）
   overview: null,        // /api/overview（吃 range）；ATL/CTL/TSB 另用 loadSeries
   overviewWeek: null,    // 總覽「本週課表」：/api/calendar 的本 ISO 週（週一起算）
 
@@ -209,11 +210,6 @@ export var HRV_STATUS_CLASS = {
   POOR: 'hrv-status-alert',
   NOT_ENOUGH_DATA: 'hrv-status-muted'
 };
-
-// 與後端 activity_types.RUNNING_ACTIVITY_TYPES 對應的前端唯讀複本——
-// 僅用於「今日卡的最近一場是否可跳轉單場分析」這個 UI 判斷，不影響
-// 任何資料篩選（篩選邏輯仍在後端 /api/sessions 完成）。
-export var RUNNING_ACTIVITY_TYPES_CLIENT = ['running', 'treadmill_running', 'track_running', 'trail_running'];
 
 /**
  * 目前的檢視脈絡，供 AI 教練面板產生「問這一頁」的建議問題、並在送出時

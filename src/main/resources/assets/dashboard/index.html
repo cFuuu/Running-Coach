@@ -241,21 +241,23 @@
       </section>
 
       <!--
-        KPI 條：本週跑量進度、近 7 日趨勢等一眼可見的數字，各自帶一條
-        迷你趨勢線。排在「今日」之後、「本週」之前——先看今天要做什麼，
-        再看最近的狀態，最後才是整週的細節。
+        身體狀況趨勢：HRV、靜止心率、睡眠、TSB 各帶一條近 30 天迷你趨勢線，
+        是「今天身體準備好了嗎」的依據。排在「今日」之後、「本課表週」之前——
+        先看今天要做什麼，再看身體狀況，最後才是整週的執行細節。
+        本週跑量與堂數在下方課表週的摘要列，不在這裡重複。
       -->
       <section class="panel" id="panel-kpi" aria-labelledby="h-kpi">
         <h2 class="panel-title" id="h-kpi">
-          近期概況<span class="panel-hint">數值與趨勢，不含判讀</span>
+          身體狀況<span class="panel-hint">近 30 天走勢，不含判讀</span>
         </h2>
         <div id="kpi-strip"></div>
       </section>
 
       <section class="panel" id="panel-week" aria-labelledby="h-week">
-        <h2 class="panel-title" id="h-week">本週</h2>
+        <!-- 標題由 js/views/today.js 補上課表週的日期範圍 -->
+        <h2 class="panel-title" id="h-week">本課表週</h2>
         <div id="week-strip"></div>
-        <!-- 本週課表一覽：週條只有格子，這裡列出每天的課表與完成狀態 -->
+        <!-- 課表週執行表（js/views/plan-week.js）：摘要列＋每天的課表、實際與狀態 -->
         <div id="week-plan-list"></div>
         <p class="view-link-row">
           <a class="view-link" href="#/calendar">查看課表與行事曆 →</a>
