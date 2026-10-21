@@ -1485,7 +1485,7 @@ def get_training_load(
     resolved = resolve_athlete_id(conn, athlete_id)
     window = resolve_range(conn, resolved, range_key)
     if resolved is None or not window["start_date"]:
-        return {**window, "series": []}
+        return {**window, "series": [], "garmin_reference": None}
 
     start_date = datetime.date.fromisoformat(window["start_date"])
     end_date = datetime.date.fromisoformat(window["end_date"])
@@ -1523,7 +1523,59 @@ def get_training_load(
             }
         )
 
-    return {**window, "series": series}
+    return {
+        **window,
+        "series": series,
+        "garmin_reference": _garmin_load_reference(conn, resolved, start_date, end_date),
+    }
+
+
+def _garmin_load_reference(
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> dict | None:
+    """Garmin 自己的急性／慢性負荷與訓練狀態，僅供對照（2026-10-21 Fu 拍板）。
+
+    主指標是本專案的 TSB；Garmin 的單場負荷是 EPOC 黑盒、尺度與 TRIMP 不同，
+    只能對照方向，不可比絕對值或相加。與 _garmin_vdot_reference() 同一個
+    形狀：for_display_only，判斷層不讀。
+
+    ⚠️ training_status.chronic_load_optimal_min/max 欄位名稱有誤導：真實資料
+    每列都恰為 chronic_load × 0.8／× 1.5，是**急性負荷**的建議範圍（即 ACWR
+    0.8–1.5），這裡輸出時改用符合語意的鍵名。
+    """
+    rows = conn.execute(
+        """
+        SELECT date, training_status_phrase, acute_load, chronic_load, acwr_ratio,
+               acwr_status, chronic_load_optimal_min, chronic_load_optimal_max
+        FROM training_status
+        WHERE athlete_id = ? AND date >= ? AND date <= ?
+        ORDER BY date
+        """,
+        (athlete_id, start_date.isoformat(), end_date.isoformat()),
+    ).fetchall()
+    if not rows:
+        return None
+    return {
+        "for_display_only": True,
+        "note": "Garmin（Firstbeat）以 EPOC 推估的負荷，演算法未公開、尺度與本專案 TRIMP 不同，"
+                "僅供對照方向，不得作為判讀依據",
+        "series": [
+            {
+                "date": row["date"],
+                "status": row["training_status_phrase"],
+                "acute_load": row["acute_load"],
+                "chronic_load": row["chronic_load"],
+                "acwr": row["acwr_ratio"],
+                "acwr_status": row["acwr_status"],
+                "acute_load_optimal_min": _round(row["chronic_load_optimal_min"]),
+                "acute_load_optimal_max": _round(row["chronic_load_optimal_max"]),
+            }
+            for row in rows
+        ],
+    }
 
 
 # --------------------------------------------------------------------------

@@ -893,6 +893,44 @@ class TestTrainingLoad(DashboardQueryTestCase):
         self.addCleanup(empty_conn.close)
         result = queries.get_training_load(empty_conn, range_key="7d")
         self.assertEqual(result["series"], [])
+        self.assertIsNone(result["garmin_reference"])
+
+    def _add_training_status(self, date, acute, chronic):
+        self.conn.execute(
+            """
+            INSERT INTO training_status (athlete_id, date, training_status_phrase,
+                acute_load, chronic_load, acwr_ratio, acwr_status,
+                chronic_load_optimal_min, chronic_load_optimal_max,
+                source, fetched_at)
+            VALUES (?, ?, 'PRODUCTIVE_3', ?, ?, ?, 'OPTIMAL', ?, ?,
+                    'garmin_export', '2026-03-10T00:00:00')
+            """,
+            (self.athlete_id, date, acute, chronic, round(acute / chronic, 1),
+             chronic * 0.8, chronic * 1.5),
+        )
+
+    def test_garmin_reference_none_without_training_status(self):
+        result = queries.get_training_load(self.conn, range_key="7d")
+        self.assertIsNone(result["garmin_reference"])
+
+    def test_garmin_reference_is_display_only_and_limited_to_range(self):
+        self._add_training_status("2026-03-09", 403.0, 332.0)
+        self._add_training_status("2026-01-01", 100.0, 100.0)  # 視窗外
+        ref = queries.get_training_load(self.conn, range_key="7d")["garmin_reference"]
+        self.assertTrue(ref["for_display_only"])
+        self.assertEqual([d["date"] for d in ref["series"]], ["2026-03-09"])
+        day = ref["series"][0]
+        self.assertEqual(day["status"], "PRODUCTIVE_3")
+        self.assertEqual(day["acute_load"], 403.0)
+        self.assertEqual(day["chronic_load"], 332.0)
+
+    def test_garmin_optimal_range_is_exposed_as_acute_load_range(self):
+        """DB 欄位名叫 chronic_load_optimal_*，但語意是急性負荷的建議範圍。"""
+        self._add_training_status("2026-03-09", 403.0, 332.0)
+        day = queries.get_training_load(self.conn, range_key="7d")["garmin_reference"]["series"][0]
+        self.assertEqual(day["acute_load_optimal_min"], 265.6)
+        self.assertEqual(day["acute_load_optimal_max"], 498.0)
+        self.assertNotIn("chronic_load_optimal_min", day)
 
 
 class TestOverview(DashboardQueryTestCase):

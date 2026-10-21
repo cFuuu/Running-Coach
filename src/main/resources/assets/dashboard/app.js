@@ -198,6 +198,20 @@
 
   // Garmin（Firstbeat）的 HRV 狀態分類。值來自 daily_wellness.hrv_status，
   // 由手錶端演算法判定，本專案只做顯示與標注偏誤，不重新計算也不覆寫。
+  // Garmin 訓練狀態：phrase 形如 PRODUCTIVE_3，底線後的數字是回饋文案變體，
+  // 只取前綴對照
+  var GARMIN_TRAINING_STATUS_LABEL = {
+    PEAKING: '巔峰',
+    PRODUCTIVE: '有效訓練',
+    MAINTAINING: '維持',
+    RECOVERY: '恢復',
+    UNPRODUCTIVE: '效率低落',
+    DETRAINING: '退化',
+    OVERREACHING: '過度訓練',
+    STRAINED: '疲勞'
+  };
+  var GARMIN_ACWR_STATUS_LABEL = { LOW: '偏低', OPTIMAL: '最佳', HIGH: '偏高', VERY_HIGH: '非常高' };
+
   var HRV_STATUS_LABEL = {
     BALANCED: '平衡',
     UNBALANCED: '不平衡',
@@ -1928,6 +1942,53 @@
       }
     }
     node.appendChild(card);
+    var garminBlock = garminLoadBlock(series.garmin_reference, rows, widthOf(node));
+    if (garminBlock) node.appendChild(garminBlock);
+  }
+
+  /**
+   * Garmin 急性負荷（僅供對照）。走 garmin_reference（for_display_only），
+   * 不是 fact() 契約，故不掛信賴度 badge、改標「僅供對照」。X 軸沿用 TSB
+   * 序列的日期，Garmin 沒資料的日子留空斷線，兩張圖才對得齊。
+   */
+  function garminLoadBlock(ref, rows, containerWidth) {
+    if (!ref || !ref.series || ref.series.length === 0) return null;
+    var byDate = {};
+    ref.series.forEach(function (d) { byDate[d.date] = d; });
+    var latest = ref.series[ref.series.length - 1];
+
+    var card = h('div', 'chart-block');
+    var title = h('h3', 'chart-title', 'Garmin 急性負荷');
+    var refBadge = h('span', 'conf-badge conf-reference', '僅供對照');
+    refBadge.title = ref.note || '';
+    title.appendChild(refBadge);
+    card.appendChild(title);
+    card.appendChild(wrapChart(C.trendLineChart(rows.map(function (r) {
+      var g = byDate[r.date];
+      return { date: r.date, value: g ? g.acute_load : null };
+    }), {
+      label: 'Garmin 急性負荷',
+      formatter: function (v) { return C.formatNumber(v, 0); },
+      containerWidth: containerWidth
+    })));
+
+    var statusKey = (latest.status || '').replace(/_\d+$/, '');
+    var parts = [
+      '截至 ' + C.shortDate(latest.date),
+      '訓練狀態 ' + (GARMIN_TRAINING_STATUS_LABEL[statusKey] || latest.status || '—'),
+      '急性 ' + C.formatNumber(latest.acute_load, 0) + ' / 慢性 ' + C.formatNumber(latest.chronic_load, 0)
+    ];
+    if (latest.acute_load_optimal_min !== null && latest.acute_load_optimal_max !== null) {
+      parts.push('建議急性範圍 ' + C.formatNumber(latest.acute_load_optimal_min, 0) + '–'
+        + C.formatNumber(latest.acute_load_optimal_max, 0));
+    }
+    if (latest.acwr !== null) {
+      parts.push('負荷比 ' + C.formatNumber(latest.acwr, 1)
+        + (latest.acwr_status ? '（' + (GARMIN_ACWR_STATUS_LABEL[latest.acwr_status] || latest.acwr_status) + '）' : ''));
+    }
+    card.appendChild(h('div', 'chart-note', parts.join('　·　')));
+    card.appendChild(h('div', 'chart-note', ref.note));
+    return card;
   }
 
   function loadLoadSeries() {
