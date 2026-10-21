@@ -78,6 +78,8 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 # 等 server 開始接受連線的上限；逾時就放棄開瀏覽器（server 照常跑）
 BROWSER_WAIT_TIMEOUT_SEC = 15.0
+# Ctrl+C 後等既有連線（keep-alive、分析串流）自行結束的上限；逾時強制斷線，避免無限卡住
+GRACEFUL_SHUTDOWN_TIMEOUT_SEC = 3
 
 
 def create_app(
@@ -204,7 +206,10 @@ def main() -> None:
         ).start()
 
     uvicorn.run(
-        create_app(args.db_path, profile_path=args.profile_path), host=args.host, port=args.port
+        create_app(args.db_path, profile_path=args.profile_path),
+        host=args.host,
+        port=args.port,
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_SEC,
     )
 
 
