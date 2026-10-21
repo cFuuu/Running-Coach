@@ -13,10 +13,13 @@
 :root {
   color-scheme: light;
 
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --surface-sunken: #fafbfc;
-  --border: #dfe3e8;
+  /* 2026-10-14 Fu 指定：米色為底、藍色為主題色。只換中性底色系（頁面／卡片／
+     凹陷面／邊框），強調色與圖表色不動，對比度由 test_dashboard_theme_contrast 把關。
+     --bg 的暖度剛好壓在該測試「大面積背景通道落差 ≤16」的上限（#f4ede1 是 19，會被擋）。 */
+  --bg: #f4eee4;
+  --surface: #fffdf9;
+  --surface-sunken: #faf5ec;
+  --border: #e6dccb;
   --text: #1f2933;
   --text-muted: #66727f;
   /* 強調色（品牌藍）。這六個 accent 相關 token 的色號是 WCAG 相對亮度公式的
@@ -37,7 +40,7 @@
   --c-distance: #2f6f9f;
   --c-te: #7a5aa8;
   --c-volume: #4a8fb5;
-  --c-grid: #eceff2;
+  --c-grid: #efe8dc;
   --c-axis: #b7bfc8;
 
   /* 每日身體狀況指標各自的折線色（前 8 個為原始指標，後 5 個是 Phase 5 新開放） */
@@ -64,7 +67,7 @@
   --c-zone-5: #c2452d;
 
   --dot-fill: #fff;
-  --bar-track: #eef1f4;
+  --bar-track: #f0e9dd;
   --bar-partial-overlay: rgba(255, 255, 255, 0.45);
 
   --up: #b03a2e;
@@ -447,6 +450,13 @@ h1, h2, h3 {
   white-space: nowrap;
 }
 
+/* 最後更新時間的明細（最新活動、身體數據） */
+.sidebar-sync .sync-detail {
+  font-size: 0.72rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---- 內容區 ---- */
 
 .content {
@@ -496,6 +506,14 @@ h1, h2, h3 {
   gap: 4px;
   position: relative;
   z-index: 130;
+}
+
+/* 手機上 AI 面板是全螢幕 sheet（不是平板的側抽屜），上面那條 z-index 會讓
+   工具列浮在面板內容上、蓋住文字；面板開著時工具列本來也用不到，直接藏起來。 */
+@media (max-width: 767px) {
+  body.coach-open .topbar-tools {
+    visibility: hidden;
+  }
 }
 
 .tool-btn {
@@ -708,6 +726,68 @@ body.coach-open .coach-panel {
   font-size: 0.84rem;
 }
 
+/* AI 分析報告畫面：與 .coach-body 同一個版位，顯示時對話區由 coach.js 隱藏 */
+.coach-analysis {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--gap);
+}
+
+.coach-analysis[hidden],
+.coach-body[hidden] {
+  display: none;
+}
+
+.coach-analysis-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.coach-analysis-meta strong {
+  color: var(--text);
+}
+
+.coach-analysis-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.coach-analysis-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.coach-analysis-tools-summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+/* 下拉選單吃剩餘寬度、可縮，返回鍵固定寬度不被擠出面板 */
+.coach-analysis .coach-conv-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 疊上 .coach-icon-btn 的類別提高權重：該規則定義在後面，會把寬度蓋回 36px */
+.coach-icon-btn.coach-analysis-back {
+  flex: none;
+  width: auto;
+  padding: 0 10px;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
 /* 面板收合後的重新展開入口（桌機）。
  *
  * 原本是佔滿版面高度、48px 寬的直排文字灰長條，改成貼齊右緣的圓形浮動按鈕，
@@ -797,7 +877,9 @@ body.coach-open .coach-panel {
   z-index: 100;
   height: 56px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* 6 格（今日／總覽／行事曆／紀錄／負荷／身體）：390px 寬每格 65px，
+     仍大於 44px 觸控下限 */
+  grid-template-columns: repeat(6, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
@@ -918,7 +1000,8 @@ body.coach-open .coach-fab {
   }
 
   /* 72px 欄放不下「日期＋落後天數」，只留日期（天數在今日卡看得到） */
-  .sidebar-sync .sync-behind {
+  .sidebar-sync .sync-behind,
+  .sidebar-sync .sync-detail {
     display: none;
   }
 
@@ -990,6 +1073,12 @@ body.coach-open .coach-fab {
     align-items: flex-start;
     padding: 0 8px;
     text-align: left;
+  }
+
+  /* 768px 起的規則把明細藏起來是給 72px 圖示欄用的；240px 完整側邊列要顯示回來 */
+  .sidebar-sync .sync-behind,
+  .sidebar-sync .sync-detail {
+    display: block;
   }
 
   .sidebar-foot .meta-info,
@@ -2366,6 +2455,901 @@ body.coach-open .coach-fab {
 /* 呼應圖表內訓練日背景色帶的樣式（同色、低透明度），高度加大成色塊 */
 .swatch-training { background: var(--c-hr); opacity: 0.35; height: 10px; width: 10px; border-radius: 2px; }
 
+/* ------------------------------------------------------------ 總覽
+ *
+ * 版面（2026-10-14 依 Fu 的參考圖改版）：摘要列 → 5 張指標卡 → 週跑量＋心率區間
+ * 並排 → 最佳成績。強度分層借用心率區間色（低＝Z2 綠、中＝Z3 黃、高＝Z5 紅），
+ * 與心率區間列的顏色語彙一致，深色模式也隨 --c-zone-* 自動切換。
+ * 未分類用軸線色：它是「沒有資料」而不是一種強度，不該搶眼。
+ */
+.bar-intensity-low { fill: var(--c-zone-2); background: var(--c-zone-2); }
+.bar-intensity-mid { fill: var(--c-zone-3); background: var(--c-zone-3); }
+.bar-intensity-high { fill: var(--c-zone-5); background: var(--c-zone-5); }
+.bar-intensity-unknown { fill: var(--c-axis); background: var(--c-axis); }
+
+.swatch-bar-intensity-low,
+.swatch-bar-intensity-mid,
+.swatch-bar-intensity-high,
+.swatch-bar-intensity-unknown { width: 10px; height: 10px; }
+.swatch-bar-intensity-low { background: var(--c-zone-2); }
+.swatch-bar-intensity-mid { background: var(--c-zone-3); }
+.swatch-bar-intensity-high { background: var(--c-zone-5); }
+.swatch-bar-intensity-unknown { background: var(--c-axis); }
+
+/* 不完整週（被區間切到或還沒過完）：半透明，與完整週區分 */
+.bar-partial-week { opacity: 0.5; }
+
+/* 週跑量圖上的課表目標虛線 */
+.bar-target {
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+
+.chart-svg text.bar-target-label {
+  fill: var(--text);
+  font-weight: 600;
+}
+
+/* 時間範圍小標籤：每個數字涵蓋哪段時間，一眼可見 */
+.window-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+
+/* 中性標籤：增減幅度、佔比等。刻意不用紅綠——顏色會暗示好壞，判讀屬 AI 教練 */
+.neutral-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ---- 摘要列 */
+.overview-strip-panel {
+  padding: 0;
+}
+
+/* 摘要佔較寬的一格（放 AI 分析按鈕），資料品質一格 */
+.overview-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr);
+}
+
+.ai-analysis-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+}
+
+.ai-analysis-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ai-analysis-btn:hover {
+  filter: brightness(1.08);
+}
+
+.ai-analysis-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ai-analysis-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.ai-analysis-history {
+  min-height: 40px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ai-analysis-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.strip-cell {
+  padding: 12px 16px;
+  min-width: 0;
+}
+
+.strip-cell + .strip-cell {
+  border-left: 1px solid var(--border);
+}
+
+.strip-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.strip-line {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.strip-line strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+@container overview (max-width: 599px) {
+  .overview-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .strip-cell + .strip-cell {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* ---- 指標卡：不包在面板裡，直接是一排白卡 */
+.overview-kpis {
+  margin-bottom: var(--gap);
+}
+
+/* 斷點依「總覽內容欄本身的寬度」而非視窗寬度（container query）：桌機開著
+   AI 面板時內容欄會少 360px，用視窗寬度判斷會在 1440px 螢幕上把週跑量圖
+   並排壓到看不清。收起面板時內容欄變寬，版面自動切回並排。 */
+#view-overview {
+  container: overview / inline-size;
+}
+
+/* 5 張卡：內容欄夠寬一列 5 張，中等寬度 3+2，手機 2 欄 */
+.overview-kpi-strip {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container overview (min-width: 600px) {
+  .overview-kpi-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container overview (min-width: 1150px) {
+  .overview-kpi-strip {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.overview-kpis .kpi-card {
+  background: var(--surface);
+  border-radius: 14px;
+}
+
+.overview-kpis .kpi-value {
+  font-size: 1.7rem;
+}
+
+/* 手機兩欄時，數字旁的標籤（+279% vs 前 2 週）放不下就換到下一行，不撐出卡片 */
+.overview-kpis .kpi-value-wrap {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/* ---- 週跑量＋心率區間：寬螢幕並排（跑量圖較寬），窄螢幕上下堆疊。
+   心率區間改成 HTML 列（不是固定 viewBox 的 SVG），窄欄也不會縮到看不清。 */
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap);
+}
+
+@container overview (min-width: 1150px) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+}
+
+.overview-grid > .panel {
+  min-width: 0;
+}
+
+.overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.overview-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.overview-legend {
+  margin-top: 6px;
+}
+
+/* 低／中／高三段比例條，80% 處的參考線 */
+.zone-split {
+  position: relative;
+  display: flex;
+  height: 14px;
+  border-radius: 7px;
+  overflow: visible;
+  background: var(--bar-track);
+  margin: 4px 0 4px;
+}
+
+.zone-split.is-compact {
+  height: 6px;
+  margin: 8px 0 2px;
+}
+
+.zone-split-seg {
+  display: block;
+  height: 100%;
+}
+
+.zone-split-seg:first-child { border-radius: 7px 0 0 7px; }
+.zone-split-seg:nth-child(3) { border-radius: 0 7px 7px 0; }
+
+.zone-split-ref {
+  position: absolute;
+  left: 80%;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--text);
+}
+
+.zone-split-labels {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zone-row {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 62px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 0.82rem;
+}
+
+.zone-name strong {
+  font-weight: 600;
+}
+
+.zone-name-en {
+  margin-left: 4px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.zone-bpm {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.zone-track {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bar-track);
+  overflow: hidden;
+}
+
+.zone-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.bar-zone-fill-1 { background: var(--c-zone-1); }
+.bar-zone-fill-2 { background: var(--c-zone-2); }
+.bar-zone-fill-3 { background: var(--c-zone-3); }
+.bar-zone-fill-4 { background: var(--c-zone-4); }
+.bar-zone-fill-5 { background: var(--c-zone-5); }
+
+.zone-pct {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 420px) {
+  .zone-row {
+    grid-template-columns: minmax(0, 1fr) 56px 44px;
+  }
+  .zone-row .zone-track { display: none; }
+}
+
+/* ⓘ 定義按鈕。視覺上是 20px 小圓，但用透明 padding 把觸控區撐到 44px
+   （D.1 觸控目標下限），負 margin 抵銷，不撐高所在那一行。 */
+.kpi-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.info-tip-btn {
+  flex: none;
+  box-sizing: content-box;
+  width: 20px;
+  height: 20px;
+  padding: 12px;
+  margin: -12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: italic 600 0.75rem/20px Georgia, serif;
+  cursor: pointer;
+  position: relative;
+}
+
+.info-tip-btn::before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+.info-tip-btn:hover,
+.info-tip-btn[aria-expanded="true"] {
+  color: var(--accent-text);
+}
+
+.info-tip-btn[aria-expanded="true"]::before {
+  border-color: var(--accent-border);
+}
+
+.info-tip-btn:focus-visible {
+  outline: none;
+}
+
+.info-tip-btn:focus-visible::before {
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* ⓘ 的定義小視窗：fixed 定位、由 app.js 依按鈕位置擺放並夾在視窗內，
+   寬度上限 340px（窄螢幕為畫面寬減兩側 12px），內容過長時自己捲動。 */
+.info-popover {
+  position: fixed;
+  z-index: 300;
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 10px 30px var(--panel-shadow);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.info-popover:focus {
+  outline: none;
+}
+
+.info-popover-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 6px 6px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.info-popover-title {
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.info-popover-close {
+  flex: none;
+  width: 44px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.info-popover-close:hover,
+.info-popover-close:focus-visible {
+  color: var(--text);
+  background: var(--surface-sunken);
+  outline: none;
+}
+
+.info-popover-body {
+  padding: 10px 14px 12px;
+}
+
+.info-popover-body p {
+  margin: 0;
+}
+
+.info-popover-body p + p {
+  margin-top: 8px;
+}
+
+.kpi-value-wrap .conf-badge {
+  margin-left: 6px;
+  align-self: center;
+}
+
+.kpi-note .conf-badge {
+  margin-left: 6px;
+}
+
+/* ---- 本週課表：7 格（週一～週日），內容欄窄時改成直排清單 */
+.plan-week {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+@container overview (min-width: 760px) {
+  .plan-week {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
+.plan-day {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--day-rest-border);
+  border-radius: var(--radius);
+  background: var(--day-rest-bg);
+}
+
+.plan-day.day-planned_done {
+  background: var(--day-planned-done-bg);
+  border-color: var(--day-planned-done-border);
+}
+
+.plan-day.day-planned_missed {
+  background: var(--day-planned-missed-bg);
+  border-color: var(--day-planned-missed-border);
+}
+
+.plan-day.day-unplanned_activity {
+  background: var(--day-unplanned-bg);
+  border-color: var(--day-unplanned-border);
+}
+
+.plan-day.is-today {
+  box-shadow: 0 0 0 2px var(--day-today-ring);
+}
+
+.plan-day-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.plan-dow {
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.plan-date {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.plan-type {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.plan-type.plan-rest {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* 教練原文：最多 3 行，完整內容在 title */
+.plan-note {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plan-actual {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 2px 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.plan-actual:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.plan-state {
+  margin-top: auto;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ---- 個人最佳成績：固定五格（3K／5K／10K／半馬／全馬），每格只放最佳一筆，
+   沒紀錄的格子保留；點卡片在下方整排展開該距離的全部成績 */
+.pb-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@container overview (min-width: 600px) {
+  .pb-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.pb-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+  padding: 14px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+/* 頂端色條：有紀錄的卡片才有，空格保持虛線留白 */
+.pb-card:not(.is-empty)::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--accent-text);
+  opacity: 0.55;
+}
+
+.pb-card.is-empty {
+  border-style: dashed;
+  background: transparent;
+}
+
+.pb-card.is-expandable {
+  cursor: pointer;
+}
+
+.pb-card.is-expandable:hover {
+  border-color: var(--accent-text);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.pb-card.is-open {
+  border-color: var(--accent-text);
+  box-shadow: 0 0 0 1px var(--accent-text);
+}
+
+.pb-card.is-open::before {
+  opacity: 1;
+}
+
+.pb-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pb-card {
+    transition: none;
+  }
+
+  .pb-card.is-expandable:hover {
+    transform: none;
+  }
+}
+
+.pb-card-head {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.pb-distance {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.pb-count {
+  font-size: 0.7rem;
+  color: var(--accent-text);
+}
+
+.pb-card.is-expandable .pb-count::after {
+  content: " ▸";
+}
+
+.pb-card.is-open .pb-count::after {
+  content: " ▾";
+}
+
+.pb-empty-text {
+  margin-top: 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.pb-time {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-pace {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* VDOT 做成膠囊，是卡片上唯一帶底色的數字 */
+.pb-vdot {
+  margin-top: 6px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--tag-planned-bg);
+  color: var(--accent-text);
+  font-size: 0.76rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 名稱放最下面，用分隔線與數字區隔；最多兩行、所有卡片等高 */
+.pb-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 3.2em;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  overflow: hidden;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* 展開清單：整排，不撐高單張卡片 */
+.pb-detail {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.pb-detail:focus {
+  outline: none;
+}
+
+.pb-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pb-detail-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.pb-detail-close {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pb-detail-close:hover {
+  color: var(--text);
+}
+
+.pb-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pb-row {
+  display: grid;
+  grid-template-columns: 2em 6.5em 5.5em 6.5em minmax(0, 1fr) 5.5em;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 0;
+  border: none;
+  border-top: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pb-list li:first-child .pb-row {
+  border-top: none;
+}
+
+.pb-row:hover .pb-row-time,
+.pb-row:focus-visible .pb-row-time {
+  color: var(--accent-text);
+}
+
+.pb-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.pb-row-rank,
+.pb-row-date,
+.pb-row-pace {
+  color: var(--text-muted);
+}
+
+.pb-row-time {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pb-row.is-best .pb-row-time {
+  font-weight: 700;
+}
+
+.pb-row-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pb-row-vdot {
+  text-align: right;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* 窄版：名稱換到第二行，其餘維持一列 */
+/* 窄版：第一列「名次 時間 配速 VDOT」，第二列「日期 名稱」 */
+@container overview (max-width: 599px) {
+  .pb-row {
+    grid-template-columns: 1.6em 6.5em minmax(0, 1fr) auto;
+    row-gap: 0;
+  }
+
+  .pb-row-date {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 0.74rem;
+  }
+
+  .pb-row-name {
+    grid-column: 3 / -1;
+    grid-row: 2;
+    white-space: normal;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+  }
+
+  .pb-row-vdot {
+    grid-column: 4;
+    grid-row: 1;
+  }
+}
+
+.pb-manual {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--tag-race-border);
+  border-radius: 6px;
+  background: var(--tag-race-bg);
+  color: var(--tag-race-text);
+  font-size: 0.62rem;
+  font-weight: 600;
+  vertical-align: 2px;
+}
+
 /* ------------------------------------------------------------ 每日身體狀況：指標自訂面板 */
 
 .wellness-customize {
@@ -2950,9 +3934,18 @@ body.coach-open .coach-fab {
 
 .settings-sync {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   font-size: 0.9rem;
+  text-align: right;
+}
+
+/* 同一份「最後更新時間」（renderSyncFreshness）：手機沒有側邊列，這裡是它的入口 */
+.settings-sync .sync-detail,
+.settings-sync .sync-behind {
+  font-size: 0.78rem;
+  color: var(--text-muted);
 }
 
 /* ---- 同步進行中與結果訊息（N-19 §7）---- */

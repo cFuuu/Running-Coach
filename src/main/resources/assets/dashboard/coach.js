@@ -720,6 +720,239 @@
     }).catch(function () { /* 標題只是顯示，抓不到不影響對話 */ });
   }
 
+  // ------------------------------------------------------------ AI 分析報告（總覽按鈕）
+  //
+  // 由後端 /api/analysis 在背景啟動 Claude Code 無互動 session 產生（不需要
+  // ANTHROPIC_API_KEY，因此聊天停用時分析仍可用）。報告顯示在面板裡獨立的
+  // 「分析報告」畫面（#coach-analysis），解讀仍只出現在面板中（D.1）。
+  // 報告由後端存進 analysis_reports，下拉選單可回看過去的分析。
+
+  var analysis = {
+    reports: [],      // 過去的分析清單（/api/analysis）
+    current: null,    // {id, created_at, status, tools:[], denied:[], text, report, error}
+    running: false
+  };
+
+  function showAnalysisView(on) {
+    var view = $('coach-analysis');
+    var body = $('coach-body');
+    if (view) view.hidden = !on;
+    if (body) body.hidden = on;
+  }
+
+  /** 瀏覽器當地時間的 ISO 字串（與後端存的 created_at 同為當地時間，不可用 toISOString 的 UTC）。 */
+  function localIsoNow() {
+    var d = new Date();
+    var p2 = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate())
+      + 'T' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+  }
+
+  /** 清單預覽：去掉 markdown 標記（# 標題、> 引言、清單符號），只留文字。 */
+  function plainPreview(text) {
+    return String(text || '').replace(/^[\s#>*\-]+/, '').replace(/[*_`]/g, '');
+  }
+
+  function formatReportTime(iso) {
+    if (!iso) return '';
+    return iso.slice(5, 10).replace('-', '/') + ' ' + iso.slice(11, 16);
+  }
+
+  function loadAnalysisList() {
+    return api(withAthlete('/api/analysis')).then(function (data) {
+      analysis.reports = data.reports || [];
+      renderAnalysis();
+    }).catch(function () { /* 清單抓不到不影響正在看的報告 */ });
+  }
+
+  function openReport(id) {
+    return api(withAthlete('/api/analysis/' + id)).then(function (r) {
+      analysis.current = {
+        id: r.id,
+        created_at: r.created_at,
+        status: r.status,
+        // 保存的報告只記工具名稱與參數，不存查詢原文（避免把整包資料重複存一份）
+        tools: (r.tools || []).map(function (t) {
+          return { name: t.name, input: t.input, isError: t.is_error, result: '（已保存的報告不含查詢原文）' };
+        }),
+        denied: [],
+        text: '',
+        report: r.report_text,
+        error: r.error
+      };
+      renderAnalysis();
+    });
+  }
+
+  function renderAnalysis() {
+    var view = $('coach-analysis');
+    if (!view) return;
+    clear(view);
+
+    var bar = h('div', 'coach-convbar');
+    var select = h('select', 'coach-conv-select');
+    select.setAttribute('aria-label', '選擇分析報告');
+    if (analysis.reports.length === 0) {
+      select.appendChild(h('option', null, '尚無分析報告'));
+      select.disabled = true;
+    }
+    analysis.reports.forEach(function (r) {
+      var opt = h('option', null, formatReportTime(r.created_at) + '　'
+        + (r.status === 'done' ? (plainPreview(r.preview) || '分析報告') : r.status === 'error' ? '（失敗）' : '（進行中）'));
+      opt.value = String(r.id);
+      if (analysis.current && analysis.current.id === r.id) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.disabled = select.disabled || analysis.running;
+    select.addEventListener('change', function () {
+      var id = parseInt(select.value, 10);
+      if (!isNaN(id)) openReport(id);
+    });
+    var back = h('button', 'coach-icon-btn coach-analysis-back', '返回對話');
+    back.type = 'button';
+    back.addEventListener('click', function () { showAnalysisView(false); });
+    bar.appendChild(select);
+    bar.appendChild(back);
+    view.appendChild(bar);
+
+    var log = h('div', 'coach-log coach-analysis-log');
+    log.setAttribute('aria-live', 'polite');
+    var cur = analysis.current;
+    if (!cur) {
+      log.appendChild(h('p', 'coach-placeholder', '按總覽的「AI 分析」按鈕產生一份分析，或從上方選單回看過去的報告。'));
+      view.appendChild(log);
+      return;
+    }
+
+    var meta = h('div', 'coach-analysis-meta');
+    meta.appendChild(h('strong', null, '最近一週訓練與身體狀況分析'));
+    meta.appendChild(h('span', null, formatReportTime(cur.created_at)
+      + (cur.status === 'running' ? '　分析中…' : '')));
+    log.appendChild(meta);
+
+    if (cur.tools.length > 0) {
+      // 工具清單收成一個可展開的區塊：分析中展開看進度，完成後收起讓報告在第一屏
+      var group = h('details', 'coach-bubble coach-bubble-coach coach-analysis-tools');
+      group.open = cur.status === 'running';
+      group.appendChild(h('summary', 'coach-analysis-tools-summary',
+        '查了 ' + cur.tools.length + ' 個工具' + (cur.status === 'running' ? '（進行中）' : '（點開看明細）')));
+      cur.tools.forEach(function (t) { group.appendChild(toolChipNode(t)); });
+      log.appendChild(group);
+    }
+    cur.denied.forEach(function (name) {
+      log.appendChild(h('p', 'coach-analysis-note', '已擋下寫入型工具 ' + name + '（分析只開放唯讀查詢）'));
+    });
+
+    if (cur.status === 'running') {
+      log.appendChild(h('p', 'coach-analysis-note',
+        '正在查資料與分析（已查 ' + cur.tools.length + ' 個工具），通常需要 1～2 分鐘。'));
+    }
+    var reportText = cur.report || cur.text;
+    if (reportText) {
+      var bubble = h('div', 'coach-bubble coach-bubble-coach');
+      var md = h('div', 'coach-md');
+      md.innerHTML = renderMarkdown(reportText); // 已 escape，見 renderMarkdown
+      bubble.appendChild(md);
+      log.appendChild(bubble);
+    }
+    if (cur.error) log.appendChild(h('p', 'coach-error', '分析失敗：' + cur.error));
+    view.appendChild(log);
+  }
+
+  function applyAnalysisEvent(name, data) {
+    var cur = analysis.current;
+    if (name === 'start') {
+      cur.id = data.id;
+    } else if (name === 'tool_use') {
+      cur.tools.push({ id: data.id, name: data.name, input: data.input, result: null, isError: false });
+    } else if (name === 'tool_result') {
+      cur.tools.forEach(function (t) {
+        if (t.id === data.id) {
+          t.result = data.preview + (data.truncated ? '\n…（僅顯示前段）' : '');
+          t.isError = data.is_error;
+        }
+      });
+    } else if (name === 'denied') {
+      cur.denied.push(data.tool);
+    } else if (name === 'text') {
+      cur.text = cur.text ? cur.text + '\n\n' + data.text : data.text;
+    } else if (name === 'done') {
+      cur.status = data.is_error ? 'error' : 'done';
+      cur.report = data.report;
+    } else if (name === 'error') {
+      cur.status = 'error';
+      cur.error = data.message;
+    }
+    renderAnalysis();
+  }
+
+  /**
+   * 外部入口：打開面板並跑一次新的分析（總覽「AI 分析」按鈕）。
+   * 不能跑時 reject 一個帶中文說明的 Error，由呼叫端顯示在按鈕旁。
+   * @returns {Promise}
+   */
+  function runAnalysis() {
+    if (window.DashboardApp && window.DashboardApp.openCoachPanel) {
+      window.DashboardApp.openCoachPanel();
+    }
+    if (analysis.running) return Promise.reject(new Error('分析進行中，請等它完成'));
+    showAnalysisView(true);
+
+    return api('/api/analysis/status').then(function (status) {
+      if (!status.client_allowed) throw new Error('AI 分析僅限本機使用');
+      if (!status.enabled) throw new Error('AI 分析無法使用：' + (status.reason || '未知原因'));
+      if (status.running) throw new Error('已有一個分析正在進行');
+
+      analysis.running = true;
+      analysis.current = {
+        id: null, created_at: localIsoNow(), status: 'running',
+        tools: [], denied: [], text: '', report: null, error: null
+      };
+      renderAnalysis();
+      return fetch('.' + withAthlete('/api/analysis'), {
+        method: 'POST',
+        headers: { Accept: 'text/event-stream' }
+      });
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          throw new Error((data && data.detail) || ('HTTP ' + res.status));
+        });
+      }
+      if (!res.body) throw new Error('這個瀏覽器不支援串流讀取。');
+      return pumpSSE(res.body.getReader(), applyAnalysisEvent);
+    }).then(function () {
+      analysis.running = false;
+      if (analysis.current && analysis.current.status === 'running') {
+        analysis.current.status = 'error';
+        analysis.current.error = '連線中斷，未收到完整結果';
+      }
+      renderAnalysis();
+      return loadAnalysisList();
+    }, function (err) {
+      analysis.running = false;
+      if (analysis.current && analysis.current.status === 'running') {
+        analysis.current.status = 'error';
+        analysis.current.error = err.message;
+      }
+      renderAnalysis();
+      loadAnalysisList();
+      throw err;
+    });
+  }
+
+  /** 外部入口：打開面板的分析報告畫面，回看過去的分析（不跑新的）。 */
+  function showAnalyses() {
+    if (window.DashboardApp && window.DashboardApp.openCoachPanel) {
+      window.DashboardApp.openCoachPanel();
+    }
+    showAnalysisView(true);
+    renderAnalysis();
+    return loadAnalysisList().then(function () {
+      if (!analysis.current && analysis.reports.length > 0) return openReport(analysis.reports[0].id);
+    });
+  }
+
   // ------------------------------------------------------------ 啟動
 
   function init() {
@@ -757,8 +990,10 @@
     init();
   }
 
-  // 對外只暴露除錯用的狀態讀取（面板本身不提供外部操作入口）
+  // 對外暴露：除錯用的狀態讀取，以及總覽「AI 分析」用的兩個操作入口
   window.CoachPanel = {
+    runAnalysis: runAnalysis,
+    showAnalyses: showAnalyses,
     getState: function () { return state; },
     renderMarkdown: renderMarkdown,
     contextLine: contextLine,

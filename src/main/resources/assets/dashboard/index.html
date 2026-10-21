@@ -72,6 +72,13 @@
   <symbol id="icon-close" viewBox="0 0 24 24">
     <path d="M6 6l12 12M18 6L6 18"></path>
   </symbol>
+  <!-- 總覽：側邊列與手機分頁列共用 -->
+  <symbol id="icon-grid" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+    <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+    <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+    <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+  </symbol>
 </defs></svg>
 
 <!--
@@ -96,6 +103,12 @@
       不攔截點擊，讓瀏覽器自己改 hash——上一頁／下一頁因此自動可用。
     -->
     <nav class="sidebar-nav" id="sidebar-nav" aria-label="主導覽">
+      <a class="nav-link" href="#/overview" data-view="overview">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-grid"></use></svg>
+        </span>
+        <span class="nav-text">總覽</span>
+      </a>
       <a class="nav-link" href="#/today" data-view="today">
         <span class="nav-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
@@ -264,6 +277,39 @@
         <p class="view-link-row">
           <a class="view-link" href="#/sessions">查看完整訓練紀錄 →</a>
         </p>
+      </section>
+    </section>
+
+    <!--
+      ===================================================== view：總覽
+      跨週數據頁：回答「最近狀態怎樣」（2026-10-14 依 Fu 的參考圖改版）。
+      版面：摘要列 → 5 張指標卡 → 週跑量＋心率區間並排 → 本週課表 → 最佳成績。
+      只放數字、時間範圍標籤與定義（各區塊的 ⓘ），不放判讀——判讀在 AI 教練面板。
+      資料來自 /api/overview 與 /api/training-load，range 系列吃頂列的區間切換。
+      各區塊的標題由 app.js 連同時間範圍與 ⓘ 一起產生（overviewHead）。
+    -->
+    <section class="view" id="view-overview" hidden aria-labelledby="content-title">
+      <section class="panel overview-strip-panel" aria-label="區間摘要">
+        <div id="overview-strip"></div>
+      </section>
+
+      <div id="overview-kpis" class="overview-kpis" aria-label="指標"></div>
+
+      <div class="overview-grid">
+        <section class="panel" aria-label="每週跑量">
+          <div id="overview-volume"></div>
+        </section>
+        <section class="panel" aria-label="心率區間分佈">
+          <div id="overview-zones"></div>
+        </section>
+      </div>
+
+      <section class="panel" aria-label="本週課表">
+        <div id="overview-plan"></div>
+      </section>
+
+      <section class="panel" aria-label="個人最佳成績">
+        <div id="overview-pbs"></div>
       </section>
     </section>
 
@@ -492,6 +538,8 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#icon-close"></use></svg>
       </button>
     </div>
+    <!-- AI 分析報告畫面（總覽「AI 分析」按鈕開啟，由 coach.js 渲染；顯示時隱藏對話區） -->
+    <div class="coach-analysis" id="coach-analysis" hidden></div>
     <div class="coach-body" id="coach-body">
       <p class="coach-placeholder">載入 AI 教練…</p>
     </div>
@@ -509,8 +557,14 @@
 </div>
 
 <!-- ------------------------------------------------------------ 手機 -->
-<!-- 底部分頁列（<768px 顯示）：5 格等寬、56px 高、圖示＋文字 -->
+<!-- 底部分頁列（<768px 顯示）：6 格等寬、56px 高、圖示＋文字 -->
 <nav class="tabbar" id="tabbar" aria-label="主導覽（手機）">
+  <a class="tab-link" href="#/overview" data-view="overview">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-grid"></use></svg>
+    </span>
+    <span class="tab-text">總覽</span>
+  </a>
   <a class="tab-link" href="#/today" data-view="today">
     <span class="tab-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>

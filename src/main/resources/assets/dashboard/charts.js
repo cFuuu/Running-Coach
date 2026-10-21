@@ -654,9 +654,28 @@ window.Charts = (function () {
   // ---------------------------------------------------------------- 5. 通用長條圖（週跑量）
 
   /**
+   * 堆疊長條的總高：有 segments 時為各段加總，否則就是 value 本身。
+   * segments 全為非數值時回 null（與單一 value 缺值同語意：不畫）。
+   */
+  function barTotal(b) {
+    if (!b.segments) return b.value;
+    var nums = b.segments.map(function (s) { return s.value; })
+      .filter(function (v) { return typeof v === 'number' && isFinite(v); });
+    if (nums.length === 0) return null;
+    return nums.reduce(function (a, v) { return a + v; }, 0);
+  }
+
+  /**
    * 通用垂直長條圖，用於週跑量。
-   * @param {Array} bars [{label, value, weekStart}]（weekStart 為選填的
-   *   ISO 週一日期，用於跨圖同步游標時定位「滑鼠所在日期屬於哪一週」）
+   * @param {Array} bars [{label, value, weekStart, segments, tipSuffix}]
+   *   - weekStart 為選填的 ISO 週一日期，用於跨圖同步游標時定位「滑鼠所在日期屬於哪一週」
+   *   - segments 為選填的堆疊分段 [{value, className, name}]，由下往上堆；
+   *     有 segments 時 value 由各段加總而來，呼叫端不必另給
+   *   - tipSuffix 為選填，附在 hover 文字最後（例如「部分週」的註記）
+   *   - partial 為選填，true 時長條半透明（例如還沒過完的本週）
+   * @param {Object} opts { label, formatter, barClass, containerWidth, targets }
+   *   targets 為選填 [{index, value, label}]：在第 index 根長條上畫一條虛線目標
+   *   （例如本週課表距離），Y 軸上限會一併納入目標值
    */
   function barChart(bars, opts) {
     var options = opts || {};
@@ -664,8 +683,13 @@ window.Charts = (function () {
     var svg = createSvg(height, options.label || '長條圖');
     var box = { left: 54, top: 14, width: VB_WIDTH - 54 - 18, height: height - 14 - 38 };
     if (!bars || bars.length === 0) return svg;
+    bars = bars.map(function (b) {
+      return b.segments ? Object.assign({}, b, { value: barTotal(b) }) : b;
+    });
 
+    var targets = options.targets || [];
     var values = bars.map(function (b) { return b.value; })
+      .concat(targets.map(function (t) { return t.value; }))
       .filter(function (v) { return typeof v === 'number' && isFinite(v); });
     var max = values.length ? Math.max.apply(null, values) : 1;
     var extent = { min: 0, max: max * 1.15 || 1 };
@@ -684,19 +708,31 @@ window.Charts = (function () {
       var cx = box.left + slot * (i + 0.5);
       centers.push(cx);
       var hasValue = typeof b.value === 'number' && isFinite(b.value);
-      var barTop = box.top + box.height;
+      var tip = b.label + '：' + formatter(b.value);
+      if (hasValue && b.segments) {
+        tip += '（' + b.segments.filter(function (s) { return s.value > 0; })
+          .map(function (s) { return s.name + ' ' + formatter(s.value); }).join('、') + '）';
+      }
+      if (b.tipSuffix) tip += b.tipSuffix;
       if (hasValue) {
-        var h = (b.value / extent.max) * box.height;
-        barTop = box.top + box.height - h;
-        var rect = el('rect', {
-          x: cx - barWidth / 2, y: barTop,
-          width: barWidth, height: Math.max(h, 0), rx: 2,
-          class: 'bar ' + (options.barClass || 'bar-volume')
+        var segments = b.segments || [{ value: b.value, className: options.barClass || 'bar-volume' }];
+        var base = box.top + box.height;
+        segments.forEach(function (s) {
+          if (typeof s.value !== 'number' || !isFinite(s.value) || s.value <= 0) return;
+          var h = (s.value / extent.max) * box.height;
+          base -= h;
+          var rect = el('rect', {
+            x: cx - barWidth / 2, y: base,
+            width: barWidth, height: Math.max(h, 0),
+            // 堆疊時每段都圓角會在接縫處露出缺口，只有單段長條才圓角
+            rx: b.segments ? 0 : 2,
+            class: 'bar ' + s.className + (b.partial ? ' bar-partial-week' : '')
+          });
+          var title = el('title');
+          title.textContent = tip;
+          rect.appendChild(title);
+          svg.appendChild(rect);
         });
-        var title = el('title');
-        title.textContent = b.label + '：' + formatter(b.value);
-        rect.appendChild(title);
-        svg.appendChild(rect);
       }
       if (tickIdx.indexOf(i) !== -1) {
         svg.appendChild(text(b.label, {
@@ -706,8 +742,21 @@ window.Charts = (function () {
       if (hasValue) {
         hitItems.push({
           x: cx - slot / 2, y: box.top, width: slot, height: box.height,
-          tip: b.label + '：' + formatter(b.value)
+          tip: tip
         });
+      }
+    });
+    targets.forEach(function (t) {
+      if (t.index < 0 || t.index >= bars.length) return;
+      var cx = centers[t.index];
+      var ty = box.top + box.height - (t.value / extent.max) * box.height;
+      svg.appendChild(el('line', {
+        x1: cx - barWidth / 2 - 5, x2: cx + barWidth / 2 + 5, y1: ty, y2: ty, class: 'bar-target'
+      }));
+      if (t.label) {
+        svg.appendChild(text(t.label, {
+          x: cx + barWidth / 2 + 5, y: ty - 5, class: 'tick-label bar-target-label', 'text-anchor': 'end'
+        }));
       }
     });
     attachDiscreteHitLayer(svg, hitItems);
