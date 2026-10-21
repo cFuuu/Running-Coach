@@ -13,13 +13,13 @@
 :root {
   color-scheme: light;
 
-  /* 2026-10-14 Fu 指定：米色為底、藍色為主題色。只換中性底色系（頁面／卡片／
-     凹陷面／邊框），強調色與圖表色不動，對比度由 test_dashboard_theme_contrast 把關。
-     --bg 的暖度剛好壓在該測試「大面積背景通道落差 ≤16」的上限（#f4ede1 是 19，會被擋）。 */
-  --bg: #f4eee4;
-  --surface: #fffdf9;
-  --surface-sunken: #faf5ec;
-  --border: #e6dccb;
+  /* 中性底色系（頁面／卡片／凹陷面／邊框）：冷灰。2026-10-21 Fu 改選，取代 10-14 的米色——
+     首頁卡片標題列改用冷色的類別色（藍／紫／青，見 --cat-*）後，暖米色底會和它們互相干擾。
+     強調色與圖表色不動，對比度由 test_dashboard_theme_contrast 把關（背景通道落差 ≤16）。 */
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --surface-sunken: #f6f8fa;
+  --border: #dde3e9;
   --text: #1f2933;
   --text-muted: #56616d;
   /* 強調色（品牌藍）。這六個 accent 相關 token 的色號是 WCAG 相對亮度公式的
@@ -40,7 +40,7 @@
   --c-distance: #2f6f9f;
   --c-te: #7a5aa8;
   --c-volume: #4a8fb5;
-  --c-grid: #efe8dc;
+  --c-grid: #e8ecf0;
   --c-axis: #b7bfc8;
 
   /* 每日身體狀況指標各自的折線色（前 8 個為原始指標，後 5 個是 Phase 5 新開放） */
@@ -67,7 +67,7 @@
   --c-zone-5: #c2452d;
 
   --dot-fill: #fff;
-  --bar-track: #f0e9dd;
+  --bar-track: #e9edf1;
   --bar-partial-overlay: rgba(255, 255, 255, 0.45);
 
   --up: #b03a2e;
@@ -160,6 +160,22 @@
   --day-planned-done-text: var(--accent-text);
   --day-planned-missed-text: var(--badge-clipped-text);
   --day-unplanned-text: var(--tag-planned-text);
+
+  /* 首頁卡片的類別色（標題列底色、框線、文字、區塊標題左側短條）。
+     顏色代表「這張卡屬於哪一類數據」，是分類不是評價：刻意都用冷色、
+     低飽和，也避開琥珀（低信賴徽章）與紅綠（容易被讀成好壞）。 */
+  --cat-load-bg: #dde9f6;
+  --cat-load-border: #c2d6ec;
+  --cat-load-text: #1b4a7a;
+  --cat-load-strong: #2563a8;
+  --cat-body-bg: #ebe2f5;
+  --cat-body-border: #d5c6e9;
+  --cat-body-text: #4a3470;
+  --cat-body-strong: #7a5aa8;
+  --cat-ability-bg: #d9eeec;
+  --cat-ability-border: #bcdcd9;
+  --cat-ability-text: #1f5a56;
+  --cat-ability-strong: #2f8a83;
 
   /* 全部運動類型的行事曆上色（跑步以外，見 get_calendar 全類型顯示需求） */
   --activity-running: var(--c-pace);
@@ -1671,6 +1687,78 @@ body.coach-open .coach-fab {
 #view-home .pb-distance {
   font-size: var(--fs-lg);
   color: var(--text);
+}
+
+/* 卡片標題列：底色代表類別（訓練負荷／身體狀況／能力與成績），區塊標題左側同色短條
+   把面板與裡面的卡片串成同一類。比膠囊好辨認，也不會和信賴度徽章混淆（2026-10-21）。 */
+#block-load {
+  --hdr-bg: var(--cat-load-bg); --hdr-border: var(--cat-load-border);
+  --hdr-text: var(--cat-load-text); --hdr-strong: var(--cat-load-strong);
+}
+
+#block-body {
+  --hdr-bg: var(--cat-body-bg); --hdr-border: var(--cat-body-border);
+  --hdr-text: var(--cat-body-text); --hdr-strong: var(--cat-body-strong);
+}
+
+#block-ability {
+  --hdr-bg: var(--cat-ability-bg); --hdr-border: var(--cat-ability-border);
+  --hdr-text: var(--cat-ability-text); --hdr-strong: var(--cat-ability-strong);
+}
+
+#block-load > .panel-title,
+#block-body > .panel-title,
+#block-ability > .panel-title {
+  border-left: 4px solid var(--hdr-strong);
+  padding-left: 10px;
+}
+
+#block-load .kpi-card,
+#block-body .kpi-card,
+#block-ability .kpi-card,
+#block-ability .pb-card {
+  overflow: hidden;
+}
+
+/* 標題列貼齊卡片上緣與左右邊：用負 margin 抵銷卡片內距（.kpi-card 12px 14px） */
+#block-load .kpi-card > .kpi-label,
+#block-body .kpi-card > .kpi-label,
+#block-ability .kpi-card > .kpi-label {
+  margin: -12px -14px 10px;
+  padding: 9px 14px;
+  background: var(--hdr-bg);
+  border-bottom: 1px solid var(--hdr-border);
+  color: var(--hdr-text);
+}
+
+/* 縮寫（TSB、ATL、HRV…）跟在白話標題後面，小一級 */
+#view-home .kpi-abbr {
+  margin-left: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+/* 最佳成績卡：標題列取代原本的上緣色條（.pb-card 內距 14px 12px 12px） */
+#block-ability .pb-card::before {
+  display: none;
+}
+
+#block-ability .pb-card > .pb-card-head {
+  width: calc(100% + 24px);
+  margin: -14px -12px 8px;
+  padding: 9px 12px;
+  background: var(--hdr-bg);
+  border-bottom: 1px solid var(--hdr-border);
+}
+
+#block-ability .pb-card.is-empty > .pb-card-head {
+  border-bottom-style: dashed;
+}
+
+#block-ability .pb-card-head .pb-distance,
+#block-ability .pb-card-head .pb-count {
+  color: var(--hdr-text);
 }
 
 /* 今天的課表是首頁最重要的一行 */
@@ -4235,6 +4323,19 @@ body.coach-open .coach-fab {
  */
 :root[data-theme="dark"] {
   color-scheme: dark;
+
+  --cat-load-bg: #1c2b3c;
+  --cat-load-border: #2c4562;
+  --cat-load-text: #a7c8ef;
+  --cat-load-strong: #6aa9dd;
+  --cat-body-bg: #292236;
+  --cat-body-border: #3f3456;
+  --cat-body-text: #cbb8ec;
+  --cat-body-strong: #a58bd6;
+  --cat-ability-bg: #1a3230;
+  --cat-ability-border: #2a4c49;
+  --cat-ability-text: #93d3cd;
+  --cat-ability-strong: #4fb3aa;
 
   --bg: #14181c;
   --surface: #1c2126;

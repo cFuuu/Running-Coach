@@ -151,7 +151,8 @@ export function confBadge(fact) {
  * 一張 KPI 卡：大數字 + 單位 + 下方註記 + 右側迷你趨勢線。
  * 版面參考常見跑者儀表板的「數值配縮圖」模式，但只放事實，
  * 判讀留給 AI 教練面板（本頁頁尾明載「不含任何解讀或建議」）。
- * @param {Object} cfg { label, chip, value, unit, note, series, invert, tip, badge }
+ * @param {Object} cfg { label, abbr, chip, value, unit, note, series, invert, tip, badge }
+ *   abbr：白話標題後面的縮寫（例如 label「近期疲勞」、abbr「ATL」），讓不記得縮寫的人也認得出來
  *   chip：標題旁的時間範圍小標籤（例如「90 天」「本週」），讓每個數字的涵蓋範圍一目了然
  *   tip：定義文字（有給才出現 ⓘ 按鈕，見 infoTip）
  *   badge：附在數字旁的節點（信賴度 badge 等）
@@ -160,9 +161,10 @@ export function kpiCard(cfg) {
   var card = h('div', 'kpi-card');
   var labelRow = h('div', 'kpi-label');
   var labelText = h('span', null, cfg.label);
+  if (cfg.abbr) labelText.appendChild(h('span', 'kpi-abbr', cfg.abbr));
   if (cfg.chip) labelText.appendChild(h('span', 'window-chip', cfg.chip));
   labelRow.appendChild(labelText);
-  if (cfg.tip) labelRow.appendChild(infoTip(cfg.label, cfg.tip));
+  if (cfg.tip) labelRow.appendChild(infoTip(cfg.label + (cfg.abbr ? '（' + cfg.abbr + '）' : ''), cfg.tip));
   card.appendChild(labelRow);
 
   var main = h('div', 'kpi-main');

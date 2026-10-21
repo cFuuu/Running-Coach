@@ -228,7 +228,8 @@ export function renderHomeLoad() {
   var tsb = load.tsb && load.tsb.value;
   var ctl = load.ctl && load.ctl.value;
   cards.appendChild(kpiCard({
-    label: 'TSB',
+    label: '狀態平衡',
+    abbr: 'TSB',
     value: typeof tsb === 'number' ? (tsb > 0 ? '+' : '') + C.formatNumber(tsb, 1) : '—',
     badge: confBadge(load.tsb),
     note: ctl ? '佔 CTL ' + (tsb > 0 ? '+' : '−') + Math.abs(tsb / ctl * 100).toFixed(0) + '%，近 30 天走勢' : '近 30 天走勢',
@@ -236,18 +237,20 @@ export function renderHomeLoad() {
     tip: LOAD_TIPS.tsb
   }));
   cards.appendChild(kpiCard({
-    label: 'ATL',
+    label: '近期疲勞',
+    abbr: 'ATL',
     value: load.atl ? C.formatNumber(load.atl.value, 1) : '—',
     badge: confBadge(load.atl),
-    note: '近期疲勞（7 日）',
+    note: '7 日指數加權，近 30 天走勢',
     series: rows.map(function (r) { return r.atl ? r.atl.value : null; }),
     tip: LOAD_TIPS.atl
   }));
   cards.appendChild(kpiCard({
-    label: 'CTL',
+    label: '長期體能',
+    abbr: 'CTL',
     value: load.ctl ? C.formatNumber(load.ctl.value, 1) : '—',
     badge: confBadge(load.ctl),
-    note: '長期基礎（42 日）',
+    note: '42 日指數加權，近 30 天走勢',
     series: rows.map(function (r) { return r.ctl ? r.ctl.value : null; }),
     tip: LOAD_TIPS.ctl
   }));
@@ -268,7 +271,7 @@ export function renderHomeLoad() {
     }
     if (statusKey) parts.push(GARMIN_TRAINING_STATUS_LABEL[statusKey] || latest.status);
     cards.appendChild(kpiCard({
-      label: 'Garmin 急性負荷',
+      label: 'Garmin 近期負荷',
       value: C.formatNumber(latest.acute_load, 0),
       badge: refBadge,
       note: parts.join('，'),
@@ -337,7 +340,8 @@ export function renderHomeBody() {
   var hrvToday = hrv && hrv.today_ms && typeof hrv.today_ms.value === 'number' ? hrv.today_ms : null;
   if (hrvToday || hrvVals.length) {
     var hrvCard = kpiCard({
-      label: 'HRV 昨夜均值',
+      label: '心率變異度',
+      abbr: 'HRV 昨夜',
       value: C.formatNumber(hrvToday ? hrvToday.value : hrvVals[hrvVals.length - 1], hrvToday ? 1 : 0),
       unit: 'ms',
       badge: hrvToday ? confBadge(hrvToday) : null,
@@ -383,7 +387,7 @@ export function renderHomeBody() {
   if (readyVals.length) {
     var refBadge = h('span', 'conf-badge conf-reference', '僅供對照');
     cards.appendChild(kpiCard({
-      label: 'Garmin 訓練準備度',
+      label: 'Garmin 準備度',
       value: C.formatNumber(readyVals[readyVals.length - 1], 0),
       badge: refBadge,
       note: '近 30 天走勢',
@@ -533,7 +537,7 @@ function vdotCard(vdot) {
   var history = (vdot.history || []).map(function (x) { return x.vdot; });
   if (!race.value) {
     return kpiCard({
-      label: 'VDOT', value: '未評',
+      label: '跑力', abbr: 'VDOT', value: '未評',
       badge: h('span', 'conf-badge conf-none', '無資料'),
       note: race.reason + (refText ? '；' + refText : ''),
       series: history.length > 1 ? history : null,
@@ -541,7 +545,8 @@ function vdotCard(vdot) {
     });
   }
   return kpiCard({
-    label: 'VDOT',
+    label: '跑力',
+    abbr: 'VDOT',
     value: C.formatNumber(race.value.value, 1),
     badge: confBadge(race.value),
     note: '依 ' + C.shortDate(race.basis.date) + ' ' + race.basis.distance + (refText ? '，' + refText : ''),
