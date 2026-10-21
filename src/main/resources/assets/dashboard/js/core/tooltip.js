@@ -27,12 +27,10 @@ import { $ } from './dom.js';
 // 一處做這個轉換的地方。
 
 // 同步群組：容器 id → 該群組內所有連續模式圖表共用同一條邏輯 X 軸。
-// 三組互不同步，因為 X 軸基準不同（單場分析＝經過秒數；訓練負荷／
-// 跨場趨勢／身體狀況＝日期字串，兩者字典序恰好與時間序一致，可直接
-// 比較）。用 panel-load 整個面板（而非 trend-charts 子容器）當同步
-// 邊界，讓新增的 TSB 折線（load-chart）與週跑量/距離/配速等跨場趨勢圖
-// 共用同一條垂直參考線——兩者 X 軸基準相同，理當同步。
-export var SYNC_GROUPS = ['session-body', 'panel-load', 'wellness-charts'];
+// 兩組互不同步，因為 X 軸基準不同：單場分析＝經過秒數；趨勢頁的所有圖
+// （訓練負荷、身體指標、每場趨勢、每週跑量）＝日期字串，字典序恰好與時間序
+// 一致，可直接比較——所以整個趨勢頁是同一組，滑到某一天，所有類別的圖都標出同一天。
+export var SYNC_GROUPS = ['session-body', 'view-trends'];
 
 export var tooltipEl = null;
 

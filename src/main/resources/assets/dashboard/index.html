@@ -327,49 +327,16 @@
 
     <!--
       ===================================================== view：趨勢
-      2026-10-21 由「訓練負荷」與「身體狀況」兩個 view 合併，共用頂列的時間範圍。
-      兩個 panel 的 id 不變（同步游標與各自的渲染函式都靠 id 查找）。
+      吃頂列的時間範圍。頂端是區間摘要，下方依類別排列走勢圖（js/views/trends.js）：
+      訓練負荷 → 恢復與身體 → 強度分布 → 能力 → 訓練量（預設順序，可自訂）。
+      整個 view 是一個同步游標群組（js/core/tooltip.js SYNC_GROUPS）。
     -->
     <section class="view" id="view-trends" hidden aria-labelledby="content-title">
-      <!--
-        區間摘要（原總覽頁中會隨時間範圍變動的部分，js/views/overview.js）：
-        摘要列、近 N 週跑量、每週跑量（強度堆疊）、心率區間分佈。
-      -->
       <section class="panel overview-strip-panel" aria-label="區間摘要">
         <div id="overview-strip"></div>
       </section>
-
-      <div id="overview-kpis" class="overview-kpis" aria-label="近期跑量"></div>
-
-      <div class="overview-grid">
-        <section class="panel" aria-label="每週跑量">
-          <div id="overview-volume"></div>
-        </section>
-        <section class="panel" aria-label="心率區間分佈">
-          <div id="overview-zones"></div>
-        </section>
-      </div>
-
-      <!--
-        #panel-load 必須保留為 #load-chart 與 #trend-charts 的祖先：
-        同步游標的 SYNC_GROUPS 以此 id 查找群組容器（js/core/tooltip.js
-        findSyncGroupContainer）。搬動 DOM 時拆掉這層會讓游標同步靜默失效。
-      -->
-      <section class="panel" id="panel-load" aria-labelledby="h-load">
-        <h2 class="panel-title" id="h-load">訓練負荷與趨勢</h2>
-        <div id="load-chart"></div>
-        <div id="trend-charts"></div>
-      </section>
-
-      <section class="panel" id="panel-wellness" aria-labelledby="h-wellness">
-        <h2 class="panel-title" id="h-wellness">
-          每日身體狀況<span class="panel-hint">淡色背景為訓練日</span>
-        </h2>
-        <div class="legend">
-          <span class="legend-item"><span class="swatch swatch-training"></span><span>訓練日</span></span>
-        </div>
-        <div id="wellness-charts"></div>
-      </section>
+      <div class="trends-head" id="trends-customize"></div>
+      <div class="trends-body" id="trends-body"></div>
     </section>
 
     <!-- ================================================== view：系統設定 -->

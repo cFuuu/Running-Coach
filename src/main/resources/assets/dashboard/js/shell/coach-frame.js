@@ -97,12 +97,10 @@ export function bindResize() {
   window.addEventListener('resize', function () {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
-      // 有圖表的區塊全部標髒，再交給路由的補畫邏輯：目前 view 立刻重畫，
-      // 其餘（隱藏中寬度為 0）等切過去再畫。行事曆沒有依寬度決定的圖表，不必重畫。
-      state.dirty.overview = true;
+      // 有圖表的 view 全部標髒，再交給路由的補畫邏輯：目前 view 立刻重畫，
+      // 其餘（隱藏中寬度為 0）等切過去再畫。首頁與行事曆沒有依寬度決定的圖表，不必重畫。
       state.dirty.sessions = true;
-      state.dirty.load = true;
-      state.dirty.wellness = true;
+      state.dirty.trends = true;
       renderDirtyView(state.view);
 
       // 縮到 1280px 以下時，常駐欄變成覆蓋式抽屜／sheet：若維持展開會蓋住

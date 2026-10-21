@@ -6,10 +6,10 @@ import { state } from '../core/state.js';
 import { useMock, api } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
 import { renderSessionPicker, renderSessionDetail, renderSessionList } from '../views/sessions.js';
-import { loadLoadSeries, renderTrends } from '../views/load.js';
-import { renderWellness } from '../views/wellness.js';
+import { loadLoadSeries } from '../views/load.js';
 import { loadOverview } from '../views/overview.js';
 import { renderOrDefer } from './router.js';
+import { renderTrendsPage, showTrendsLoading } from '../views/trends.js';
 
 export function renderMeta() {
   var node = $('meta-info');
@@ -40,12 +40,10 @@ export function renderMeta() {
  */
 export function loadRangeData() {
   var sessionSection = $('session-body');
-  var trendNode = $('trend-charts');
-  var wellnessNode = $('wellness-charts');
 
   showLoading($('session-picker'), '載入場次');
-  showLoading(trendNode, '載入趨勢');
-  showLoading(wellnessNode, '載入身體狀況');
+  showTrendsLoading();
+  renderOrDefer('trends', renderTrendsPage); // 換範圍時各圖先顯示載入中
 
   var sessionsP = api('/api/sessions?range=' + state.range);
   var wellnessP = api('/api/wellness-trend?range=' + state.range);
@@ -57,8 +55,9 @@ export function loadRangeData() {
     state.sessions = (res[0] && res[0].sessions) ? res[0].sessions : [];
     state.recoveryImpacts = (res[1] && res[1].impacts) ? res[1].impacts : [];
     renderSessionPicker();
+    state.sessionsReady = true;
     renderOrDefer('sessions', renderSessionList);
-    renderOrDefer('load', renderTrends);
+    renderOrDefer('trends', renderTrendsPage);
 
     // 預設選最近一場（sessions 由新到舊）
     var keep = state.sessions.some(function (s) { return s.id === state.selectedSessionId; });
@@ -73,16 +72,16 @@ export function loadRangeData() {
     }
   }).catch(function (err) {
     showError($('session-picker'), err.message);
-    showError(trendNode, err.message);
+    showError($('trends-body'), err.message);
   });
 
   // 身體狀況 + 訓練日
   Promise.all([wellnessP, trainingP]).then(function (res) {
     state.wellness = res[0];
     state.trainingDays = (res[1] && res[1].training_days) ? res[1].training_days : [];
-    renderOrDefer('wellness', renderWellness);
+    renderOrDefer('trends', renderTrendsPage);
   }).catch(function (err) {
-    showError(wellnessNode, err.message);
+    showError($('trends-body'), err.message);
   });
 
   // 訓練負荷（獨立於場次/身體狀況，走同一個 range）

@@ -35,8 +35,8 @@ export var state = {
   // render-on-activate 的髒標記。widthOf() 對 display:none 的容器回 0，
   // 在隱藏的 view 裡畫圖會得到寬度 0 的空 SVG，所以資料回來時若該 view
   // 不在畫面上就只標髒、不畫；切過去時才補畫（見 renderDirtyView）。
-  // key 是「區塊」：load 與 wellness 同屬趨勢頁，各自標髒、切到趨勢頁時一起補畫。
-  dirty: { overview: false, sessions: false, load: false, wellness: false, calendar: false }
+  dirty: { sessions: false, trends: false, calendar: false },
+  sessionsReady: false   // /api/sessions 已回來（區分「還在載入」與「此區間沒有場次」）
 };
 
 // view 的定義：路由 key → 標題、是否吃 range。

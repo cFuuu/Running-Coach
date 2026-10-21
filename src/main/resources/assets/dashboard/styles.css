@@ -1700,10 +1700,13 @@ body.coach-open .coach-fab {
   display: block;
 }
 
+/* 卡片窄時（手機兩欄），數字旁的標籤（+30% vs 前 1 週、信賴度）放不下就換到下一行 */
 .kpi-value-wrap {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 3px;
+  row-gap: 4px;
   min-width: 0;
 }
 
@@ -2861,10 +2864,6 @@ body.coach-open .coach-fab {
 }
 
 /* ---- 指標卡：不包在面板裡，直接是一排白卡 */
-.overview-kpis {
-  margin-bottom: var(--gap);
-}
-
 /* 斷點依「內容欄本身的寬度」而非視窗寬度（container query）：桌機開著
    AI 面板時內容欄會少 360px，用視窗寬度判斷會在 1440px 螢幕上把圖表
    並排壓到看不清。收起面板時內容欄變寬，版面自動切回並排。 */
@@ -2873,54 +2872,57 @@ body.coach-open .coach-fab {
   container: page / inline-size;
 }
 
-/* 5 張卡：內容欄夠寬一列 5 張，中等寬度 3+2，手機 2 欄 */
-.overview-kpi-strip {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/* ---- 趨勢頁（js/views/trends.js）：類別面板，內含圖表網格。
+   內容欄夠寬時一列兩張圖，手機一列一張。 */
+.trends-head {
+  display: flex;
+  justify-content: flex-end;
 }
 
-@container page (min-width: 600px) {
-  .overview-kpi-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+.trends-head .customize,
+.trend-cat-head .customize {
+  margin-bottom: 0;
 }
 
-@container page (min-width: 1150px) {
-  .overview-kpi-strip {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-}
-
-.overview-kpis .kpi-card {
-  background: var(--surface);
-  border-radius: var(--radius);
-}
-
-.overview-kpis .kpi-value {
-  font-size: var(--fs-2xl);
-}
-
-/* 手機兩欄時，數字旁的標籤（+279% vs 前 2 週）放不下就換到下一行，不撐出卡片 */
-.overview-kpis .kpi-value-wrap {
-  flex-wrap: wrap;
-  row-gap: 4px;
-}
-
-/* ---- 週跑量＋心率區間：寬螢幕並排（跑量圖較寬），窄螢幕上下堆疊。
-   心率區間改成 HTML 列（不是固定 viewBox 的 SVG），窄欄也不會縮到看不清。 */
-.overview-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+.trends-body {
+  display: flex;
+  flex-direction: column;
   gap: var(--gap);
 }
 
-@container page (min-width: 1150px) {
-  .overview-grid {
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+.trend-cat-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trend-cat-head .panel-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.trend-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap) 24px;
+}
+
+/* 700px：1440 螢幕開著 AI 面板時內容欄約 800px，仍要兩欄；每張圖約 370px，
+   圖表在這個寬度是 1:1 viewBox（見 charts.js vbWidthFor），文字維持真實字級 */
+@container page (min-width: 700px) {
+  .trend-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-.overview-grid > .panel {
+.trend-card {
   min-width: 0;
+}
+
+/* 區間摘要來的圖（每週跑量、心率區間）標題與其他圖表同級 */
+.trend-card .overview-title {
+  font-size: var(--fs-md);
 }
 
 .overview-head {

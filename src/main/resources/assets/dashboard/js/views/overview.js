@@ -1,6 +1,6 @@
 /**
- * overview.js — 趨勢頁頂端的區間摘要（原總覽 view 中會隨時間範圍變動的部分）：
- *               摘要列、近 N 週跑量、每週跑量（強度堆疊）、心率區間分佈
+ * overview.js — 趨勢頁中來自 /api/overview（吃時間範圍）的部分：頂端的區間摘要列，
+ *               以及「近幾週跑量」「每週跑量（強度堆疊）」「心率區間分佈」三張圖（由 trends.js 歸類）
  *
  * 2026-10-21 總覽與今日合併為首頁後，VDOT、個人最佳成績、本週 Zone 2、訓練負荷
  * 這些「現在」的數字移到首頁（views/home.js），這裡只留下吃時間範圍的區塊。
@@ -10,9 +10,10 @@ import * as C from '../charts.js';
 import { state } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable, widthOf, wrapChart } from '../core/dom.js';
-import { infoTip, closeInfoPopover, kpiCard } from '../core/facts.js';
+import { infoTip, kpiCard } from '../core/facts.js';
 
 import { renderOrDefer } from '../shell/router.js';
+import { renderTrendsPage } from './trends.js';
 
 // 資料來自 /api/overview（吃頂列 range）。每個區塊標出時間範圍（window-chip），
 // ⓘ 只寫定義與算法，不寫判讀（判讀屬 AI 教練面板）。
@@ -27,7 +28,16 @@ export var INTENSITY_TIERS = [
   { key: 'unknown', name: '未分類', className: 'bar-intensity-unknown' }
 ];
 
-export var OVERVIEW_NODE_IDS = ['overview-strip', 'overview-kpis', 'overview-volume', 'overview-zones'];
+/**
+ * 區間摘要資料是否可用；不可用時在 node 顯示載入中或原因並回傳 null。
+ * @returns {Object|null} state.overview
+ */
+function readyOverview(node) {
+  var ov = state.overview;
+  if (!ov) { showLoading(node, '載入區間摘要'); return null; }
+  if (!ov.available) { showUnavailable(node, ov.reason); return null; }
+  return ov;
+}
 
 export function zoneListText(zones) {
   return zones.map(function (z) { return z === 0 ? '低於 Z1' : 'Z' + z; }).join(' + ');
@@ -65,9 +75,11 @@ export function avgFullWeeks(weeks) {
 
 // ---- 摘要列
 
-export function renderOverviewStrip(ov) {
+export function renderOverviewStrip() {
   var node = $('overview-strip');
   clear(node);
+  var ov = readyOverview(node);
+  if (!ov) return;
   var s = ov.sessions;
   var c = s.criteria;
   var weekAvg = avgFullWeeks(ov.weekly_intensity.weeks);
@@ -135,19 +147,17 @@ export function recentVolumeCard(r, weeks) {
 }
 
 /** 近 N 週跑量卡（滾動計算、不受時間範圍影響；走勢線是時間範圍內的每週跑量）。 */
-export function renderOverviewRecent(ov) {
-  var node = $('overview-kpis');
-  clear(node);
-  var strip = h('div', 'kpi-strip overview-kpi-strip');
-  strip.appendChild(recentVolumeCard(ov.recent_volume, ov.weekly_intensity.weeks));
-  node.appendChild(strip);
+export function renderRecentVolume(node) {
+  var ov = readyOverview(node);
+  if (!ov) return;
+  node.appendChild(recentVolumeCard(ov.recent_volume, ov.weekly_intensity.weeks));
 }
 
 // ---- 週跑量（強度堆疊）
 
-export function renderOverviewVolume(ov) {
-  var node = $('overview-volume');
-  clear(node);
+export function renderWeeklyVolume(node) {
+  var ov = readyOverview(node);
+  if (!ov) return;
   var wi = ov.weekly_intensity;
   var tiers = wi.tiers || {};
   var head = overviewHead('每週跑量（依強度堆疊）', rangeChip(ov) + ' · 週一起算', [
@@ -230,9 +240,9 @@ export function zoneSplitBar(zones, compact) {
   return bar;
 }
 
-export function renderOverviewZones(ov) {
-  var node = $('overview-zones');
-  clear(node);
+export function renderZones(node) {
+  var ov = readyOverview(node);
+  if (!ov) return;
   var zones = ov.hr_zones;
   var bounds = ov.hr_zone_bounds;
   var tipText = [
@@ -285,27 +295,11 @@ export function renderOverviewZones(ov) {
     + (bounds.available ? '　bpm 依手錶 %HRR 設定換算（最大 ' + bounds.max_hr.value + '、靜止 ' + bounds.resting_hr_bpm + '）' : '　尚未設定手錶區間，不顯示 bpm')));
 }
 
-export function renderOverview() {
-  var ov = state.overview;
-  if (!ov) return; // 還沒回來：載入中訊息由 loadOverview() 放
-  // 重繪會換掉所有 ⓘ 按鈕；開著的說明小視窗若不關，會失去對應的按鈕
-  closeInfoPopover(false);
-  if (!ov.available) {
-    OVERVIEW_NODE_IDS.forEach(function (id) { showUnavailable($(id), ov.reason); });
-    return;
-  }
-  renderOverviewStrip(ov);
-  renderOverviewRecent(ov);
-  renderOverviewVolume(ov);
-  renderOverviewZones(ov);
-}
-
 export function loadOverview() {
-  OVERVIEW_NODE_IDS.forEach(function (id) { showLoading($(id), '載入總覽'); });
   api('/api/overview?range=' + state.range).then(function (data) {
     state.overview = data;
-    renderOrDefer('overview', renderOverview);
+    renderOrDefer('trends', renderTrendsPage);
   }).catch(function (err) {
-    OVERVIEW_NODE_IDS.forEach(function (id) { showError($(id), err.message); });
+    showError($('overview-strip'), err.message);
   });
 }

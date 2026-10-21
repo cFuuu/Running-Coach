@@ -7,10 +7,8 @@ import { $ } from '../core/dom.js';
 import { todayISO } from '../core/format.js';
 import { renderSessionPicker, renderRecoveryImpact, renderSessionDetail, renderSessionList } from '../views/sessions.js';
 import { renderCalendarBody, loadCalendarBody } from '../views/calendar.js';
-import { renderLoad, renderTrends } from '../views/load.js';
-import { renderWellness } from '../views/wellness.js';
-import { renderOverview } from '../views/overview.js';
 import { loadSessionDetail } from './loader.js';
+import { renderTrendsPage } from '../views/trends.js';
 
 // hash 路由 `#/view[/arg]`：
 //   #/home  #/calendar  #/calendar/2026-09  #/trends
@@ -26,8 +24,6 @@ import { loadSessionDetail } from './loader.js';
 // applyRoute 會把網址改寫成新的正規形式。
 var LEGACY_VIEWS = { load: 'trends', wellness: 'trends', today: 'home', overview: 'home' };
 
-// dirty 區塊 → 所在 view（同名的不必列）。overview 是趨勢頁頂端的區間摘要。
-var DIRTY_VIEW = { load: 'trends', wellness: 'trends', overview: 'trends' };
 
 /** 解析 location.hash → {view, arg}。無效或空的 hash 一律回預設 view。 */
 export function parseHash() {
@@ -144,20 +140,9 @@ export function renderDirtyView(view) {
     state.dirty.sessions = false;
     if (state.sessions.length > 0) renderSessionList();
     if (state.sessionDetail) renderSessionDetail();
-  } else if (view === 'trends') {
-    if (state.dirty.overview) {
-      state.dirty.overview = false;
-      renderOverview();
-    }
-    if (state.dirty.load) {
-      state.dirty.load = false;
-      if (state.loadSeries) renderLoad();
-      if (state.sessions.length > 0) renderTrends();
-    }
-    if (state.dirty.wellness) {
-      state.dirty.wellness = false;
-      if (state.wellness) renderWellness();
-    }
+  } else if (view === 'trends' && state.dirty.trends) {
+    state.dirty.trends = false;
+    renderTrendsPage();
   } else if (view === 'calendar' && state.dirty.calendar) {
     state.dirty.calendar = false;
     if (!state.calendarMonth) state.calendarMonth = todayISO().slice(0, 7);
@@ -168,11 +153,11 @@ export function renderDirtyView(view) {
 /**
  * 標記某個 view 的圖表需要重畫。若它正好是目前的 view 就立刻畫，
  * 否則只標髒——這是所有「資料回來了要重繪」路徑的統一入口。
- * @param {string} key dirty 的 key（overview|sessions|load|wellness|calendar）
+ * @param {string} key dirty 的 key，同 view 名稱（sessions|trends|calendar）
  * @param {Function} renderFn 真正的渲染函式
  */
 export function renderOrDefer(key, renderFn) {
-  if (state.view === (DIRTY_VIEW[key] || key)) renderFn();
+  if (state.view === key) renderFn();
   else state.dirty[key] = true;
 }
 
