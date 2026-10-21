@@ -1,6 +1,7 @@
 """training_load 的單元測試——全部使用合成活動資料，不含任何真實個人資料。"""
 
 import datetime
+import math
 import unittest
 
 from src.main.python.services.training_load import (
@@ -8,6 +9,7 @@ from src.main.python.services.training_load import (
     compute_daily_loads,
     compute_hrr_intensity_pct,
     compute_training_load_series,
+    compute_trimp,
 )
 
 MAX_HR = 190.0
@@ -62,6 +64,25 @@ class TestComputeHrrIntensityPct(unittest.TestCase):
             compute_hrr_intensity_pct(avg_hr_bpm=140, max_hr_bpm=50, resting_hr_bpm=50)
 
 
+class TestComputeTrimp(unittest.TestCase):
+    def test_matches_banister_male_formula(self):
+        # 60 分鐘 × 0.7 × 0.64·e^(1.92×0.7)
+        expected = 60 * 0.7 * 0.64 * math.exp(1.92 * 0.7)
+        self.assertAlmostEqual(compute_trimp(3600, 0.7), expected, places=6)
+
+    def test_one_hour_easy_and_threshold_land_on_known_scale(self):
+        """一小時 easy（65% HRR）約 85、threshold（85% HRR）約 165。"""
+        self.assertAlmostEqual(compute_trimp(3600, 0.65), 87.0, delta=2)
+        self.assertAlmostEqual(compute_trimp(3600, 0.85), 167.0, delta=2)
+
+    def test_weighting_is_superlinear_in_intensity(self):
+        """強度加倍，負荷增幅大於兩倍（線性公式低估高強度課的修正點）。"""
+        self.assertGreater(compute_trimp(3600, 0.8), 2 * compute_trimp(3600, 0.4))
+
+    def test_zero_intensity_is_zero_load(self):
+        self.assertEqual(compute_trimp(3600, 0.0), 0.0)
+
+
 class TestComputeActivityLoad(unittest.TestCase):
     def test_running_with_hr_uses_hrr_intensity(self):
         activity = _running_activity(datetime.date(2026, 8, 1), duration_sec=1800, avg_hr_bpm=140)
@@ -70,7 +91,7 @@ class TestComputeActivityLoad(unittest.TestCase):
         self.assertFalse(result["uncertain"])
         expected_intensity = 90 / 140
         self.assertAlmostEqual(result["intensity_pct"], expected_intensity, places=6)
-        self.assertAlmostEqual(result["load"], 1800 * expected_intensity, places=4)
+        self.assertAlmostEqual(result["load"], compute_trimp(1800, expected_intensity), places=4)
 
     def test_running_without_hr_falls_back_to_pace_and_is_uncertain(self):
         activity = _running_activity(
@@ -107,7 +128,7 @@ class TestComputeActivityLoad(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result["uncertain"])
         self.assertEqual(result["intensity_pct"], 0.5)
-        self.assertAlmostEqual(result["load"], 3600 * 0.5, places=4)
+        self.assertAlmostEqual(result["load"], compute_trimp(3600, 0.5), places=4)
 
     def test_zero_duration_is_excluded(self):
         activity = _running_activity(datetime.date(2026, 8, 1), duration_sec=0, avg_hr_bpm=140)

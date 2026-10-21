@@ -77,7 +77,7 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
         "low",
         "TSB 門檻取自該學員自身歷史 TSB 分布的第 10 百分位，為工程實務決策、"
         "無文獻背書。它免疫於負荷單位的尺度問題（舊值 -30 取自 TrainingPeaks "
-        "的 TSS 尺度，與本專案自建的「秒 × %HRR」相差約 30 倍），但『第 10 "
+        "的 TSS 尺度，本專案負荷為 Banister TRIMP，兩者定義不同），但『第 10 "
         "百分位就是異常』本身是我們選的，不是測出來的",
     ),
     "intensity_range_custom": (

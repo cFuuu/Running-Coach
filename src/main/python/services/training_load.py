@@ -5,8 +5,13 @@
 （與 vdot_engine.py / periodization_scheduler.py 的分層方式一致。）
 
 負荷單位與強度估算——對應 Issue #12 grill 討論結論：
-跑步與重訓的「每日負荷」都歸一到「實際持續時間（秒）× 強度百分比」這個共同基礎，
-兩者因此可以直接相加，因為身體疲勞不分運動類型：
+跑步與重訓的「每日負荷」都歸一到 Banister TRIMP 這個共同基礎，兩者因此可以
+直接相加，因為身體疲勞不分運動類型：
+    TRIMP = 分鐘 × x × k·e^(b·x)，x = 強度（%HRR，0–1）
+（2026-10-21 由線性的「秒 × %HRR」改為 Banister TRIMP（N-23）：線性公式低估
+高強度課，且尺度約為 TSS 的 30 倍、數字沒有直覺意義。TRIMP 的指數項讓強度
+越高權重越大，一小時 easy（~65% HRR）約 85、一小時 threshold（~85% HRR）約 165。）
+強度 x 的取得方式：
     - 跑步優先用該次活動平均心率相對心率儲備（HRR = HRmax − RHR）的百分比當強度；
       缺心率資料時，退回用配速相對 VDOT easy 配速基準估算強度。
     - 重訓優先用同一套心率相對 HRR 公式；連心率都沒有，則用固定保守估計強度
@@ -31,6 +36,7 @@ of parameters might be dubious」。沿用 7/42 是為了可比性與實作簡�
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any
 
 # --- 可調閾值（集中管理，勿散落於邏輯中）---
@@ -41,6 +47,12 @@ from src.main.python.services.activity_types import (  # noqa: E402
     RUNNING_ACTIVITY_TYPES,
     STRENGTH_ACTIVITY_TYPES,
 )
+
+# Banister TRIMP 的權重係數 k·e^(b·x)（Banister 1991；男性 0.64/1.92、女性
+# 0.86/1.67）。athlete_profile 目前沒有性別欄位，先固定用男性係數
+# （本專案學員 Fu 為男性）；之後有第二位學員時應改由學員檔決定。
+TRIMP_WEIGHT_K = 0.64
+TRIMP_WEIGHT_B = 1.92
 
 # 重訓完全無心率資料時的固定保守估計強度（% HRR）。
 # 50% HRR 對應一般認知中「輕度～中度」的體能消耗強度，作為缺乏實測時的保守下界，
@@ -94,6 +106,16 @@ def compute_hrr_intensity_pct(
         raise ValueError("max_hr_bpm 必須大於 resting_hr_bpm，才能計算心率儲備")
     intensity_pct = (avg_hr_bpm - resting_hr_bpm) / hrr
     return max(0.0, min(1.0, intensity_pct))
+
+
+def compute_trimp(duration_sec: float, intensity_pct: float) -> float:
+    """Banister TRIMP：分鐘 × x × k·e^(b·x)，x 為 %HRR 強度（0–1）。"""
+    return (
+        duration_sec / 60.0
+        * intensity_pct
+        * TRIMP_WEIGHT_K
+        * math.exp(TRIMP_WEIGHT_B * intensity_pct)
+    )
 
 
 def _estimate_intensity_from_pace(
@@ -168,7 +190,7 @@ def compute_activity_load(
     回傳：
         可計算負荷時：
             {
-                "load": float,  # duration_sec * intensity_pct
+                "load": float,  # compute_trimp(duration_sec, intensity_pct)
                 "intensity_pct": float,
                 "uncertain": bool,  # 是否為不確定估算（重訓保守退回 / 跑步配速估算）
             }
@@ -194,7 +216,7 @@ def compute_activity_load(
         return None
 
     return {
-        "load": duration_sec * intensity_pct,
+        "load": compute_trimp(duration_sec, intensity_pct),
         "intensity_pct": intensity_pct,
         "uncertain": uncertain,
     }

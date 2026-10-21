@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS activities (
     anaerobic_te            REAL,
     -- 單場運動負荷（Activity Training Load）。Garmin 對這一場的負荷量化值，
     -- 是累加成 acute load（短期訓練負荷）的來源。單位為 Garmin 自訂尺度，
-    -- 不可與本專案自建的「秒 × %HRR」負荷混用或相加。
+    -- 不可與本專案的 Banister TRIMP 負荷混用或相加。
     activity_training_load  REAL,
     -- 訓練效果標籤（如 AEROBIC_BASE／TEMPO／VO2MAX）。Garmin 對本場訓練
     -- 性質的分類，可與 workout_type（本專案分類器的結果）交叉驗證。

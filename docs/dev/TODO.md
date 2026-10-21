@@ -1004,7 +1004,7 @@
 
 - **🟡 N-23 TrailRunCoach 研究筆記的後續參考項目（2026-10-20 盤點，⚠️ 皆需先決策）**：[vi000246/TrailRunCoach](https://github.com/vi000246/TrailRunCoach) 公開版不含計算核心，但 `docs/research/` 有約 80 份附文獻的研究筆記。N-3 漂移、N-18 EF、N-22 已採用；以下尚未做：
   - **配速執行度改用 GAP**：`activities.avg_grade_adj_pace_sec_per_km` 已存但 `session_quality` 未用（210/287 場有值）。改動小、無決策爭議，可直接做
-  - **負荷公式非線性化**：現行「秒 × %HRR」是線性，高強度課負荷被低估；Banister TRIMP（× 0.64e^(1.92×%HRR)）只需 %HRR、不需 LTHR。⚠️ 換算後負荷尺度改變，TSB P10 門檻與歷史比較須重算
+  - **✅ 負荷公式非線性化（2026-10-21 完成）**：[`training_load.compute_trimp()`](../../src/main/python/services/training_load.py) 由「秒 × %HRR」改為 Banister TRIMP（分鐘 × x × 0.64e^(1.92x)，男性係數；athlete_profile 無性別欄位，先固定）。真實資料 2026-10-20：CTL 823 → 31.3、TSB −332 → −13.4；近一年 CTL 7–34、TSB −24～+18。TSB P10 門檻免疫尺度、照舊。仍用整場平均心率，間歇課仍被低估——可再改用 FIT 逐秒心率累加
   - **跑後 RPE**：TrailRunCoach 用 COROS 跑後感受當準備度訊號（只讓課表更保守）。Garmin 也有感受／自覺強度欄位，須先 dump 真實 API 確認（1B-9 教訓）
   - **停訓後的復跑量**：Daniels 表 9.2（6–28 天中斷 → 前半 50%、後半 75%）。Fu 常隔 >6 天，照原門檻幾乎每週觸發，須重新定義「中斷」；可併入 N-12 討論
   - **明確不採**：ACWR、CP／功率模型（Fu 無 Stryd，手腕功率與 Stryd 混用會拉低 LTHR）、AeT=0.89×LTHR 先驗、暖身段心率÷配速（對方已驗證不可用）、Monotony（週跑 1–2 次無鑑別力）
