@@ -1656,10 +1656,21 @@ body.coach-open .coach-fab {
   font-weight: 700;
 }
 
+/* 數字已放大到 34px，字重用半粗即可；再粗反而糊成一團（Fu 回饋） */
 #view-home .kpi-value,
 #view-home .pw-fig-value,
 #view-home .pb-time {
-  font-weight: 800;
+  font-weight: 600;
+}
+
+/* 卡片標題：與數字拉開層級但不能小到要瞇眼看 */
+#view-home .kpi-label {
+  font-size: var(--fs-lg);
+}
+
+#view-home .pb-distance {
+  font-size: var(--fs-lg);
+  color: var(--text);
 }
 
 /* 今天的課表是首頁最重要的一行 */
