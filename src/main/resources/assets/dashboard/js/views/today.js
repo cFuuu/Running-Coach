@@ -1,5 +1,9 @@
 /**
  * today.js — 今日 view：今日卡、KPI 條、本週週條與課表一覽、最近訓練
+ *
+ * 純呈現層：把 /api/today 的三欄位事實（數值/來源/信賴度）與課表原樣
+ * 顯示出來，不做任何「今天該不該練」的判讀——判讀留給 MCP 對話中的
+ * 教練（見 PLAN.md §7.3、mcp/server.py 的 coach 行為約束）。
  */
 
 import * as C from '../charts.js';
@@ -328,10 +332,9 @@ export function renderKpiStrip() {
  * 任一支失敗就當該卡沒資料（catch 回 null），不讓整條 KPI 消失。
  */
 export function loadTodayKpi() {
-  var q = state.athleteId ? '&athlete_id=' + state.athleteId : '';
   Promise.all([
-    api('/api/training-load?range=30d' + q).catch(function () { return null; }),
-    api('/api/wellness-trend?range=30d' + q).catch(function () { return null; })
+    api('/api/training-load?range=30d').catch(function () { return null; }),
+    api('/api/wellness-trend?range=30d').catch(function () { return null; })
   ]).then(function (res) {
     var load = res[0];
     var wellness = res[1];
@@ -414,8 +417,7 @@ export function renderRecentSessions() {
 }
 
 export function loadRecentSessions() {
-  var q = state.athleteId ? '&athlete_id=' + state.athleteId : '';
-  api('/api/sessions?range=30d' + q).then(function (data) {
+  api('/api/sessions?range=30d').then(function (data) {
     state.recentSessions = (data && data.sessions) || [];
     renderRecentSessions();
   }).catch(function (err) {

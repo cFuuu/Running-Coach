@@ -20,7 +20,8 @@
  */
 
 import { $, clear, h } from './core/dom.js';
-import { state as appState, getViewContext } from './core/state.js';
+import { getViewContext } from './core/state.js';
+import { withAthlete } from './core/api.js';
 import { openCoachPanel } from './shell/coach-frame.js';
 
 // ------------------------------------------------------------ 狀態
@@ -49,18 +50,6 @@ var MAX_TOOL_JSON_CHARS = 20000; // chip 展開時的顯示上限，避免超長
 
 function isMock() {
   return !!window.MOCK_API;
-}
-
-/** 目前的 athlete_id（沿用 app.js 已解析好的值，避免兩處各自問一次 /api/meta）。 */
-function athleteParam() {
-  var id = appState.athleteId;
-  return (id === null || id === undefined) ? '' : '?athlete_id=' + encodeURIComponent(id);
-}
-
-function withAthlete(path) {
-  var p = athleteParam();
-  if (!p) return path;
-  return path + (path.indexOf('?') === -1 ? p : '&' + p.slice(1));
 }
 
 /** 一般（非串流）請求。mock 模式改走 mock-data.js。 */

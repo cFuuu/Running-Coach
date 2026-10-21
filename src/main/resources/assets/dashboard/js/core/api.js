@@ -13,15 +13,22 @@ export var useMock = (function () {
 })();
 
 /**
+ * 附加 athlete_id。尚未從 /api/meta 取得時不附加（後端預設取第一位學員）。
+ * 所有請求（含 coach.js 的聊天與分析）都經過這裡，呼叫端不可自己再接一次。
+ */
+export function withAthlete(path) {
+  var id = state.athleteId;
+  if (id === null || id === undefined) return path;
+  return path + (path.indexOf('?') === -1 ? '?' : '&') + 'athlete_id=' + encodeURIComponent(id);
+}
+
+/**
  * 統一的 API 請求入口（相對路徑，不寫死主機位址）。
  * @param {string} path 例如 '/api/sessions?range=30d'
  * @returns {Promise<Object>}
  */
 export function api(path) {
-  var full = path;
-  if (state.athleteId !== null && state.athleteId !== undefined) {
-    full += (path.indexOf('?') === -1 ? '?' : '&') + 'athlete_id=' + encodeURIComponent(state.athleteId);
-  }
+  var full = withAthlete(path);
   if (useMock) return window.MOCK_API.request(full);
 
   return fetch('.' + full, { headers: { Accept: 'application/json' } })
@@ -40,10 +47,7 @@ export function api(path) {
  * 吞掉只留狀態碼會讓使用者不知道下一步該做什麼。
  */
 export function apiPost(path, body) {
-  var full = path;
-  if (state.athleteId !== null && state.athleteId !== undefined) {
-    full += (path.indexOf('?') === -1 ? '?' : '&') + 'athlete_id=' + encodeURIComponent(state.athleteId);
-  }
+  var full = withAthlete(path);
   if (useMock) return window.MOCK_API.request(full, body);
 
   return fetch('.' + full, {

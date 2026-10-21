@@ -18,11 +18,6 @@ export function deltaClass(v) {
   return '';
 }
 
-//
-// 純呈現層：把 /api/today 的三欄位事實（數值/來源/信賴度）與課表原樣
-// 顯示出來，不做任何「今天該不該練」的判讀——判讀留給 MCP 對話中的
-// 教練（見 PLAN.md §7.3、mcp/server.py 的 coach 行為約束）。
-
 /**
  * 取該日期所在週的週日（UTC）。行事曆與本週條的一週起點。
  *
@@ -54,8 +49,14 @@ export function addDaysISO(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * 瀏覽器本地時區的今天（YYYY-MM-DD）。
+ * 不可用 toISOString()：那是 UTC 日期，台灣（UTC+8）08:00 前會得到昨天。
+ */
 export function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+    + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 export function dowLabel(dateStr) {

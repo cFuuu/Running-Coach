@@ -38,9 +38,11 @@
 - ✅ 2026-10-21 完成
 
 ### 階段 2：修正兩個既有 bug
-- [ ] `todayISO()` 用 `toISOString()` 取 UTC 日期，台灣 08:00 前會得到昨天 → 改用本地日期
-- [ ] `loadTodayKpi`、`loadRecentSessions` 自行附加 `athlete_id`，`api()` 又附加一次 → 移除呼叫端那份
-- **驗證**：單元測試、模擬 07:00 的日期計算、實際操作
+- [x] `todayISO()` 用 `toISOString()` 取 UTC 日期，台灣 08:00 前會得到昨天 → 改用本地日期
+- [x] `loadTodayKpi`、`loadRecentSessions` 自行附加 `athlete_id`，`api()` 又附加一次 → 移除呼叫端那份
+- [x] 順手統一：`athlete_id` 附加邏輯抽成 `core/api.js` 的 `withAthlete()`，`coach.js` 改用同一份
+- **驗證**：Playwright 模擬台灣 07:00，`todayISO()` 回 10-21（舊寫法回 10-20）；meta 載入後重觸發今日頁載入，19 個 API 請求無重複 `athlete_id`；回歸比對 35 情境文字與 DOM 全同（2 個僅像素差，為截圖時機抖動）；851 項測試通過
+- ✅ 2026-10-21 完成
 
 ### 階段 3：方案 A 設計規格（styles.css）
 - [ ] 字級收斂為 6 階 token：12／13／14／16／20／28px（現況約 45 種）
