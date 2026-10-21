@@ -1633,6 +1633,74 @@ body.coach-open .coach-fab {
   }
 }
 
+/* 首頁字級放大一階、字重加粗（2026-10-21 Fu：首頁字太小也太細，要一眼看得清楚）。
+   只在首頁範圍重新定義字級 token，其他頁維持原本的 6 階；首頁內所有用 var(--fs-*) 的
+   元素自動跟著放大，不必逐一覆寫。 */
+#view-home {
+  --fs-xs: 13px;
+  --fs-sm: 15px;
+  --fs-md: 16px;
+  --fs-lg: 19px;
+  --fs-xl: 24px;
+  --fs-2xl: 34px;
+  font-size: var(--fs-md);
+}
+
+/* 標籤與標題：主色＋粗體，不再是淡灰細字 */
+#view-home .kpi-label,
+#view-home .pw-fig-label,
+#view-home .today-block-title,
+#view-home .today-plan-label,
+#view-home .today-fact-label {
+  color: var(--text);
+  font-weight: 700;
+}
+
+#view-home .kpi-value,
+#view-home .pw-fig-value,
+#view-home .pb-time {
+  font-weight: 800;
+}
+
+/* 今天的課表是首頁最重要的一行 */
+#view-home .today-plan-label {
+  font-size: var(--fs-sm);
+}
+
+#view-home .today-plan-value {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+
+/* 次要說明維持次要色，但加粗一級，避免細字發虛 */
+#view-home .kpi-note,
+#view-home .kpi-detail,
+#view-home .panel-hint,
+#view-home .home-freshness,
+#view-home .wp-plan-note,
+#view-home .today-note,
+#view-home .pb-pace,
+#view-home .pb-date,
+#view-home .pb-name {
+  font-weight: 600;
+}
+
+/* 表格：課表週與最近訓練的數值加粗 */
+#view-home .wp-row,
+#view-home .recent-row {
+  font-size: var(--fs-md);
+}
+
+#view-home .wp-date,
+#view-home .wp-actual,
+#view-home .rc-date,
+#view-home .rc-km,
+#view-home .rc-pace,
+#view-home .rc-hr,
+#view-home .rc-plan {
+  font-weight: 600;
+}
+
 /* 「僅供對照」badge。刻意與信賴度 badge（conf-high/low）長得不同：
    那些是 fact() 三欄位契約的語彙，而這個標的是「根本不在事實層裡」，
    用最弱化的灰階，不讓它看起來像一個有信賴度評級的數字。 */
