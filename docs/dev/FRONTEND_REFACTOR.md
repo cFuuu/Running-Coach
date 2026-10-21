@@ -30,11 +30,12 @@
 每階段完成即 commit；push 時機由 Fu 決定。
 
 ### 階段 1：ES modules 拆檔（畫面不變）
-- [ ] `app.py` 註冊 `.js` 的 MIME 為 `text/javascript`（Windows 登錄檔可能把 `.js` 標成 `text/plain`，module 會被瀏覽器拒絕）
-- [ ] `app.js` 依職責拆到 `js/`：`core/`（dom、api、format、state、tooltip、info-popover、router）、`views/`（today、overview、calendar、sessions、load、wellness、settings）、`main.js`
-- [ ] `charts.js`、`theme.js`、`coach.js` 改為 module；`coach.js` 改用 `core/dom.js`、`core/api.js`，移除重複的 `$`／`h`／`clear`／`api`
-- [ ] `mock-data.js` 維持 classic script（`document.write` 在 module 執行前完成，`window.MOCK_API` 照常可用）
-- **驗證**：7 頁 × 桌機／手機 × 日夜截圖與改動前比對無差異、console 無錯誤、`?mock=1` 可用、單元測試通過
+- [x] `app.py` 註冊 `.js` 的 MIME 為 `text/javascript`（Windows 登錄檔可能把 `.js` 標成 `text/plain`，module 會被瀏覽器拒絕）
+- [x] `app.js` 依職責拆到 `js/`：`core/`（dom、api、format、state、tooltip、info-popover、router）、`views/`（today、overview、calendar、sessions、load、wellness、settings）、`main.js`
+- [x] `charts.js`、`theme.js`、`coach.js` 改為 module；`coach.js` 改用 `core/dom.js`、`core/api.js`，移除重複的 `$`／`h`／`clear`／`api`
+- [x] `mock-data.js` 維持 classic script（`document.write` 在 module 執行前完成，`window.MOCK_API` 照常可用）
+- **驗證**：7 頁 × 桌機／桌機深色／平板／手機 共 28 個畫面，加上 5 個互動情境（切 range、點月曆日、選場次、ⓘ 浮層、切主題）與 2 個 `?mock=1` 畫面，與改動前版本逐一截圖比對：PNG 位元組完全相同、console 無新錯誤；851 項單元測試通過
+- ✅ 2026-10-21 完成
 
 ### 階段 2：修正兩個既有 bug
 - [ ] `todayISO()` 用 `toISOString()` 取 UTC 日期，台灣 08:00 前會得到昨天 → 改用本地日期

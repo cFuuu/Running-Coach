@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="styles.css">
   <!--
     在首次繪製前就套用主題，避免「先閃一下淺色再變深色」的 FOUC。
-    這是本專案唯一允許的 inline script（其餘邏輯一律在 app.js）。
+    這是本專案唯一允許的 inline script（其餘邏輯一律在 js/ 的 ES modules）。
     讀寫的 localStorage key 與 theme.js 的 THEME_STORAGE_KEY 必須一致。
   -->
   <script>
@@ -86,7 +86,7 @@
     桌機 ≥1280px  三欄  240px | minmax(0,1fr) | 360px（側邊列｜內容｜AI 教練）
     平板 768~1279 側邊列縮成 72px 圖示欄；AI 面板改右側 overlay 抽屜
     手機 <768px   側邊列消失，改底部分頁列；AI 面板為全螢幕 sheet
-  五個 view 各自是 <section class="view" hidden>，切換只動 hidden（見 app.js 路由）。
+  五個 view 各自是 <section class="view" hidden>，切換只動 hidden（見 js/shell/router.js 路由）。
   既有容器 id 全部保留，只是搬進對應 view——charts.js 與同步游標都靠 id 查找。
 -->
 <div class="app-shell">
@@ -99,7 +99,7 @@
     </div>
 
     <!--
-      主導覽：href 是真的 hash 路由（非錨點捲動），app.js 監聽 hashchange。
+      主導覽：href 是真的 hash 路由（非錨點捲動），js/shell/router.js 監聽 hashchange。
       不攔截點擊，讓瀏覽器自己改 hash——上一頁／下一頁因此自動可用。
     -->
     <nav class="sidebar-nav" id="sidebar-nav" aria-label="主導覽">
@@ -163,16 +163,16 @@
 
     <!--
       內容頂列：view 標題 + range 切換。range 只在 訓練紀錄／訓練負荷／
-      身體狀況 三個 view 顯示（今日與行事曆不吃 range），由 app.js 切換 hidden。
+      身體狀況 三個 view 顯示（今日與行事曆不吃 range），由 js/shell/router.js 切換 hidden。
     -->
     <div class="content-topbar">
       <h1 class="content-title" id="content-title">今日</h1>
 
       <div class="topbar-controls" id="topbar-controls" hidden>
         <!--
-          range 按鈕由 app.js 依 /api/meta 回傳的 ranges 動態產生（後端
+          range 按鈕由 js/shell/range.js 依 /api/meta 回傳的 ranges 動態產生（後端
           RANGE_LABELS 是唯一真實來源），不在 HTML 寫死——避免這裡、
-          app.js、後端三處各自維護一份清單而漂移。
+          前端、後端三處各自維護一份清單而漂移。
         -->
         <div class="range-switch" role="group" aria-label="時間區間切換" id="range-switch"></div>
         <div class="custom-range" id="custom-range">
@@ -198,7 +198,7 @@
       -->
       <div class="topbar-tools">
         <!--
-          資料同步（N19 §7）。預設 disabled，由 app.js 依 /api/sync/status 決定
+          資料同步（N19 §7）。預設 disabled，由 js/shell/sync.js 依 /api/sync/status 決定
           是否啟用——來源不被允許時（例如從區網裝置連進來）維持停用並顯示理由，
           而不是讓使用者按下去才吃 403。
         -->
@@ -286,7 +286,7 @@
       版面：摘要列 → 5 張指標卡 → 週跑量＋心率區間並排 → 本週課表 → 最佳成績。
       只放數字、時間範圍標籤與定義（各區塊的 ⓘ），不放判讀——判讀在 AI 教練面板。
       資料來自 /api/overview 與 /api/training-load，range 系列吃頂列的區間切換。
-      各區塊的標題由 app.js 連同時間範圍與 ⓘ 一起產生（overviewHead）。
+      各區塊的標題由 js/views/overview.js 連同時間範圍與 ⓘ 一起產生（overviewHead）。
     -->
     <section class="view" id="view-overview" hidden aria-labelledby="content-title">
       <section class="panel overview-strip-panel" aria-label="區間摘要">
@@ -344,7 +344,7 @@
 
       <!-- 右：單場明細 -->
       <section class="panel" id="panel-session" aria-labelledby="h-session">
-        <!-- 手機兩段式的返回鍵（桌機隱藏），S1 先接路由，清單→明細見 app.js -->
+        <!-- 手機兩段式的返回鍵（桌機隱藏），S1 先接路由，清單→明細見 js/shell/router.js -->
         <button type="button" class="detail-back" id="session-back">← 場次清單</button>
         <h2 class="panel-title" id="h-session">
           單場分析<span class="panel-hint">預設為區間內最近一場，可切換</span>
@@ -387,7 +387,7 @@
     <section class="view" id="view-load" hidden aria-labelledby="h-load">
       <!--
         #panel-load 必須保留為 #load-chart 與 #trend-charts 的祖先：
-        同步游標的 SYNC_GROUPS 以此 id 查找群組容器（app.js
+        同步游標的 SYNC_GROUPS 以此 id 查找群組容器（js/core/tooltip.js
         findSyncGroupContainer）。搬動 DOM 時拆掉這層會讓游標同步靜默失效。
       -->
       <section class="panel" id="panel-load" aria-labelledby="h-load">
@@ -613,16 +613,14 @@
   -->
   <script>
     // ?mock=1 時才把 mock-data.js 插進來。用 document.write 是為了保持同步載入
-    // ——app.js 在頂層就讀 window.MOCK_API 判定要不要走假資料，非同步載入會來不及。
+    // ——core/api.js 在模組載入時就讀 window.MOCK_API 判定要不要走假資料，非同步載入會來不及。
     if (new URLSearchParams(window.location.search).get('mock') === '1') {
       document.write('<script src="mock-data.js"><\/script>');
     }
   </script>
 
-  <script src="theme.js"></script>
-  <script src="charts.js"></script>
-  <script src="app.js"></script>
-  <!-- AI 教練面板（S3）：必須在 app.js 之後，它依賴 DashboardApp.getViewContext() -->
-  <script src="coach.js"></script>
+  <!-- ES module 進入點：依 import 自動載入其餘模組。module 一律延後到 HTML 解析完才執行，
+       因此上面以 document.write 同步插入的 mock-data.js 一定先就緒。 -->
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

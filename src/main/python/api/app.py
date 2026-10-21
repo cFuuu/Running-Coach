@@ -41,6 +41,7 @@
 from __future__ import annotations
 
 import argparse
+import mimetypes
 import socket
 import threading
 import time
@@ -64,6 +65,11 @@ from src.main.python.services.coach_chat import ChatConfig
 DASHBOARD_ASSETS_DIR = (
     Path(__file__).resolve().parents[2] / "resources" / "assets" / "dashboard"
 )
+
+# 前端是 ES module（<script type="module">），瀏覽器會嚴格檢查 .js 的 Content-Type。
+# StaticFiles 依 mimetypes 判斷，而 Windows 上 mimetypes 會讀登錄檔，
+# .js 可能被標成 text/plain 導致 module 被拒絕載入——在此明確註冊。
+mimetypes.add_type("text/javascript", ".js")
 
 # 學員檔（賽事名稱來源）預設與資料庫放在同一個資料夾，兩者都在不進版控的 output/
 DEFAULT_PROFILE_FILENAME = "athlete_profile.md"
