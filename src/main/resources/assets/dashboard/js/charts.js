@@ -21,6 +21,16 @@ var SVG_NS = 'http://www.w3.org/2000/svg';
 
 // 內部繪圖座標系（viewBox 單位），實際顯示尺寸由 CSS 決定
 var VB_WIDTH = 720;
+// 窄容器（手機）時 viewBox 寬度跟著容器走，讓 1 單位＝1px：文字維持真實字級
+// （否則 390px 手機上會被縮成 0.46 倍，13 的刻度字只剩 6px），刻度數也隨之變少。
+// 下限避免極窄時版面座標（左側 Y 軸寬度等固定邊距）擠成一團。
+var MIN_VB_WIDTH = 300;
+
+/** 依容器像素寬決定 viewBox 寬度：寬螢幕固定 VB_WIDTH 等比放大，窄螢幕 1:1。 */
+function vbWidthFor(containerPx) {
+  if (!containerPx) return VB_WIDTH;
+  return Math.max(MIN_VB_WIDTH, Math.min(VB_WIDTH, Math.round(containerPx)));
+}
 
 // ---------------------------------------------------------------- 基礎工具
 
@@ -45,10 +55,11 @@ function text(content, attrs) {
  * 建立一個具備 viewBox 的 SVG 外框。
  * @param {number} height viewBox 高度（單位非像素，等比縮放）
  * @param {string} label 無障礙用途的圖表名稱
+ * @param {number} vbw viewBox 寬度（見 vbWidthFor）
  */
-function createSvg(height, label) {
+function createSvg(height, label, vbw) {
   var svg = el('svg', {
-    viewBox: '0 0 ' + VB_WIDTH + ' ' + height,
+    viewBox: '0 0 ' + vbw + ' ' + height,
     preserveAspectRatio: 'xMidYMid meet',
     role: 'img',
     'aria-label': label,
@@ -61,21 +72,20 @@ function createSvg(height, label) {
  * 決定 X 軸最多顯示幾個刻度標籤。
  *
  * 【為什麼算的是 viewBox 座標而不是容器像素】
- * SVG 用固定 VB_WIDTH 的 viewBox 搭配 width:100% 等比縮放，所以標籤文字
- * 的「實際螢幕字級」會隨容器變寬而放大、變窄而縮小——但標籤之間的
- * viewBox 間距是固定的。也就是說能不能塞得下，完全由 viewBox 座標決定，
- * 與容器幾 px 無關。
+ * SVG 的 viewBox 搭配 width:100% 等比縮放，標籤之間能不能塞得下完全由
+ * viewBox 座標決定，與容器幾 px 無關。先前用容器像素寬去除，容器越寬就放
+ * 越多標籤，可是它們仍被壓進同一個 720 座標系；1920px 螢幕上因此擠出 21 個
+ * 標籤、實測相鄰標籤重疊 7px。
  *
- * 先前這裡用容器像素寬去除，等於容器越寬就放越多標籤，可是它們仍被壓進
- * 同一個 VB_WIDTH 座標系；1920px 螢幕上因此擠出 21 個標籤、實測相鄰標籤
- * 重疊 7px。現在固定以 VB_WIDTH 計算，任何容器寬度下的密度都一致。
+ * viewBox 寬度本身由 vbWidthFor() 決定（寬螢幕 720、窄螢幕跟容器 1:1），
+ * 這裡依它計算，窄螢幕自然少放幾個標籤。
  *
- * @param {number} _containerPx 已不再使用（保留參數位置，呼叫端無需同步修改）
+ * @param {number} vbw 這張圖的 viewBox 寬度
  * @param {number} perLabelVb 每個標籤在 viewBox 座標下需要的寬度
  */
-function maxTickCount(_containerPx, perLabelVb) {
+function maxTickCount(vbw, perLabelVb) {
   var per = perLabelVb || 56;
-  return Math.max(2, Math.floor(VB_WIDTH / per));
+  return Math.max(2, Math.floor(vbw / per));
 }
 
 /**
@@ -278,12 +288,13 @@ function attachSyncMeta(svg, meta) {
  */
 function lapPaceChart(laps, opts) {
   var options = opts || {};
+  var vbw = vbWidthFor(options.containerWidth);
   var valid = laps.filter(function (l) {
     return typeof l.pace_sec_per_km === 'number' && isFinite(l.pace_sec_per_km);
   });
   var height = 240;
-  var svg = createSvg(height, '每公里分圈配速長條圖');
-  var box = { left: 52, top: 16, width: VB_WIDTH - 52 - 16, height: height - 16 - 40 };
+  var svg = createSvg(height, '每公里分圈配速長條圖', vbw);
+  var box = { left: 52, top: 16, width: vbw - 52 - 16, height: height - 16 - 40 };
 
   if (valid.length === 0) return svg;
 
@@ -302,7 +313,7 @@ function lapPaceChart(laps, opts) {
 
   var slot = box.width / valid.length;
   var barWidth = Math.max(Math.min(slot * 0.68, 42), 3);
-  var tickIdx = pickTickIndexes(valid.length, maxTickCount(options.containerWidth, 40));
+  var tickIdx = pickTickIndexes(valid.length, maxTickCount(vbw, 40));
   var hitItems = [];
   // 分圈本身沒有 elapsed_sec 欄位，只有各自的 duration_sec；累加算出每圈
   // 「中點」的經過時間，作為與 records-chart（逐秒圖）同步游標比對的
@@ -384,9 +395,10 @@ function lapPaceChart(laps, opts) {
  */
 function recordsChart(points, opts) {
   var options = opts || {};
+  var vbw = vbWidthFor(options.containerWidth);
   var height = 260;
-  var svg = createSvg(height, '配速與心率逐秒曲線圖');
-  var box = { left: 52, top: 16, width: VB_WIDTH - 52 - 52, height: height - 16 - 44 };
+  var svg = createSvg(height, '配速與心率逐秒曲線圖', vbw);
+  var box = { left: 52, top: 16, width: vbw - 52 - 52, height: height - 16 - 44 };
   if (!points || points.length === 0) return svg;
 
   var maxElapsed = points[points.length - 1].elapsed_sec || 1;
@@ -441,7 +453,7 @@ function recordsChart(points, opts) {
   }
 
   // X 軸：經過時間
-  var tickIdx = pickTickIndexes(points.length, maxTickCount(options.containerWidth, 70));
+  var tickIdx = pickTickIndexes(points.length, maxTickCount(vbw, 70));
   tickIdx.forEach(function (idx) {
     var p = points[idx];
     svg.appendChild(text(formatDuration(p.elapsed_sec), {
@@ -520,14 +532,14 @@ function buildBrokenPath(items, xOf, yOf, className) {
  */
 function hrZoneChart(zones, opts) {
   var options = opts || {};
+  var vbw = vbWidthFor(options.containerWidth);
   var height = Math.max(zones.length * 30 + 26, 90);
-  var svg = createSvg(height, '心率區間分布長條圖');
-  var box = { left: 46, top: 10, width: VB_WIDTH - 46 - 96, height: height - 10 - 16 };
+  var svg = createSvg(height, '心率區間分布長條圖', vbw);
+  var box = { left: 46, top: 10, width: vbw - 46 - 96, height: height - 10 - 16 };
   var maxSec = Math.max.apply(null, zones.map(function (z) { return z.seconds || 0; }).concat([1]));
   var rowH = box.height / Math.max(zones.length, 1);
-  // 目前列數固定為 Z1~Z5（最多 5 列），尚無需依 containerWidth 抽稀；
+  // 目前列數固定為 Z1~Z5（最多 5 列），尚無需依寬度抽稀；
   // 保留參數是為了與其他圖表統一簽名，供未來（如 Phase 3 tooltip）沿用同一介面。
-  void options.containerWidth;
 
   var hitItems = [];
   zones.forEach(function (z, i) {
@@ -566,9 +578,10 @@ function hrZoneChart(zones, opts) {
  */
 function trendLineChart(series, opts) {
   var options = opts || {};
+  var vbw = vbWidthFor(options.containerWidth);
   var height = 200;
-  var svg = createSvg(height, options.label || '趨勢折線圖');
-  var box = { left: 54, top: 14, width: VB_WIDTH - 54 - 18, height: height - 14 - 38 };
+  var svg = createSvg(height, options.label || '趨勢折線圖', vbw);
+  var box = { left: 54, top: 14, width: vbw - 54 - 18, height: height - 14 - 38 };
   if (!series || series.length === 0) return svg;
 
   var values = series.map(function (d) { return d.value; })
@@ -620,7 +633,7 @@ function trendLineChart(series, opts) {
   }
 
   // X 軸標籤：依容器寬度抽稀
-  var tickIdx = pickTickIndexes(series.length, maxTickCount(options.containerWidth, 60));
+  var tickIdx = pickTickIndexes(series.length, maxTickCount(vbw, 60));
   tickIdx.forEach(function (i) {
     svg.appendChild(text(shortDate(series[i].date), {
       x: xOf(series[i], i), y: box.top + box.height + 17, class: 'tick-label', 'text-anchor': 'middle'
@@ -677,9 +690,10 @@ function barTotal(b) {
  */
 function barChart(bars, opts) {
   var options = opts || {};
+  var vbw = vbWidthFor(options.containerWidth);
   var height = 200;
-  var svg = createSvg(height, options.label || '長條圖');
-  var box = { left: 54, top: 14, width: VB_WIDTH - 54 - 18, height: height - 14 - 38 };
+  var svg = createSvg(height, options.label || '長條圖', vbw);
+  var box = { left: 54, top: 14, width: vbw - 54 - 18, height: height - 14 - 38 };
   if (!bars || bars.length === 0) return svg;
   bars = bars.map(function (b) {
     return b.segments ? Object.assign({}, b, { value: barTotal(b) }) : b;
@@ -698,7 +712,7 @@ function barChart(bars, opts) {
 
   var slot = box.width / bars.length;
   var barWidth = Math.max(Math.min(slot * 0.66, 46), 3);
-  var tickIdx = pickTickIndexes(bars.length, maxTickCount(options.containerWidth, 68));
+  var tickIdx = pickTickIndexes(bars.length, maxTickCount(vbw, 68));
   var hitItems = [];
   var centers = [];
 
@@ -789,10 +803,11 @@ function barChart(bars, opts) {
  */
 function wellnessChart(points, opts) {
   var options = opts || {};
+  var vbw = vbWidthFor(options.containerWidth);
   // 此圖常位於較窄的右欄，viewBox 稍矮一點以免縮放後字太小
   var height = 200;
-  var svg = createSvg(height, options.label || '每日身體狀況折線圖');
-  var box = { left: 56, top: 12, width: VB_WIDTH - 56 - 20, height: height - 12 - 48 };
+  var svg = createSvg(height, options.label || '每日身體狀況折線圖', vbw);
+  var box = { left: 56, top: 12, width: vbw - 56 - 20, height: height - 12 - 48 };
   if (!points || points.length === 0) return svg;
 
   // 以整段日期區間為 X 軸（缺值日期會自然形成斷點）
@@ -869,7 +884,7 @@ function wellnessChart(points, opts) {
 
   // X 軸標籤：依整段日期均分，並依容器寬度抽稀
   var totalDays = Math.round(spanMs / dayMs) + 1;
-  var labelIdx = pickTickIndexes(totalDays, maxTickCount(options.containerWidth, 58));
+  var labelIdx = pickTickIndexes(totalDays, maxTickCount(vbw, 58));
   labelIdx.forEach(function (i) {
     var ms = startMs + i * dayMs;
     var iso = new Date(ms).toISOString().slice(0, 10);

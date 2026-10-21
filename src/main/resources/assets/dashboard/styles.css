@@ -235,6 +235,7 @@ h1, h2, h3 {
   color: var(--text);
   font-size: var(--fs-md);
   font-family: inherit;
+  white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -478,7 +479,8 @@ h1, h2, h3 {
   min-width: 0;
   max-width: 100%;
   padding: var(--gap);
-  padding-bottom: calc(56px + var(--gap)); /* 讓開手機底部分頁列 */
+  /* 讓開手機底部分頁列與其上方的 AI 浮動鈕（56px + 間距），最後一列才捲得到浮動鈕上方 */
+  padding-bottom: calc(56px + 56px + 2 * var(--gap));
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -505,6 +507,37 @@ h1, h2, h3 {
 
 .topbar-controls[hidden] {
   display: none;
+}
+
+/* 手機：標題與工具鈕同一列；區間切換獨佔一列且不換行，放不下就在列內橫向捲動
+   （原本換成兩列，加上工具列，首屏約 170px 都是按鈕）。自訂區間鈕留在列外，
+   它的下拉面板才不會被捲動容器裁掉。 */
+@media (max-width: 767px) {
+  .content-title { order: 0; }
+  .topbar-tools,
+  .coach-toggle { order: 1; }
+
+  .topbar-controls {
+    order: 2;
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .range-switch {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .range-switch::-webkit-scrollbar {
+    display: none;
+  }
+
+  .range-btn {
+    flex: 0 0 auto;
+  }
 }
 
 /*
@@ -2009,6 +2042,13 @@ body.coach-open .coach-fab {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   min-width: 0;
+}
+
+/* 手機：390px 寬時每格只剩約 33px，三個字（輕鬆跑）會折成兩行；
+   收窄間距與內距讓三字類型放得下一行 */
+@media (max-width: 560px) {
+  .week-strip { gap: 4px; }
+  .week-cell { padding: 6px 2px; }
 }
 
 .week-cell.is-clickable {
