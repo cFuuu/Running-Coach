@@ -23,10 +23,12 @@ from src.main.python.services.dashboard_queries import resolve_athlete_id, resol
 GARMIN_NOTE = "Garmin 數據：手錶與 Garmin Connect 的輸出，僅供顯示，不納入本專案的判斷。"
 
 # VO2max 分級：Garmin 手冊「VO2 Max. Standard Ratings」（資料來源 The Cooper
-# Institute）。每列為該年齡層「傑出／優秀／良好／普通」的下限，低於普通即「差」。
-# 2026-10-22 自 Garmin Forerunner 55 手冊頁核對：
+# Institute）。每列為該年齡層 95／80／60／40 百分位的下限，低於 40 百分位即「不佳」。
+# 2026-10-22 自 Garmin Forerunner 55 手冊頁核對門檻：
 # https://www8.garmin.com/manuals-apac/webhelp/forerunner55/EN-SG/GUID-B0ED81E9-0F80-415F-A27D-C7BF197EE566-2379.html
-VO2MAX_RATING_LABELS = ("傑出", "優秀", "良好", "普通", "差")
+# ⚠️ 中文名稱用 Garmin 台灣網站的譯名（Fu 提供截圖）：95＝優異、80＝傑出。
+# 不可照英文 Superior 直譯成「傑出」——會整排錯一級（52.5 在 Garmin 網頁是「傑出」）。
+VO2MAX_RATING_LABELS = ("優異", "傑出", "良好", "普通", "不佳")
 VO2MAX_RATING_TABLE: dict[str, tuple[tuple[int, int, tuple[float, float, float, float]], ...]] = {
     "MALE": (
         (20, 29, (55.4, 51.1, 45.4, 41.7)),
@@ -72,7 +74,7 @@ _WELLNESS_COLUMNS = (
 def vo2max_rating(value: float | None, sex: str | None, age: int | None) -> dict | None:
     """查 Cooper Institute 表得出分級；缺性別、年齡或超出表格年齡範圍時回 None。
 
-    回傳附上該年齡層的門檻（由低到高：普通、良好、優秀、傑出的下限），
+    回傳附上該年齡層的門檻（由低到高：普通、良好、傑出、優異的下限），
     供前端畫分段量表。
     """
     if value is None or age is None or sex not in VO2MAX_RATING_TABLE:

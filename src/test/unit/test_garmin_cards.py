@@ -10,17 +10,22 @@ from src.main.python.services import garmin_cards
 
 
 class TestVo2maxRating(unittest.TestCase):
-    """★ 門檻為下限（≥），值取自 Garmin 手冊的 Cooper Institute 表。"""
+    """★ 門檻為下限（≥），值取自 Garmin 手冊的 Cooper Institute 表；
+    名稱用 Garmin 台灣譯名（95 百分位＝優異、80＝傑出）。"""
 
     def test_cutoff_is_inclusive_lower_bound(self):
-        self.assertEqual(garmin_cards.vo2max_rating(55.4, "MALE", 27)["label"], "傑出")
-        self.assertEqual(garmin_cards.vo2max_rating(55.3, "MALE", 27)["label"], "優秀")
+        self.assertEqual(garmin_cards.vo2max_rating(55.4, "MALE", 27)["label"], "優異")
+        self.assertEqual(garmin_cards.vo2max_rating(55.3, "MALE", 27)["label"], "傑出")
+
+    def test_matches_garmin_connect_display(self):
+        """2026-10-22 Garmin 網頁：27 歲男性 VO2max 52.5（顯示 53）為「傑出」。"""
+        self.assertEqual(garmin_cards.vo2max_rating(52.5, "MALE", 27)["label"], "傑出")
 
     def test_below_fair_is_poor(self):
-        self.assertEqual(garmin_cards.vo2max_rating(41.6, "MALE", 25)["label"], "差")
+        self.assertEqual(garmin_cards.vo2max_rating(41.6, "MALE", 25)["label"], "不佳")
 
     def test_sex_selects_column(self):
-        self.assertEqual(garmin_cards.vo2max_rating(50.0, "FEMALE", 25)["label"], "傑出")
+        self.assertEqual(garmin_cards.vo2max_rating(50.0, "FEMALE", 25)["label"], "優異")
         self.assertEqual(garmin_cards.vo2max_rating(50.0, "MALE", 25)["label"], "良好")
 
     def test_missing_inputs_or_out_of_table_give_none(self):
@@ -90,9 +95,9 @@ class TestGetGarminCards(unittest.TestCase):
         self.assertEqual(ts["since"], "2026-10-09")
 
     def test_vo2max_rating_uses_profile_sex_and_age(self):
-        # 27 歲男性：53.4 ≥ 51.1（優秀下限）、< 55.4（傑出下限）
+        # 27 歲男性：53.4 ≥ 51.1（傑出下限）、< 55.4（優異下限）
         rating = self.cards["vo2max"]["rating"]
-        self.assertEqual(rating["label"], "優秀")
+        self.assertEqual(rating["label"], "傑出")
         self.assertEqual(rating["cutoffs"], [41.7, 45.4, 51.1, 55.4])
 
     def test_cards_without_data_are_omitted(self):

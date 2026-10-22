@@ -344,7 +344,6 @@ function renderVo2max(c, body) {
     ];
     body.appendChild(gaugeWithCenter(C.bandArc(c.value, { min: lo, max: hi, bands: bands }), num(c.value)));
     body.appendChild(h('div', 'gc-center-label', r.label));
-    body.appendChild(h('div', 'gc-center-caption', 'Cooper 分級表'));
   } else {
     body.appendChild(bigValue(num(c.value, 1)));
   }
@@ -425,8 +424,8 @@ export var GARMIN_CARD_DEFS = [
     tip: ['手錶量測的血氧飽和度：主數字為最新一筆，另列當日平均與最低。'] },
   { key: 'vo2max', label: '跑步最大攝氧量', render: renderVo2max,
     tip: ['Garmin 推估的跑步 VO2max（ml/kg/min）。',
-      '分級不是 Garmin API 提供的：本頁依 Garmin 手冊刊載的 Cooper Institute 分級表，按你的年齡與性別查得。'
-        + 'Garmin Connect 網頁顯示的分級可能不同（其依據未公開）。'] },
+      '分級不是 Garmin API 提供的：本頁依 Garmin 網站刊載的 Cooper Institute 分級表，按你的年齡與性別查得'
+        + '（優異＝前 5%、傑出＝前 20%、良好＝前 40%、普通＝前 60%）。'] },
   { key: 'respiration', label: '呼吸', render: renderRespiration,
     tip: ['每分鐘呼吸次數：清醒時平均、睡眠時平均，以及當日最低／最高。'] },
   { key: 'lactate_threshold', label: '跑步乳酸閾值', render: renderLactate,
