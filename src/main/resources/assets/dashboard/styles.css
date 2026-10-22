@@ -5284,7 +5284,7 @@ body.coach-open .coach-fab {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 52px;
+  min-height: 64px;
   padding: 8px var(--gap) 8px 12px;
   background: var(--tp-bg);
   border-bottom: 1px solid var(--tp-border);

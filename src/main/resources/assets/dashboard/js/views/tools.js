@@ -58,6 +58,7 @@ var ICONS = {
   ]
 };
 var SVG_NS = 'http://www.w3.org/2000/svg';
+var ICON_SIZE_PX = 34;
 
 var tools = {
   built: false,
@@ -156,7 +157,7 @@ function bindNumber(input, toText, fromNumber) {
 function icon(kind) {
   var svg = document.createElementNS(SVG_NS, 'svg');
   var attrs = {
-    viewBox: '0 0 24 24', width: 22, height: 22, fill: 'none', stroke: 'currentColor',
+    viewBox: '0 0 24 24', width: ICON_SIZE_PX, height: ICON_SIZE_PX, fill: 'none', stroke: 'currentColor',
     'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'
   };
   Object.keys(attrs).forEach(function (k) { svg.setAttribute(k, attrs[k]); });
