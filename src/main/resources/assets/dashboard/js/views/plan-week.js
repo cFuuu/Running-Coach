@@ -40,43 +40,52 @@ export function planWeekLabel(days) {
   return C.shortDate(first) + ' (' + dowLabel(first) + ') ~ ' + C.shortDate(last) + ' (' + dowLabel(last) + ')';
 }
 
+/**
+ * 一堂課表的預計里程（km）與是否為推算：有填距離就用距離；只寫時間的課用後端依學員檔
+ * 輕鬆配速推算的 estimated_distance_km（公式與配速都不在前端）；兩者都沒有回傳 null。
+ */
+function plannedKmOf(p) {
+  if (p.planned_distance_km) return { km: p.planned_distance_km, estimated: false };
+  if (p.estimated_distance_km) return { km: p.estimated_distance_km, estimated: true };
+  return null;
+}
+
 function isRunningPlan(p) {
   return p.workout_type && p.workout_type !== 'rest';
 }
 
 /**
- * 一堂課表的預計時間（秒）：有填時間就用時間，否則用距離 × 配速推算；
- * 兩者都缺（例如只寫距離沒寫配速）回傳 null，不猜。
- */
-function plannedSeconds(p) {
-  if (p.planned_duration_sec) return p.planned_duration_sec;
-  if (p.planned_distance_km && p.planned_pace_sec_per_km) {
-    return p.planned_distance_km * p.planned_pace_sec_per_km;
-  }
-  return null;
-}
-
-/**
  * 課表與實際的跑量、時間、堂數。只算跑步：課表的休息日與實際的非跑步活動不計。
- * plannedUntimed：算不出預計時間的課表堂數，讓呈現端註明時間的分母不完整。
+ * 時間只累計實際（doneSec），不算預計時間：課表的配速多半只是主課配速，
+ * 乘上整段距離會漏掉暖身收操與休息，比賽日又沒有配速，分母不可靠，完成率以里程為準。
  */
 export function planWeekSummary(days) {
   var sum = {
     plannedKm: 0, doneKm: 0, plannedSessions: 0, doneSessions: 0,
-    plannedSec: 0, doneSec: 0, plannedUntimed: 0
+    doneSec: 0,
+    doneKmUnplanned: 0, plannedKmEstimated: 0
   };
   (days || []).forEach(function (d) {
     var runningPlans = (d.planned || []).filter(isRunningPlan);
     runningPlans.forEach(function (p) {
-      if (p.planned_distance_km) sum.plannedKm += p.planned_distance_km;
-      var sec = plannedSeconds(p);
-      if (sec) sum.plannedSec += sec; else sum.plannedUntimed += 1;
+      var pk = plannedKmOf(p);
+      if (pk) {
+        sum.plannedKm += pk.km;
+        if (pk.estimated) sum.plannedKmEstimated += pk.km;
+      }
     });
     if (runningPlans.length > 0) sum.plannedSessions += 1;
     if (d.day_state === 'planned_done') sum.doneSessions += 1;
+    // 課表連時間都沒寫、推算不出里程的日子：分母沒有這天的公里數，
+    // 實際公里若算進分子，里程完成率會被灌高，所以另記在 doneKmUnplanned，不進 doneKm。
+    var kmUnplanned = runningPlans.length > 0
+      && !runningPlans.some(function (p) { return plannedKmOf(p); });
     (d.activities || []).forEach(function (a) {
       if (!a.is_running) return;
-      if (a.distance_km) sum.doneKm += a.distance_km;
+      if (a.distance_km) {
+        if (kmUnplanned) sum.doneKmUnplanned += a.distance_km;
+        else sum.doneKm += a.distance_km;
+      }
       if (a.duration_sec) sum.doneSec += a.duration_sec;
     });
   });
@@ -99,19 +108,27 @@ export function planWeekTileValue(big, rest, trailing) {
   return val;
 }
 
-/** 本週預計跑量區段：實際／課表公里數，下方進度條寫明「完成 N%」。 */
+/** 本週預計跑量區段：實際／課表公里數，下方進度條內直接寫百分比。 */
 function kmSection(s) {
   var sec = h('div', 'pw-sec');
   sec.appendChild(h('div', 'pw-tile-label', '本週預計跑量'));
   var pct = s.plannedKm > 0 ? Math.min(100, (s.doneKm / s.plannedKm) * 100) : null;
   sec.appendChild(planWeekTileValue(C.formatNumber(s.doneKm, 1),
-    '/ ' + (s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—') + ' km',
-    pct === null ? '' : '完成 ' + Math.round(s.doneKm / s.plannedKm * 100) + '%'));
+    '/ ' + (s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—') + ' km'));
+  if (s.plannedKmEstimated > 0) {
+    sec.title = '預計里程含 ' + C.formatNumber(s.plannedKmEstimated, 1)
+      + ' km 推算值：課表只寫時間的課，以學員檔的輕鬆配速中點換算';
+  }
   if (pct !== null) {
     var bar = h('div', 'pw-bar');
     var fill = h('div', 'pw-bar-fill');
     fill.style.width = pct.toFixed(1) + '%';
     bar.appendChild(fill);
+    // 百分比寫在 bar 裡：填色段夠長就放在段內右端（白字），太短放不下就接在段後（灰字）
+    var label = h('span', 'pw-bar-pct' + (pct >= 18 ? ' is-inside' : ''),
+      Math.round(s.doneKm / s.plannedKm * 100) + '%');
+    if (pct >= 18) fill.appendChild(label);
+    else { label.style.left = 'calc(' + pct.toFixed(1) + '% + 6px)'; bar.appendChild(label); }
     bar.setAttribute('role', 'img');
     bar.setAttribute('aria-label', '實際 ' + C.formatNumber(s.doneKm, 1) + ' km，課表 '
       + C.formatNumber(s.plannedKm, 1) + ' km，完成 ' + Math.round(pct) + '%');
@@ -159,12 +176,15 @@ function actualNode(day) {
     return cell;
   }
   var km = runs.reduce(function (t, a) { return t + (a.distance_km || 0); }, 0);
-  var text = C.formatNumber(km, 1) + ' km';
+  var btn = h('button', 'wp-actual-link', C.formatNumber(km, 1) + ' km');
   var one = runs.length === 1 ? runs[0] : null;
+  // 配速與平均心率同一行，灰色小字
+  var sub = [];
   if (one && one.distance_km && one.duration_sec) {
-    text += '　' + C.formatPace(one.duration_sec / one.distance_km) + '/km';
+    sub.push(C.formatPace(one.duration_sec / one.distance_km) + '/km');
   }
-  var btn = h('button', 'wp-actual-link', text);
+  if (one && one.avg_hr_bpm) sub.push(Math.round(one.avg_hr_bpm) + ' bpm');
+  if (sub.length) btn.appendChild(h('span', 'wp-sub', sub.join(' · ')));
   btn.type = 'button';
   btn.title = '看單場分析';
   btn.addEventListener('click', function () { navigate('sessions', runs[0].id); });

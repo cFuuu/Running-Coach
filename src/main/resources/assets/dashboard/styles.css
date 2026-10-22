@@ -2176,16 +2176,18 @@ body.coach-open .coach-fab {
 }
 
 /* 摘要圖卡：左邊「里程＋完成堂數」上下合成一張，右邊（首頁）是 Zone 2，右邊給較多寬度。
-   區塊窄時上下排，夠寬（≥640px）左右並排。 */
+   區塊窄時上下排，夠寬（≥440px）左右並排。
+   首頁兩欄排列時，當週課表區塊只有約 480 CSS px 寬，門檻設太高
+   （原本 640px）會讓同樣的視窗變成上下兩格。 */
 .pw-tiles {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
-@container block (min-width: 640px) {
+@container block (min-width: 440px) {
   .pw-tiles {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   }
 }
 
@@ -2224,17 +2226,36 @@ body.coach-open .coach-fab {
 
 /* 里程完成度：進度條＋下方文字寫明「里程完成 N%」 */
 .pw-bar {
-  height: 8px;
+  position: relative;
+  height: 18px;
   margin-top: 8px;
-  border-radius: 4px;
+  border-radius: 9px;
   background: var(--bar-track);
   overflow: hidden;
 }
 
 .pw-bar-fill {
+  position: relative;
   height: 100%;
-  border-radius: 4px;
+  border-radius: 9px;
   background: var(--accent);
+}
+
+/* 百分比寫在 bar 內：段內右端白字；填色段太短時接在段後灰字 */
+.pw-bar-pct {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.pw-bar-pct.is-inside {
+  right: 8px;
+  color: #fff;
 }
 
 .pw-pct {
@@ -2242,6 +2263,7 @@ body.coach-open .coach-fab {
   font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* 圖卡內的上下區段：里程在上、完成堂數在下，中間一條分隔線 */
@@ -2261,7 +2283,8 @@ body.coach-open .coach-fab {
 /* 完成堂數：每堂一個圓點，已完成塗滿 */
 .pw-dots {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: none; /* 窄卡片裡圓點不換行，改由左邊文字讓位 */
   justify-content: flex-end;
   gap: 6px;
 }
@@ -2281,12 +2304,31 @@ body.coach-open .coach-fab {
 /* Zone 2 比例條下方的圖例：色點＋文字＋佔比 */
 .pw-legend {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-  margin-top: 6px;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px; /* 與上方比例條拉開距離 */
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* 每段一列：名稱靠左，時間與佔比靠右 */
+.pw-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.pw-legend-val {
+  color: var(--text);
+}
+
+.pw-legend-note {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
 }
 
 .pw-legend-dot {
@@ -2297,14 +2339,15 @@ body.coach-open .coach-fab {
   border-radius: 50%;
 }
 
-/* 四欄：日期（10/19 (一)）、課表、實際、狀態。課表與實際給最多空間，其餘是短字串。
+/* 四欄：日期（10/19 (一)）、課表、實際、狀態。日期／實際／狀態都是短字串，
+   依內容給固定寬度，剩下的空間全部讓給課表（含第二行備註）。
    課表欄可能有第二行備註，故靠上對齊。 */
 .wp-row {
   display: grid;
-  grid-template-columns: 6.2rem minmax(0, 1.3fr) minmax(0, 1fr) 4.4rem;
+  grid-template-columns: 5rem minmax(0, 1fr) 7.6rem 4.6rem;
   align-items: start;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 12px 8px 6px;
   font-size: var(--fs-sm);
 }
 
@@ -2355,6 +2398,29 @@ body.coach-open .coach-fab {
   cursor: pointer;
 }
 
+/* 距離維持原大小；配速與平均心率同一行，灰色小字，整欄置中 */
+.wp-actual-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 auto;
+}
+
+.wp-sub {
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+/* 日期、實際、狀態欄（含表頭）一律置中 */
+.wp-row.wp-head > :not(:nth-child(2)),
+.wp-date,
+.wp-actual,
+.wp-state {
+  text-align: center;
+}
+
 .wp-actual-link:hover {
   text-decoration: underline;
 }
@@ -2370,6 +2436,7 @@ body.coach-open .coach-fab {
 
 .wp-date,
 .wp-state {
+  white-space: nowrap; /* 「尚未發生」「10/19 (一)」不可折成兩行 */
   color: var(--text-muted);
   font-size: var(--fs-sm);
   font-weight: 600;
@@ -3858,8 +3925,8 @@ body.coach-open .coach-fab {
   height: 100%;
 }
 
-.zone-split-seg:first-child { border-radius: 7px 0 0 7px; }
-.zone-split-seg:nth-child(3) { border-radius: 0 7px 7px 0; }
+.zone-split-seg.is-first { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+.zone-split-seg.is-last { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
 
 .zone-split-ref {
   position: absolute;

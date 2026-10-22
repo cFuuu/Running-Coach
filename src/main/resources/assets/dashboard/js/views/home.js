@@ -690,18 +690,24 @@ function zone2Tile() {
   tile.appendChild(zoneSplitBar(w.zone_seconds.map(function (z) {
     return { zone: z.zone, pct: z.seconds / total * 100 };
   }), true));
+  // 圖例：每段一列，左邊色點＋名稱，右邊該段的時間與佔比
   var legend = h('div', 'pw-legend');
   [
     { cls: 'bar-intensity-low', text: '低強度 Z1–Z2', zones: [1, 2] },
-    { cls: 'bar-intensity-mid', text: '中 Z3', zones: [3] },
-    { cls: 'bar-intensity-high', text: '高 Z4–Z5', zones: [4, 5] }
+    { cls: 'bar-intensity-mid', text: '中強度 Z3', zones: [3] },
+    { cls: 'bar-intensity-high', text: '高強度 Z4–Z5', zones: [4, 5] }
   ].forEach(function (item) {
-    var entry = h('span', 'pw-legend-item');
-    entry.appendChild(h('span', 'pw-legend-dot ' + item.cls));
-    entry.appendChild(document.createTextNode(item.text + ' ' + C.formatNumber(pctOf(item.zones), 0) + '%'));
+    var secsOf = item.zones.reduce(function (sum, z) { return sum + (secs[z] || 0); }, 0);
+    var entry = h('div', 'pw-legend-row');
+    var name = h('span', 'pw-legend-item');
+    name.appendChild(h('span', 'pw-legend-dot ' + item.cls));
+    name.appendChild(document.createTextNode(item.text));
+    entry.appendChild(name);
+    entry.appendChild(h('span', 'pw-legend-val',
+      C.formatDuration(secsOf) + '　' + C.formatNumber(pctOf(item.zones), 0) + '%'));
     legend.appendChild(entry);
   });
-  legend.appendChild(h('span', 'pw-legend-item', '｜黑線 80% 參考'));
+  legend.appendChild(h('div', 'pw-legend-note', '黑線＝80% 參考位置（80/20 原則），不是判讀'));
   tile.appendChild(legend);
   return tile;
 }
@@ -783,13 +789,14 @@ function progressRing(pct) {
   return wrap;
 }
 
-/** 一列「實際 / 課表」：大數字＋淡化的分母。 */
+/** 一列「實際 / 課表」：大數字＋淡化的分母；planned 為 null 時只顯示實際與單位。 */
 function weekFigRow(label, done, planned, unit) {
   var row = h('div', 'wt-row');
   row.appendChild(h('span', 'wt-row-label', label));
   var val = h('span', 'wt-row-value');
   val.appendChild(h('span', 'wt-done', done));
-  val.appendChild(h('span', 'wt-planned', '/ ' + planned + (unit ? ' ' + unit : '')));
+  val.appendChild(h('span', 'wt-planned',
+    planned === null ? unit : '/ ' + planned + (unit ? ' ' + unit : '')));
   row.appendChild(val);
   return row;
 }
@@ -800,8 +807,8 @@ function hoursText(sec) {
 }
 
 /**
- * 本週訓練狀況：本課表週（週一到週日）實際跑量與時間對照課表，環形圖顯示完成率。
- * 完成率以里程為準；課表沒填距離（只排時間）時改用時間。
+ * 本週訓練狀況：本課表週（週一到週日）實際跑量對照課表、實際累計時間，環形圖顯示里程完成率。
+ * 時間只列實際，不對照預計時間（分母不可靠，見 plan-week.js planWeekSummary）。
  *
  * 放在「今天」區塊內、訓練完備程度旁（#week-training 由 renderToday 建立）。
  * 課表週與今日資料各自載入、先後不定，兩邊資料回來時都會呼叫本函式；
@@ -837,23 +844,16 @@ export function renderWeekTraining() {
   figs.appendChild(weekFigRow('里程',
     C.formatNumber(s.doneKm, 1),
     s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—', 'km'));
-  figs.appendChild(weekFigRow('時間',
-    hoursText(s.doneSec),
-    s.plannedSec > 0 ? hoursText(s.plannedSec) : '—', 'h'));
+  figs.appendChild(weekFigRow('時間', hoursText(s.doneSec), null, 'h'));
   card.appendChild(figs);
 
-  var pct = s.plannedKm > 0 ? s.doneKm / s.plannedKm * 100
-    : (s.plannedSec > 0 ? s.doneSec / s.plannedSec * 100 : null);
-  if (pct !== null) {
+  if (s.plannedKm > 0) {
+    var pct = s.doneKm / s.plannedKm * 100;
     var ring = progressRing(pct);
-    ring.title = (s.plannedKm > 0 ? '以里程計算' : '課表未填距離，以時間計算')
-      + '：' + Math.round(pct) + '%';
+    ring.title = '以里程計算：' + Math.round(pct) + '%';
     card.appendChild(ring);
   }
   body.appendChild(card);
-  body.appendChild(h('div', 'today-note wt-note',
-    '完成 ' + s.doneSessions + '／' + s.plannedSessions + ' 堂'
-    + (s.plannedUntimed > 0 ? '；' + s.plannedUntimed + ' 堂課表無時間或配速，未計入預計時間' : '')));
 }
 
 // ------------------------------------------------------------ 戰力綜覽

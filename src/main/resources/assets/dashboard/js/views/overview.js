@@ -228,8 +228,11 @@ export function zoneSplitBar(zones, compact) {
     { cls: 'bar-intensity-high', v: (pct[4] || 0) + (pct[5] || 0) }
   ];
   var bar = h('div', 'zone-split' + (compact ? ' is-compact' : ''));
+  // 兩端圓角要落在「有寬度的第一段與最後一段」上：最右邊那段（高強度）常是 0%
+  var shown = parts.filter(function (p) { return p.v > 0; });
   parts.forEach(function (p) {
-    var seg = h('span', 'zone-split-seg ' + p.cls);
+    var seg = h('span', 'zone-split-seg ' + p.cls
+      + (p === shown[0] ? ' is-first' : '') + (p === shown[shown.length - 1] ? ' is-last' : ''));
     seg.style.width = p.v.toFixed(2) + '%';
     bar.appendChild(seg);
   });
