@@ -147,7 +147,7 @@ function readinessPill(value) {
 }
 
 var READINESS_TIPS = [
-  '訓練完備程度是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
+  '綜合訓練完備程度是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
     + '對「今天身體恢復得夠不夠完備」的判定。顏色一看就懂：'
     + '綠色 ✓ 正常（查過了，沒有異常訊號）；紅色 ▼ 偏低（至少一個維度觸發）；'
     + '灰色 – 未評（三個維度都缺資料、無法評估，不等於正常）。',
@@ -157,7 +157,7 @@ var READINESS_TIPS = [
     + 'HRV 的百分比門檻尚未經文獻驗證，標為低。',
   '資料不足的維度會跳過（例如 HRV 近 7 天少於 3 筆、當天尚未同步）。',
   '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
-    + '與 Garmin 訓練準備度是兩回事，後者只供對照。'
+    + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
 ];
 
 /** 今天還沒同步、改顯示較早一天資料時的說明文字。 */
@@ -213,15 +213,15 @@ function readinessStatus(value) {
   var s = readinessStateOf(value);
   // 狀態文字（兩個字）直接放在圓裡，圓下方不再多佔一行
   var badge = h('span', 'rd-status-icon readiness-' + s.cls, s.text);
-  badge.title = s.cls === 'none' ? '三個維度都缺資料，無法評估（不等於正常）' : '訓練完備程度：' + s.text;
+  badge.title = s.cls === 'none' ? '三個維度都缺資料，無法評估（不等於正常）' : '綜合訓練完備程度：' + s.text;
   return badge;
 }
 
 export function renderTodayReadinessBlock(readiness) {
   var block = h('div', 'today-block readiness-block fig-block');
   var title = h('div', 'today-block-title');
-  title.appendChild(h('span', null, '訓練完備程度'));
-  title.appendChild(infoTip('訓練完備程度', READINESS_TIPS));
+  title.appendChild(h('span', null, '綜合訓練完備程度'));
+  title.appendChild(infoTip('綜合訓練完備程度', READINESS_TIPS));
   block.appendChild(title);
 
   var entry = readiness && readiness.today;
@@ -579,6 +579,50 @@ function hrvRangeGauge(weeklyAvg, low, upper) {
   return gauge;
 }
 
+/** Garmin 綜合分數（HRV 狀態、睡眠分數、訓練完備程度）旁的標籤，標明來源是 Garmin 而非本專案。 */
+var GARMIN_DATA_BADGE = 'Garmin數據';
+
+/** 睡眠分數分級，門檻與 Garmin 網頁的色帶一致（優 90+、良 80–89、尚可 60–79、差 <60）。 */
+var SLEEP_SCORE_BANDS = [
+  { min: 0, max: 59, label: '差', cls: 'sleep-band-poor' },
+  { min: 60, max: 79, label: '尚可', cls: 'sleep-band-fair' },
+  { min: 80, max: 89, label: '良', cls: 'sleep-band-good' },
+  { min: 90, max: 100, label: '優', cls: 'sleep-band-excellent' }
+];
+
+function sleepBandOf(score) {
+  for (var i = 0; i < SLEEP_SCORE_BANDS.length; i += 1) {
+    if (score <= SLEEP_SCORE_BANDS[i].max) return SLEEP_SCORE_BANDS[i];
+  }
+  return SLEEP_SCORE_BANDS[SLEEP_SCORE_BANDS.length - 1];
+}
+
+/** Garmin 網頁式睡眠分數色帶：四段分級，圓點標出今日分數，不另下判讀。 */
+function sleepScoreDetails(score) {
+  var band = sleepBandOf(score);
+  var wrap = h('div', 'kpi-detail');
+  var head = h('div', 'kpi-detail-row');
+  head.appendChild(h('span', 'sleep-band-label ' + band.cls, band.label));
+  var badge = h('span', 'conf-badge conf-reference', GARMIN_DATA_BADGE);
+  badge.title = 'Garmin（Firstbeat）算出的睡眠分數與分級，演算法未公開，不納入本專案判斷。';
+  head.appendChild(badge);
+  wrap.appendChild(head);
+
+  var gauge = h('div', 'hrv-gauge');
+  var track = h('div', 'sleep-gauge-track');
+  SLEEP_SCORE_BANDS.forEach(function (b) {
+    var seg = h('div', 'sleep-gauge-seg ' + b.cls);
+    seg.style.width = (b.max - b.min + 1) + '%';
+    track.appendChild(seg);
+  });
+  var dot = h('div', 'hrv-gauge-dot');
+  dot.style.left = Math.min(100, Math.max(0, score)) + '%';
+  track.appendChild(dot);
+  gauge.appendChild(track);
+  wrap.appendChild(gauge);
+  return wrap;
+}
+
 /** 夜間平均／最高 5 分鐘平均兩個並列數字（Garmin HRV 狀態頁摘要的同款排法）。 */
 function hrvNightStats(hrv, hrvToday) {
   var row = h('div', 'hrv-stats');
@@ -600,33 +644,23 @@ function hrvNightStats(hrv, hrvToday) {
 function hrvDetails(hrv, hrvToday) {
   var wrap = h('div', 'kpi-detail');
   var gref = hrv.garmin_reference;
+  // Garmin 自己的 HRV 狀態走 garmin_reference（for_display_only），不是 fact() 的
+  // 三欄位契約——規則引擎與 AI 教練都不讀它，這裡純粹是「讓你看到手錶顯示了什麼」。
+  // 平衡區間對照的是 7 日均值、不是昨夜值（實測 39/39 天吻合，昨夜值只有 29/39）。
+  // 排法照 Garmin 網頁：狀態在最上、其次平衡區間量表、最後是夜間數字。
+  if (gref && gref.status) {
+    var status = h('div', 'kpi-detail-row');
+    status.appendChild(h('span', 'hrv-status-line ' + (HRV_STATUS_CLASS[gref.status] || ''), HRV_STATUS_LABEL[gref.status] || gref.status));
+    var refBadge = h('span', 'conf-badge conf-reference', GARMIN_DATA_BADGE);
+    refBadge.title = gref.note || '';
+    status.appendChild(refBadge);
+    wrap.appendChild(status);
+  }
   if (hrv.weekly_avg_ms && gref && gref.baseline_balanced_low && gref.baseline_balanced_upper) {
     wrap.appendChild(hrvRangeGauge(hrv.weekly_avg_ms.value, gref.baseline_balanced_low, gref.baseline_balanced_upper));
   }
   var stats = hrvNightStats(hrv, hrvToday);
   if (stats) wrap.appendChild(stats);
-  if (hrv.delta_pct && typeof hrv.delta_pct.value === 'number') {
-    var delta = h('div', 'kpi-detail-row');
-    delta.appendChild(h('span', null, '昨夜較 7 日均值 ' + fmtDelta(hrv.delta_pct.value, 1, '%')));
-    delta.appendChild(confBadge(hrv.delta_pct));
-    wrap.appendChild(delta);
-  }
-  // Garmin 自己的 HRV 狀態走 garmin_reference（for_display_only），不是 fact() 的
-  // 三欄位契約——規則引擎與 AI 教練都不讀它，這裡純粹是「讓你看到手錶顯示了什麼」。
-  // 平衡區間對照的是 7 日均值、不是昨夜值（實測 39/39 天吻合，昨夜值只有 29/39）。
-  if (gref && gref.status) {
-    var status = h('div', 'kpi-detail-row');
-    status.appendChild(h('span', null, 'Garmin 狀態 '));
-    status.appendChild(h('span', HRV_STATUS_CLASS[gref.status] || '', HRV_STATUS_LABEL[gref.status] || gref.status));
-    if (gref.baseline_balanced_low && gref.baseline_balanced_upper) {
-      status.appendChild(h('span', null, '（平衡區間 ' + C.formatNumber(gref.baseline_balanced_low, 0) + '–'
-        + C.formatNumber(gref.baseline_balanced_upper, 0) + ' ms）'));
-    }
-    var refBadge = h('span', 'conf-badge conf-reference', '僅供對照');
-    refBadge.title = gref.note || '';
-    status.appendChild(refBadge);
-    wrap.appendChild(status);
-  }
   return wrap;
 }
 
@@ -685,26 +719,30 @@ export function renderHomeBody() {
   if (sleepVals.length) {
     var durs = numericValues(kpi.sleepDurationPoints);
     var lastDur = durs.length ? durs[durs.length - 1] : null;
-    cards.appendChild(kpiCard({
+    var sleepScore = sleepVals[sleepVals.length - 1];
+    var sleepCard = kpiCard({
       label: '睡眠分數',
-      value: C.formatNumber(sleepVals[sleepVals.length - 1], 0),
+      value: C.formatNumber(sleepScore, 0),
       note: lastDur ? '時長 ' + Math.floor(lastDur / 3600) + ' 小時 ' + Math.round((lastDur % 3600) / 60) + ' 分' : '近 30 天走勢',
       series: sleepVals,
-      tip: ['Garmin 依睡眠時長、各睡眠階段比例、壓力與中斷次數算出的 0–100 分數，演算法未公開。']
-    }));
+      tip: ['Garmin 依睡眠時長、各睡眠階段比例、壓力與中斷次數算出的 0–100 分數，演算法未公開。',
+        '分級色帶：優 90 以上、良 80–89、尚可 60–79、差 59 以下，圓點是最新一晚的分數。']
+    });
+    sleepCard.appendChild(sleepScoreDetails(sleepScore));
+    cards.appendChild(sleepCard);
   }
 
   var readyVals = numericValues(kpi.readinessPoints);
   if (readyVals.length) {
-    var refBadge = h('span', 'conf-badge conf-reference', '僅供對照');
+    var readyBadge = h('span', 'conf-badge conf-reference', GARMIN_DATA_BADGE);
     cards.appendChild(kpiCard({
-      label: 'Garmin 準備度',
+      label: '訓練完備程度',
       value: C.formatNumber(readyVals[readyVals.length - 1], 0),
-      badge: refBadge,
+      badge: readyBadge,
       note: '近 30 天走勢',
       series: readyVals,
-      tip: ['Garmin 綜合睡眠、恢復時間、HRV 與近期負荷給出的 0–100 分數，演算法未公開。',
-        '與「今天」區塊的訓練完備程度（本專案規則引擎）是兩回事：規則引擎的依據公開、帶信賴度；這個只供對照。']
+      tip: ['Garmin 綜合睡眠、恢復時間、HRV 與近期負荷給出的 0–100 分數（即 Garmin 的訓練準備度），演算法未公開。',
+        '與「今天」區塊的綜合訓練完備程度（本專案規則引擎）是兩回事：規則引擎的依據公開、帶信賴度；這個是 Garmin 數據，不納入本專案判斷。']
     }));
   }
 

@@ -2092,6 +2092,63 @@ body.coach-open .coach-fab {
   font-size: var(--fs-xs);
 }
 
+.hrv-status-line {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+/* 睡眠分數四段色帶：差／尚可／良／優，圓點沿用 hrv-gauge-dot */
+.sleep-gauge-track {
+  position: relative;
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.sleep-gauge-seg {
+  height: 100%;
+  opacity: 0.55;
+}
+
+.sleep-gauge-seg:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.sleep-gauge-seg:last-of-type {
+  border-radius: 0 4px 4px 0;
+}
+
+.sleep-band-poor {
+  background: var(--badge-clipped-text);
+}
+
+.sleep-band-fair {
+  background: var(--text-muted);
+}
+
+.sleep-band-good,
+.sleep-band-excellent {
+  background: var(--c-good, var(--accent));
+}
+
+.sleep-band-label {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.sleep-band-label.sleep-band-poor,
+.sleep-band-label.sleep-band-fair,
+.sleep-band-label.sleep-band-good,
+.sleep-band-label.sleep-band-excellent {
+  background: none;
+}
+
+.sleep-band-label.sleep-band-poor { color: var(--badge-clipped-text); }
+.sleep-band-label.sleep-band-fair { color: var(--text-muted); }
+.sleep-band-label.sleep-band-good,
+.sleep-band-label.sleep-band-excellent { color: var(--c-good, var(--accent)); }
+
 .hrv-stats {
   display: flex;
   gap: 16px;
