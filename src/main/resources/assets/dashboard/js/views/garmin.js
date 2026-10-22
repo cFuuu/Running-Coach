@@ -66,11 +66,18 @@ function monthDay(iso) {
   return parseInt(p[1], 10) + '月' + parseInt(p[2], 10) + '日';
 }
 
+function todayIso() {
+  var today = new Date();
+  return today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+}
+
 /** 卡片底下「資料日期」：不是今天時要寫出來，免得把昨天的值當今天。 */
 function dateNote(card) {
-  var today = new Date();
-  var iso = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-  return card.date && card.date !== iso ? C.shortDate(card.date) + ' 的資料' : '';
+  return card.date && card.date !== todayIso() ? C.shortDate(card.date) + ' 的資料' : '';
+}
+
+function minuteToClock(m) {
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 }
 
 /** 主數字＋單位 */
@@ -123,15 +130,23 @@ function weekChecks(items) {
   return row;
 }
 
-function intraday(points, opts, startLabel, endLabel) {
-  var svg = C.intradayChart(points, opts);
+/**
+ * 24 小時日內圖。date 是今天時，最後一個資料點之後到 24:00 畫灰底並註明資料時間——
+ * 今天還沒過完、也還沒同步到的時段，不能看起來像「這段時間沒資料」。
+ */
+function intraday(points, opts, date) {
+  var last = (points || []).length ? points[points.length - 1][0] : null;
+  var pending = date === todayIso() && last !== null && last < 1439;
+  var svg = C.intradayChart(points, pending ? Object.assign({ pendingFrom: last + 1 }, opts) : opts);
   if (!svg) return null;
   var wrap = h('div', 'gc-intraday-wrap');
   wrap.appendChild(svg);
   var axis = h('div', 'gc-axis');
-  axis.appendChild(h('span', null, startLabel || '00:00'));
-  axis.appendChild(h('span', null, endLabel || '24:00'));
+  axis.appendChild(h('span', null, '00:00'));
+  axis.appendChild(h('span', null, '24:00'));
   wrap.appendChild(axis);
+  // 說明自成一行：塞在 00:00 與 24:00 之間會在窄卡片上被截斷
+  if (pending) wrap.appendChild(h('div', 'gc-axis-pending', '灰色未同步，資料到 ' + minuteToClock(last)));
   return wrap;
 }
 
@@ -248,7 +263,7 @@ function renderBodyBattery(c, body) {
   if (c.charged !== null) stats.appendChild(labelled('+' + num(c.charged), '已充電'));
   if (c.drained !== null) stats.appendChild(labelled('−' + num(c.drained), '已消耗'));
   if (stats.childNodes.length) body.appendChild(stats);
-  var chart = intraday(c.intraday, { mode: 'area', min: 0, max: 100 });
+  var chart = intraday(c.intraday, { mode: 'area', min: 0, max: 100 }, c.date);
   if (chart) body.appendChild(chart);
   return null;
 }
@@ -258,7 +273,7 @@ function renderHeartRate(c, body) {
   if (c.resting_7day_avg !== null) stats.appendChild(labelled(num(c.resting_7day_avg) + ' bpm', '平均 7 天靜止'));
   stats.appendChild(labelled(num(c.resting) + ' bpm', '靜止'));
   body.appendChild(stats);
-  var chart = intraday(c.intraday, { mode: 'line' });
+  var chart = intraday(c.intraday, { mode: 'line' }, c.date);
   if (chart) body.appendChild(chart);
   return sparkFrom(c.series, 'resting_hr_bpm');
 }
@@ -325,7 +340,7 @@ function renderHealthStatus(c, body) {
 
 function renderStress(c, body) {
   body.appendChild(gaugeWithCenter(C.ringGauge(c.avg / 100, { className: stressTone(c.avg) }), num(c.avg)));
-  var chart = intraday(c.intraday, { mode: 'bars', min: 0, max: 100, barClass: stressTone });
+  var chart = intraday(c.intraday, { mode: 'bars', min: 0, max: 100, barClass: stressTone }, c.date);
   if (chart) body.appendChild(chart);
   return null;
 }

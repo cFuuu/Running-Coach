@@ -2434,6 +2434,18 @@ body.coach-open .coach-fab {
   vector-effect: non-scaling-stroke;
 }
 
+/* 今天尚未同步到的時段：灰底，與「這段時間真的沒資料」區分 */
+.gc-intraday-pending {
+  fill: var(--text-muted);
+  opacity: 0.18;
+}
+
+.gc-axis-pending {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .gc-intraday-area {
   fill: var(--pct-blue);
   opacity: 0.25;
