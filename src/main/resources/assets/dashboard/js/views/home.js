@@ -755,12 +755,11 @@ export function loadWeekStrip() {
 var RING_R = 26;
 var RING_CIRCUMFERENCE = 2 * Math.PI * RING_R;
 
-/** 完成率分級（%）→ 環的顏色：≥80 藍、≥60 綠、≥40 黃、≥20 橘、其餘紅。 */
+/** 完成率分級（%）→ 環的顏色：≥90 藍、≥50 綠、≥20 黃、其餘（<20）紅。 */
 var PROGRESS_TIERS = [
-  { min: 80, cls: 'pct-blue' },
-  { min: 60, cls: 'pct-green' },
-  { min: 40, cls: 'pct-yellow' },
-  { min: 20, cls: 'pct-orange' },
+  { min: 90, cls: 'pct-blue' },
+  { min: 50, cls: 'pct-green' },
+  { min: 20, cls: 'pct-yellow' },
   { min: -Infinity, cls: 'pct-red' }
 ];
 

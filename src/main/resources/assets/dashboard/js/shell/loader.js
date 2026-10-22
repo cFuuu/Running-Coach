@@ -17,12 +17,14 @@ export function renderMeta() {
   if (!state.meta) return;
   var athlete = state.meta.athlete || {};
   if (athlete.name) {
-    node.appendChild(h('span', 'meta-athlete', athlete.name));
-  }
-  var cov = state.meta.metric_coverage || {};
-  if (cov.activities && cov.activities.earliest_date) {
-    node.appendChild(h('span', 'meta-cov',
-      '活動資料 ' + cov.activities.earliest_date + ' ~ ' + (cov.activities.latest_date || '')));
+    // 學員卡：左側圓形頭像（取名字第一個字），右側「學員」小標＋名字
+    var chip = h('div', 'meta-athlete');
+    chip.appendChild(h('span', 'meta-avatar', Array.from(athlete.name)[0]));
+    var text = h('span', 'meta-athlete-text');
+    text.appendChild(h('span', 'meta-athlete-role', '學員'));
+    text.appendChild(h('span', 'meta-athlete-name', athlete.name));
+    chip.appendChild(text);
+    node.appendChild(chip);
   }
   if (useMock) {
     node.appendChild(h('span', 'badge badge-mock', '開發用假資料'));

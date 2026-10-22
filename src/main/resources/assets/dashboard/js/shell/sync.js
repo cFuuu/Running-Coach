@@ -59,8 +59,74 @@ export function renderSyncFreshness(nodeId, showLabel) {
   }
 }
 
+/** 落後天數 → 新鮮度圓點顏色級別：今天＝綠、落後 1 天＝黃、2 天以上＝紅、未知＝灰。 */
+function freshnessTier(days) {
+  if (days === null || days === undefined) return 'is-unknown';
+  if (days <= 0) return 'is-fresh';
+  if (days === 1) return 'is-stale';
+  return 'is-old';
+}
+
+/**
+ * 側邊列的資料新鮮度：一行「圓點＋狀態＋同步時刻」，圓點顏色表示新鮮度；
+ * 最新活動、身體數據、落後天數收進 hover／聚焦／點擊展開的浮層。
+ * 側邊列是 overflow 捲動容器，浮層用 fixed 定位（show 時依按鈕位置計算）才不會被裁掉。
+ * 設定頁仍用 renderSyncFreshness 的完整明細，不受影響。
+ */
 export function renderSidebarSync() {
-  renderSyncFreshness('sidebar-sync', true);
+  var node = $('sidebar-sync');
+  if (!node) return;
+  clear(node);
+  var f = state.today && state.today.freshness;
+  if (!f) return;
+  if (!f.last_synced_at && !f.activity_latest && !f.wellness_latest) {
+    node.appendChild(h('span', 'sync-label', '尚無同步資料'));
+    return;
+  }
+  var days = f.days_behind;
+  var status = days === null || days === undefined ? '資料時間'
+    : (days > 0 ? '落後 ' + days + ' 天' : '資料已到今天');
+
+  var btn = h('button', 'sync-chip ' + freshnessTier(days));
+  btn.type = 'button';
+  btn.setAttribute('aria-expanded', 'false');
+  btn.appendChild(h('span', 'sync-dot'));
+  btn.appendChild(h('span', 'sync-status', status));
+  btn.appendChild(h('span', 'sync-value', shortDateTime(f.last_synced_at)));
+  node.appendChild(btn);
+
+  var pop = h('div', 'sync-popover');
+  pop.setAttribute('role', 'tooltip');
+  pop.appendChild(h('div', 'sync-pop-title', '資料更新時間'));
+  [
+    ['最後同步', shortDateTime(f.last_synced_at)],
+    ['最近活動', shortDateTime(f.activity_latest_at)]
+  ].forEach(function (r) {
+    var row = h('div', 'sync-pop-row');
+    row.appendChild(h('span', null, r[0]));
+    row.appendChild(h('span', 'sync-pop-val', r[1]));
+    pop.appendChild(row);
+  });
+  node.appendChild(pop);
+
+  function show() {
+    var r = btn.getBoundingClientRect();
+    pop.style.left = (r.right + 8) + 'px';
+    pop.style.bottom = Math.max(8, window.innerHeight - r.bottom) + 'px';
+    pop.classList.add('is-open');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+  function hide() {
+    pop.classList.remove('is-open');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+  btn.addEventListener('mouseenter', show);
+  btn.addEventListener('mouseleave', hide);
+  btn.addEventListener('focus', show);
+  btn.addEventListener('blur', hide);
+  btn.addEventListener('click', function () {
+    if (pop.classList.contains('is-open')) hide(); else show();
+  });
 }
 
 export var syncState = { running: false };

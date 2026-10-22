@@ -186,19 +186,19 @@
 
   /* 首頁區塊的類別色（標題列底色、框線、文字、區塊標題左側短條）。
      顏色代表「這塊屬於哪一類數據」，是分類不是評價（2026-10-22 Fu 指定）：
-     綜覽藍、訓練負荷橘、體能狀況紫、戰力綜覽綠、當週課表淺藍、近期活動黃。 */
-  --cat-overview-bg: #dde9f6;
-  --cat-overview-border: #c2d6ec;
-  --cat-overview-text: #1b4a7a;
-  --cat-overview-strong: #2563a8;
+     綜覽淺藍、訓練負荷橘、體能狀況紫、戰力綜覽綠、當週課表深藍、近期活動黃。 */
+  --cat-overview-bg: #dcf1f9;
+  --cat-overview-border: #b8e0ef;
+  --cat-overview-text: #155e75;
+  --cat-overview-strong: #38a8d6;
   --cat-load-bg: #fbe6d4;
   --cat-load-border: #f0cba8;
   --cat-load-text: #7a3e0f;
   --cat-load-strong: #d9730d;
-  --cat-week-bg: #dcf1f9;
-  --cat-week-border: #b8e0ef;
-  --cat-week-text: #155e75;
-  --cat-week-strong: #38a8d6;
+  --cat-week-bg: #dde9f6;
+  --cat-week-border: #c2d6ec;
+  --cat-week-text: #1b4a7a;
+  --cat-week-strong: #2563a8;
   --cat-recent-bg: #fbf1cc;
   --cat-recent-border: #ecd98f;
   --cat-recent-text: #6b5300;
@@ -238,7 +238,9 @@ body {
     "Noto Sans TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
   font-size: var(--fs-md);
   line-height: 1.55;
-  overflow-x: hidden;
+  /* 用 clip 而非 hidden：html 已擋橫向捲動，body 再設 hidden 會讓 body 變成捲動容器，
+     側邊列的 position: sticky 就黏不住（跟著內容捲走）。clip 不建立捲動容器。 */
+  overflow-x: clip;
   max-width: 100%;
 }
 
@@ -265,8 +267,44 @@ h1, h2, h3 {
 }
 
 .meta-athlete {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+}
+
+.meta-avatar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.meta-athlete-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.meta-athlete-role {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.meta-athlete-name {
   font-weight: 600;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* range 切換：觸控目標 ≥ 44px */
@@ -400,7 +438,7 @@ h1, h2, h3 {
 /* ------------------------------------------------------------ App 殼
  *
  * DASHBOARD_TASKS.md Task D.2。三種形態：
- *   桌機 ≥1280px   側邊列 240px ｜ 內容 1fr ｜ AI 教練 360px（三欄常駐）
+ *   桌機 ≥1280px   側邊列 212px ｜ 內容 1fr ｜ AI 教練 360px（三欄常駐）
  *   平板 768~1279  側邊列縮成 72px 圖示欄；AI 教練改右側 overlay 抽屜
  *   手機 <768px    側邊列消失改底部分頁列；AI 教練為全螢幕 sheet
  *
@@ -438,6 +476,7 @@ h1, h2, h3 {
   padding: 6px 8px 12px;
   font-weight: 600;
   font-size: var(--fs-lg);
+  white-space: nowrap;
 }
 
 .sidebar-brand-mark {
@@ -521,6 +560,91 @@ h1, h2, h3 {
 .sidebar-sync .sync-detail {
   font-size: var(--fs-xs);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 側邊列資料新鮮度：圓點＋狀態＋時刻一行，細節在浮層 */
+.sync-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sync-chip:hover {
+  background: var(--surface-sunken);
+}
+
+.sync-chip:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.sync-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.sync-chip.is-fresh .sync-dot { background: var(--pct-green); }
+.sync-chip.is-stale .sync-dot { background: var(--pct-yellow); }
+.sync-chip.is-old .sync-dot { background: var(--pct-red); }
+
+.sync-status {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.sync-chip .sync-value {
+  flex-basis: 100%;
+  padding-left: 14px;
+  color: var(--text-muted);
+}
+
+.sync-popover {
+  display: none;
+  position: fixed;
+  z-index: 130;
+  min-width: 180px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px var(--panel-shadow);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.sync-popover.is-open {
+  display: block;
+}
+
+.sync-pop-title {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sync-pop-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  white-space: nowrap;
+}
+
+.sync-pop-val {
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1115,6 +1239,23 @@ body.coach-open .coach-fab {
     display: none;
   }
 
+  /* 圖示欄：圓點在上、時刻在下，狀態文字藏起來（浮層看得到） */
+  .sync-chip {
+    flex-direction: column;
+    justify-content: center;
+    padding: 4px 0;
+    text-align: center;
+  }
+
+  .sync-status {
+    display: none;
+  }
+
+  .sync-chip .sync-value {
+    flex-basis: auto;
+    padding-left: 0;
+  }
+
   /* AI 面板：右側 overlay 抽屜（不佔版面寬度，蓋在內容上） */
   .coach-panel {
     position: fixed;
@@ -1158,7 +1299,7 @@ body.coach-open .coach-fab {
 
 @media (min-width: 1280px) {
   .app-shell {
-    grid-template-columns: 240px minmax(0, 1fr) auto;
+    grid-template-columns: 212px minmax(0, 1fr) auto;
   }
 
   .sidebar-brand-text {
@@ -1189,6 +1330,23 @@ body.coach-open .coach-fab {
   .sidebar-sync .sync-behind,
   .sidebar-sync .sync-detail {
     display: block;
+  }
+
+  /* 768px 起的圖示欄樣式還原：圓點＋狀態同一行，時刻在下一行 */
+  .sync-chip {
+    flex-direction: row;
+    justify-content: flex-start;
+    padding: 4px 8px;
+    text-align: left;
+  }
+
+  .sync-status {
+    display: inline;
+  }
+
+  .sync-chip .sync-value {
+    flex-basis: 100%;
+    padding-left: 14px;
   }
 
   .sidebar-foot .meta-info,
@@ -4894,18 +5052,18 @@ body.coach-open .coach-fab {
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --cat-overview-bg: #1c2b3c;
-  --cat-overview-border: #2c4562;
-  --cat-overview-text: #a7c8ef;
-  --cat-overview-strong: #6aa9dd;
+  --cat-overview-bg: #17313b;
+  --cat-overview-border: #23505f;
+  --cat-overview-text: #9fdcf0;
+  --cat-overview-strong: #5cc3e6;
   --cat-load-bg: #3a2a1c;
   --cat-load-border: #5c4128;
   --cat-load-text: #f3c193;
   --cat-load-strong: #f0a35a;
-  --cat-week-bg: #17313b;
-  --cat-week-border: #23505f;
-  --cat-week-text: #9fdcf0;
-  --cat-week-strong: #5cc3e6;
+  --cat-week-bg: #1c2b3c;
+  --cat-week-border: #2c4562;
+  --cat-week-text: #a7c8ef;
+  --cat-week-strong: #6aa9dd;
   --cat-recent-bg: #353015;
   --cat-recent-border: #574d22;
   --cat-recent-text: #ead98b;
