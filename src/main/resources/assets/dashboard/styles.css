@@ -1206,6 +1206,11 @@ body.coach-open .coach-fab {
     display: none;
   }
 
+  /* 欄寬只容得下 4 個字：長名稱的項目改顯示短名稱，避免斷成兩行 */
+  .nav-text-full {
+    display: none;
+  }
+
   .nav-link {
     flex-direction: column;
     gap: 2px;
@@ -1307,6 +1312,14 @@ body.coach-open .coach-fab {
 
   .sidebar-brand-text {
     display: inline;
+  }
+
+  .nav-text-full {
+    display: inline;
+  }
+
+  .nav-text-short {
+    display: none;
   }
 
   .nav-link {
