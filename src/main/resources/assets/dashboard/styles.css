@@ -2502,35 +2502,45 @@ body.coach-open .coach-fab {
   border-radius: 5px;
 }
 
-/* 健康狀態：每個指標一列，左側數值與範圍、右側小型弧形量表 */
-.gc-health-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* 健康狀態：2×2 格，每格一個指標的弧形量表（中央數值），下方單位與個人範圍 */
+.gc-health-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 6px;
 }
 
-.gc-health-text {
-  flex: 1;
+.gc-health-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   min-width: 0;
+  text-align: center;
 }
 
 .gc-health-label {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
+  font-weight: 600;
   color: var(--text);
 }
 
-.gc-health-gauge {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
+.gc-gauge-wrap.gc-health-gauge {
+  width: 60px;
+  height: 60px;
 }
 
-.gc-health-gauge .gc-gauge {
-  width: 100%;
-  height: 100%;
+.gc-health-gauge .gc-gauge-center {
+  font-size: var(--fs-sm);
 }
 
-.gc-health-row.is-out .gc-focus-value,
+.gc-health-range {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-health-cell.is-out .gc-gauge-center,
+.gc-health-cell.is-out .gc-health-range,
 .gc-status-text.is-out {
   color: var(--pct-orange);
 }

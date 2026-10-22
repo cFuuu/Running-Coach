@@ -529,9 +529,10 @@ export function renderHomeLoad() {
 
 // ------------------------------------------------------------ 體能狀況卡片
 
-// 首頁體能狀況要放的 Garmin 卡片（2026-10-22 Fu 指定）：原有四張＋身體能量指數＋最大攝氧量。
+// 首頁體能狀況要放的 Garmin 卡片（2026-10-22 Fu 指定）：原有四張＋身體能量指數＋健康狀態
+// （健康狀態取代原本的最大攝氧量，VO2max 仍在趨勢頁）。
 // 卡片本身與趨勢頁「Garmin 數據」共用 views/garmin.js，這裡只決定放哪幾張。
-var HOME_GARMIN_KEYS = ['hrv', 'heart_rate', 'sleep', 'training_readiness', 'body_battery', 'vo2max'];
+var HOME_GARMIN_KEYS = ['hrv', 'heart_rate', 'sleep', 'training_readiness', 'body_battery', 'health_status'];
 
 export function renderHomeBody() {
   var node = $('kpi-strip');

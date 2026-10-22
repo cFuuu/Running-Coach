@@ -290,30 +290,36 @@ var HEALTH_METRIC = {
 // Garmin 的判定代碼（2026-10-22 實測只有這三種）
 var HEALTH_STATUS_LABEL = { IN_RANGE: '在範圍內', BELOW: '低於範圍', ABOVE: '高於範圍' };
 
+/**
+ * 健康狀態：上方總結（範圍內／N 項超出範圍），下方 2×2 格，每格一個指標的弧形量表，
+ * 量表中央是數值、下方是單位與 Garmin 給的個人範圍。四項一眼看完，不必逐列讀。
+ */
 function renderHealthStatus(c, body) {
   // 「範圍內」對照 Garmin 網頁；有超出時寫出項數
   body.appendChild(h('div', 'gc-status-text' + (c.outliers ? ' is-out' : ''),
     c.outliers ? c.outliers + ' 項超出範圍' : '範圍內'));
+  var grid = h('div', 'gc-health-grid');
   (c.metrics || []).forEach(function (m) {
     var def = HEALTH_METRIC[m.metric] || { label: m.metric, unit: '', decimals: 1 };
     var out = m.status !== 'IN_RANGE';
-    var row = h('div', 'gc-health-row' + (out ? ' is-out' : ''));
-    var text = h('div', 'gc-health-text');
-    var head = h('div', 'gc-focus-head');
-    head.appendChild(h('span', 'gc-health-label', def.label));
-    head.appendChild(h('span', 'gc-focus-value', num(m.value, def.decimals) + ' ' + def.unit));
-    text.appendChild(head);
-    text.appendChild(h('div', 'gc-caption', (out ? (HEALTH_STATUS_LABEL[m.status] || m.status) + '，' : '')
-      + '介於 ' + num(m.lower, def.decimals) + '–' + num(m.upper, def.decimals)));
-    row.appendChild(text);
+    var cell = h('div', 'gc-health-cell' + (out ? ' is-out' : ''));
+    cell.appendChild(h('div', 'gc-health-label', def.label));
     // 範圍內時圓點位置用 Garmin 的 percentage；超出時 percentage 不代表位置，貼齊該側邊緣
     var pos = m.status === 'BELOW' ? 0 : m.status === 'ABOVE' ? 100 : m.percentage;
-    var gauge = h('div', 'gc-health-gauge');
-    gauge.appendChild(C.bandArc(pos, { min: 0, max: 100, bands: [{ to: 100, className: out ? 'gc-tone-orange' : 'gc-tone-blue' }] }));
-    row.appendChild(gauge);
-    row.title = def.label + '：' + (HEALTH_STATUS_LABEL[m.status] || m.status);
-    body.appendChild(row);
+    var gauge = gaugeWithCenter(
+      C.bandArc(pos, { min: 0, max: 100, bands: [{ to: 100, className: out ? 'gc-tone-orange' : 'gc-tone-blue' }] }),
+      num(m.value, def.decimals));
+    gauge.classList.add('gc-health-gauge');
+    cell.appendChild(gauge);
+    // 單位（超出時改寫判定）與範圍分兩行：擠在一行時「高於範圍 13.9–16.7」會撐破手機上的格子
+    cell.appendChild(h('div', 'gc-health-range', out ? (HEALTH_STATUS_LABEL[m.status] || m.status) : def.unit));
+    cell.appendChild(h('div', 'gc-health-range', num(m.lower, def.decimals) + '–' + num(m.upper, def.decimals)));
+    cell.title = def.label + ' ' + num(m.value, def.decimals) + ' ' + def.unit + '：'
+      + (HEALTH_STATUS_LABEL[m.status] || m.status) + '（個人範圍 '
+      + num(m.lower, def.decimals) + '–' + num(m.upper, def.decimals) + '）';
+    grid.appendChild(cell);
   });
+  body.appendChild(grid);
   return null;
 }
 
