@@ -246,7 +246,7 @@ CREATE TABLE wellness_intraday (
 CREATE TABLE training_status (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     athlete_id INTEGER NOT NULL, date TEXT NOT NULL,
-    training_status_code INTEGER, training_status_phrase TEXT,
+    training_status_code INTEGER, training_status_phrase TEXT, status_since_date TEXT,
     acute_load REAL, chronic_load REAL, acwr_ratio REAL,
     chronic_load_optimal_min REAL, chronic_load_optimal_max REAL,
     acwr_status TEXT, vo2max_precise REAL, vo2max_date TEXT,
@@ -1310,6 +1310,7 @@ class TestNormalizeTrainingStatus(unittest.TestCase):
                         "primaryTrainingDevice": True,
                         "trainingStatus": 4,
                         "trainingStatusFeedbackPhrase": "MAINTAINING_2",
+                        "sinceDate": "2026-08-25",
                         "fitnessTrend": 2,
                         "acuteTrainingLoadDTO": {
                             "dailyTrainingLoadAcute": 302.0,
@@ -1358,6 +1359,7 @@ class TestNormalizeTrainingStatus(unittest.TestCase):
         row = runner.normalize_training_status("2026-08-31", self._raw())
         self.assertEqual(row["training_status_code"], 4)
         self.assertEqual(row["training_status_phrase"], "MAINTAINING_2")
+        self.assertEqual(row["status_since_date"], "2026-08-25")
         self.assertEqual(row["vo2max_precise"], 52.8)
         self.assertEqual(row["vo2max_date"], "2026-08-30")
 
@@ -1441,14 +1443,15 @@ class TestNormalizePerformanceMetrics(unittest.TestCase):
         self.assertEqual(row["race_predict_marathon_sec"], 11565)
 
     def test_maps_lactate_threshold_and_converts_speed_to_pace(self):
-        """★ `speed` 單位是秒/公尺，乘 1000 得秒/公里——不是 1000/speed。
+        """★ `speed` 單位是 10 公尺/秒，秒/公里 = 100 / speed。
 
-        實測 0.3583 → 358 秒/km（5:58/km），與 DB 中 avgHR 153–161 場次的
-        5:44–6:19/km 相符。初版用 1000/speed 會得到 2791 秒/km（46 分/km）。
+        以 Garmin Connect 網頁為準（2026-10-22）：0.3583 → 279 秒/km（4:39/km），
+        網頁同一個閾值顯示「4:39 /公里」。先前的 speed×1000（358 秒）與
+        1000/speed（2791 秒）兩種猜法都錯。
         """
         row = runner.normalize_performance_metrics("2026-09-01", self._raw())
         self.assertEqual(row["lactate_threshold_hr_bpm"], 179)
-        self.assertEqual(row["lactate_threshold_pace_sec_per_km"], 358)
+        self.assertEqual(row["lactate_threshold_pace_sec_per_km"], 279)
         self.assertEqual(row["functional_threshold_power"], 372)
 
     def test_lactate_pace_is_in_plausible_running_range(self):

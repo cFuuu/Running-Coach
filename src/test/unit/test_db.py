@@ -460,5 +460,33 @@ class TestAthleteProfileRecoveryThresholdMigration(unittest.TestCase):
                 conn.close()
 
 
+class TestFixLactatePaceUnit(unittest.TestCase):
+    """2026-10-22：既有的乳酸閾值配速以錯誤單位存入（speed×1000），一次性改成 100/speed。"""
+
+    def test_converts_existing_rows_exactly_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy.db"
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                "CREATE TABLE performance_metrics (id INTEGER PRIMARY KEY, athlete_id INTEGER, "
+                "date TEXT, lactate_threshold_pace_sec_per_km INTEGER, source TEXT, fetched_at TEXT)"
+            )
+            # 舊版把 speed=0.3583 存成 358（應為 279，Garmin 網頁顯示 4:39/km）
+            conn.execute("INSERT INTO performance_metrics VALUES (1, 1, '2026-09-07', 358, 'garmin_export', 'x')")
+            conn.commit()
+            conn.close()
+
+            for _ in range(2):  # 第二次開啟不可再換算一次
+                conn = get_connection(db_path)
+                pace = conn.execute("SELECT lactate_threshold_pace_sec_per_km FROM performance_metrics").fetchone()[0]
+                conn.close()
+                self.assertEqual(pace, 279)
+
+    def test_fresh_database_is_marked_without_error(self):
+        conn = get_connection(":memory:")
+        self.assertGreaterEqual(conn.execute("PRAGMA user_version").fetchone()[0], 1)
+        conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

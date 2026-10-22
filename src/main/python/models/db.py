@@ -60,6 +60,7 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("daily_wellness", "readiness_timestamp_local", "TEXT"),
     # --- 2026-10-22：Garmin 網頁卡片所需欄位（見 schema.sql 註解）---
     ("athlete_profile", "sex", "TEXT"),
+    ("training_status", "status_since_date", "TEXT"),
     ("daily_wellness", "readiness_level", "TEXT"),
     ("daily_wellness", "readiness_feedback_short", "TEXT"),
     ("daily_wellness", "sleep_start_local", "TEXT"),
@@ -99,6 +100,33 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
 
     _backfill_training_plan_is_active(conn)
     _migrate_training_plan_check_constraint(conn)
+    _fix_lactate_pace_unit(conn)
+
+
+# PRAGMA user_version 記錄已套用的一次性資料修正。欄位 migration 可以靠
+# PRAGMA table_info 判斷是否已做；改寫既有值的修正無法從資料本身看出做過
+# 沒有（修正後的值也是合法的配速），所以需要版本號擋住重複執行。
+_DATA_FIX_LACTATE_PACE_UNIT = 1
+
+
+def _fix_lactate_pace_unit(conn: sqlite3.Connection) -> None:
+    """2026-10-22：更正 lactate_threshold_pace_sec_per_km 的單位換算錯誤。
+
+    舊版以 `speed × 1000` 換算（把 speed 當成秒/公尺），實際上 speed 是
+    10 公尺/秒，應為 `100 / speed`（見 garmin_sync_runner.normalize_performance_metrics）。
+    舊值 = speed × 1000 → speed = 舊值 / 1000 → 正確值 = 100000 / 舊值。
+    COALESCE 寫入不會覆寫既有值，重新同步修不到舊列，只能在這裡改。
+    """
+    if conn.execute("PRAGMA user_version").fetchone()[0] >= _DATA_FIX_LACTATE_PACE_UNIT:
+        return
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(performance_metrics)")}
+    if "lactate_threshold_pace_sec_per_km" in existing:
+        conn.execute(
+            "UPDATE performance_metrics "
+            "SET lactate_threshold_pace_sec_per_km = CAST(ROUND(100000.0 / lactate_threshold_pace_sec_per_km) AS INTEGER) "
+            "WHERE lactate_threshold_pace_sec_per_km > 0"
+        )
+    conn.execute(f"PRAGMA user_version = {_DATA_FIX_LACTATE_PACE_UNIT}")
 
 
 def _migrate_training_plan_check_constraint(conn: sqlite3.Connection) -> None:

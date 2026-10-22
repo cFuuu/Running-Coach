@@ -295,6 +295,8 @@ CREATE TABLE IF NOT EXISTS training_status (
     -- PRODUCTIVE＝高效、OVERREACHING＝過度訓練、STRAINED＝疲勞）。
     training_status_code    INTEGER,
     training_status_phrase  TEXT,
+    -- Garmin 判定目前訓練狀態的起始日（sinceDate）；與逐日狀態回推的結果不同
+    status_since_date       TEXT,
     -- 短期訓練負荷（Acute Load）：近 7 日負荷累加，反映當前疲勞累積。
     acute_load              REAL,
     -- 長期訓練負荷（Chronic Load）：近 4 週負荷累加，反映體能基礎。

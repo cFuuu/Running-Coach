@@ -651,6 +651,10 @@ def normalize_training_status(date_str: str, raw: dict | None) -> dict | None:
         "date": date_str,
         "training_status_code": device.get("trainingStatus"),
         "training_status_phrase": device.get("trainingStatusFeedbackPhrase"),
+        # Garmin 判定目前狀態的起始日（網頁「自 10月9日」）。不可由逐日狀態
+        # 自行回推：實測 2026-10-22 逐日資料自 10/4 起即為 PRODUCTIVE，
+        # Garmin 卻寫自 10/9，兩者規則不同。
+        "status_since_date": device.get("sinceDate"),
         "acute_load": acute_dto.get("dailyTrainingLoadAcute"),
         "chronic_load": acute_dto.get("dailyTrainingLoadChronic"),
         "acwr_ratio": acute_dto.get("dailyAcuteChronicWorkloadRatio"),
@@ -717,13 +721,14 @@ def normalize_performance_metrics(date_str: str, raw: dict) -> dict | None:
     lactate_shr = lactate.get("speed_and_heart_rate") or {}
     lactate_power = lactate.get("power") or {}
 
-    # ⚠️ 此處 `speed` 的單位是**秒/公尺**，不是 activities 慣用的公尺/秒——
-    # 直接乘 1000 得秒/公里，不可套用 `1000 / speed`。
-    # 實測 2026-09-02：speed=0.3583 → 358 秒/km（5:58/km），與 DB 中
-    # avgHR 153–161 場次的 5:44–6:19/km 相符；若用 1000/speed 會得到
-    # 2791 秒/km（46 分/km）的荒謬值。
+    # ⚠️ 此處 `speed` 的單位是**10 公尺/秒**（不是 activities 慣用的公尺/秒），
+    # 秒/公里 = 100 / speed。
+    # 2026-10-22 以 Garmin Connect 網頁為準更正：speed=0.3583 → 279 秒/km
+    # （4:39/km），與網頁「跑步乳酸閾值 4:39 /公里」一致。原本的 speed×1000
+    # （358 秒、5:58/km）是拿輕鬆跑配速比對推出的單位，推錯了——閾值配速
+    # 本來就該比 avgHR 150 多的輕鬆跑快得多。
     lactate_speed = lactate_shr.get("speed")
-    lactate_pace = round(lactate_speed * 1000) if lactate_speed else None
+    lactate_pace = round(100 / lactate_speed) if lactate_speed else None
 
     row = {
         "date": date_str,
@@ -903,12 +908,13 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
     return count
 
 
-def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
-    """寫入 daily_wellness；重抓時只補空值不覆寫（COALESCE，理由見 OVERLAP_DAYS）。
+def _upsert_daily_rows(conn: sqlite3.Connection, table: str, athlete_id: int, rows: list[dict]) -> int:
+    """以 (athlete_id, date, source) 為鍵寫入每日一列的表；重抓時只補空值不覆寫
+    （COALESCE，理由見 OVERLAP_DAYS）。
 
-    欄位清單取自 normalize_wellness() 的輸出，INSERT 欄位、佔位符、
-    COALESCE 子句與參數都由同一份清單產生——原本四處手寫，每加一欄就要
-    改四個地方，對錯位置會讓值靜默寫進別的欄位。
+    欄位清單取自 normalize_*() 的輸出，INSERT 欄位、佔位符、COALESCE 子句
+    與參數都由同一份清單產生——原本四處手寫，每加一欄就要改四個地方，
+    對錯位置會讓值靜默寫進別的欄位。
     """
     if not rows:
         return 0
@@ -918,12 +924,12 @@ def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]
     placeholders = ", ".join("?" * (len(columns) + 5))
     updates = ",\n".join(f"{c}=COALESCE(excluded.{c}, {c})" for c in columns)
     sql = f"""
-        INSERT INTO daily_wellness ({insert_cols}) VALUES ({placeholders})
+        INSERT INTO {table} ({insert_cols}) VALUES ({placeholders})
         ON CONFLICT (athlete_id, date, source) DO UPDATE SET
             {updates},
             source_version=excluded.source_version,
             fetched_at=excluded.fetched_at
-    """  # noqa: S608 — 欄位名來自程式內的 normalize_wellness，不含外部輸入
+    """  # noqa: S608 — 表名與欄位名皆來自程式內常數與 normalize_*()，不含外部輸入
     for row in rows:
         conn.execute(
             sql,
@@ -931,6 +937,10 @@ def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]
              SYNC_SOURCE, SYNC_SOURCE_VERSION, now),
         )
     return len(rows)
+
+
+def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
+    return _upsert_daily_rows(conn, "daily_wellness", athlete_id, rows)
 
 
 def _upsert_intraday(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
@@ -976,80 +986,7 @@ def _upsert_training_status(conn: sqlite3.Connection, athlete_id: int, rows: lis
     """寫入 `training_status`。沿用 daily_wellness 的 ON CONFLICT + COALESCE 慣例
     ——重複同步同一天只補空值，不覆寫已有值。
     """
-    now = _utc_now_iso()
-    count = 0
-    for row in rows:
-        conn.execute(
-            """
-            INSERT INTO training_status (
-                athlete_id, date, training_status_code, training_status_phrase,
-                acute_load, chronic_load, acwr_ratio, chronic_load_optimal_min,
-                chronic_load_optimal_max, acwr_status, vo2max_precise, vo2max_date,
-                heat_acclimation_pct, heat_trend, altitude_acclimation_pct,
-                fitness_trend, monthly_load_aerobic_low, monthly_load_aerobic_high,
-                monthly_load_anaerobic, training_balance_feedback,
-                source, source_version, fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (athlete_id, date, source) DO UPDATE SET
-                training_status_code=COALESCE(
-                    excluded.training_status_code, training_status_code),
-                training_status_phrase=COALESCE(
-                    excluded.training_status_phrase, training_status_phrase),
-                acute_load=COALESCE(excluded.acute_load, acute_load),
-                chronic_load=COALESCE(excluded.chronic_load, chronic_load),
-                acwr_ratio=COALESCE(excluded.acwr_ratio, acwr_ratio),
-                chronic_load_optimal_min=COALESCE(
-                    excluded.chronic_load_optimal_min, chronic_load_optimal_min),
-                chronic_load_optimal_max=COALESCE(
-                    excluded.chronic_load_optimal_max, chronic_load_optimal_max),
-                acwr_status=COALESCE(excluded.acwr_status, acwr_status),
-                vo2max_precise=COALESCE(excluded.vo2max_precise, vo2max_precise),
-                vo2max_date=COALESCE(excluded.vo2max_date, vo2max_date),
-                heat_acclimation_pct=COALESCE(
-                    excluded.heat_acclimation_pct, heat_acclimation_pct),
-                heat_trend=COALESCE(excluded.heat_trend, heat_trend),
-                altitude_acclimation_pct=COALESCE(
-                    excluded.altitude_acclimation_pct, altitude_acclimation_pct),
-                fitness_trend=COALESCE(excluded.fitness_trend, fitness_trend),
-                monthly_load_aerobic_low=COALESCE(
-                    excluded.monthly_load_aerobic_low, monthly_load_aerobic_low),
-                monthly_load_aerobic_high=COALESCE(
-                    excluded.monthly_load_aerobic_high, monthly_load_aerobic_high),
-                monthly_load_anaerobic=COALESCE(
-                    excluded.monthly_load_anaerobic, monthly_load_anaerobic),
-                training_balance_feedback=COALESCE(
-                    excluded.training_balance_feedback, training_balance_feedback),
-                source_version=excluded.source_version,
-                fetched_at=excluded.fetched_at
-            """,
-            (
-                athlete_id,
-                row["date"],
-                row["training_status_code"],
-                row["training_status_phrase"],
-                row["acute_load"],
-                row["chronic_load"],
-                row["acwr_ratio"],
-                row["chronic_load_optimal_min"],
-                row["chronic_load_optimal_max"],
-                row["acwr_status"],
-                row["vo2max_precise"],
-                row["vo2max_date"],
-                row["heat_acclimation_pct"],
-                row["heat_trend"],
-                row["altitude_acclimation_pct"],
-                row["fitness_trend"],
-                row["monthly_load_aerobic_low"],
-                row["monthly_load_aerobic_high"],
-                row["monthly_load_anaerobic"],
-                row["training_balance_feedback"],
-                SYNC_SOURCE,
-                SYNC_SOURCE_VERSION,
-                now,
-            ),
-        )
-        count += 1
-    return count
+    return _upsert_daily_rows(conn, "training_status", athlete_id, rows)
 
 
 def _upsert_performance_metrics(

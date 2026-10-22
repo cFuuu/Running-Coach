@@ -17,6 +17,7 @@ from typing import Callable, Iterator
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.main.python.services import dashboard_queries as queries
+from src.main.python.services import garmin_cards
 from src.main.python.services import race_names
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -126,6 +127,16 @@ def read_wellness_trend(
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict:
     return queries.get_wellness_trend(conn, athlete_id, _validate_range(range))
+
+
+@router.get("/garmin-cards")
+def read_garmin_cards(
+    range: str = RangeParam,
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """Garmin 網頁式卡片牆（趨勢頁「Garmin 數據」與首頁體能狀況共用），僅供顯示。"""
+    return garmin_cards.get_garmin_cards(conn, athlete_id, _validate_range(range))
 
 
 @router.get("/training-days")
