@@ -5242,8 +5242,8 @@ body.coach-open .coach-fab {
 }
 
 /* ------------------------------------------------------------ 配速計算機（#/tools）
- * 配速是主角：大型碼表式分段輸入佔滿第一列；其餘三區安靜地排在下面。
- * 寬螢幕：配速（整列）／跑步機＋田徑場｜完成時間；窄螢幕依 DOM 順序單欄。
+ * 手機優先：四張卡單欄由上而下（配速／田徑場／完成時間／跑步機）；≥900px 兩欄。
+ * 標題列用首頁同一組類別色（--cat-*），左側短條與 icon 用該類的 strong 色。
  * 數字一律 tabular-nums，連動換算時欄寬不會跳動。
  */
 .tools-intro {
@@ -5259,78 +5259,158 @@ body.coach-open .coach-fab {
   align-items: start;
 }
 
-/* grid-area 只在雙欄時指定：單欄時若留著，未定義的區域名稱會讓排版錯亂 */
+/* 寬螢幕：田徑場（展開後最高）獨占右欄，配速／完成時間／跑步機疊在左欄。
+   最後一列 1fr 吸收右欄多出的高度，左欄的卡片之間才不會被撐開 */
 @media (min-width: 900px) {
   .tools-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "pace pace"
-      "treadmill finish"
-      "track finish";
+    grid-template-rows: auto auto 1fr;
   }
-  .tools-area-pace { grid-area: pace; }
-  .tools-area-treadmill { grid-area: treadmill; }
-  .tools-area-track { grid-area: track; }
-  .tools-area-finish { grid-area: finish; }
+  .tools-grid > * {
+    grid-column: 1;
+  }
+  .tools-grid > :nth-child(2) {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
 }
 
-.tools-hero-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px 24px;
+.tools-panel {
+  padding: 0;
+  overflow: hidden;
 }
 
-.tools-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.tools-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.tools-field-label {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
-.tools-field-row {
+.tools-panel-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px var(--gap) 8px 12px;
+  background: var(--tp-bg);
+  border-bottom: 1px solid var(--tp-border);
+  box-shadow: inset 4px 0 0 var(--tp-strong);
+  color: var(--tp-text);
+}
+
+.tools-panel-head svg {
+  flex: none;
+  margin-left: 4px;
+}
+
+.tools-panel-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: inherit;
+}
+
+.tools-theme-pace {
+  --tp-bg: var(--cat-week-bg); --tp-border: var(--cat-week-border);
+  --tp-text: var(--cat-week-text); --tp-strong: var(--cat-week-strong);
+}
+
+.tools-theme-track {
+  --tp-bg: var(--cat-recent-bg); --tp-border: var(--cat-recent-border);
+  --tp-text: var(--cat-recent-text); --tp-strong: var(--cat-recent-strong);
+}
+
+.tools-theme-finish {
+  --tp-bg: var(--cat-body-bg); --tp-border: var(--cat-body-border);
+  --tp-text: var(--cat-body-text); --tp-strong: var(--cat-body-strong);
+}
+
+.tools-theme-treadmill {
+  --tp-bg: var(--cat-ability-bg); --tp-border: var(--cat-ability-border);
+  --tp-text: var(--cat-ability-text); --tp-strong: var(--cat-ability-strong);
+}
+
+.tools-panel-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: var(--gap);
+}
+
+.tools-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
 }
 
 .tools-unit {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-lg);
   color: var(--text-muted);
   white-space: nowrap;
 }
 
-.tools-field.is-hero .tools-unit {
-  font-size: var(--fs-lg);
+/* 單位切換鍵（標題列右側）：同一時間只顯示一個單位的值 */
+.tools-switch {
+  display: inline-flex;
+  margin-left: auto;
+  padding: 2px;
+  border: 1px solid var(--tp-border);
+  border-radius: 20px;
+  background: var(--surface-sunken);
 }
 
-.tools-input {
-  width: 100%;
+.tools-switch button {
+  min-width: 64px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tools-switch button.is-active {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--tp-strong) inset;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tools-switch button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.tools-input,
+.tools-select {
   min-width: 0;
-  min-height: 44px;
-  padding: 6px 10px;
-  font-size: var(--fs-xl);
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
+  min-height: 48px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
   background: var(--surface);
   color: var(--text);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
-.tools-input:focus-visible {
+.tools-input {
+  width: 9ch;
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tools-select {
+  width: 100%;
+  font-size: var(--fs-lg);
+}
+
+.tools-input:focus-visible,
+.tools-select:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 1px;
+  border-color: var(--accent);
 }
 
 .tools-input.is-invalid {
@@ -5338,8 +5418,33 @@ body.coach-open .coach-fab {
   background: var(--error-bg);
 }
 
-.tools-select {
+/* 分段時間的展開鍵：＋／－ 由 aria-expanded 決定 */
+.tools-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
   font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.tools-expand::before {
+  content: '＋';
+  font-weight: 700;
+}
+
+.tools-expand[aria-expanded="true"]::before {
+  content: '－';
+}
+
+.tools-expand:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 /* ---- 分段時間輸入（js/core/clock-field.js）：一個外框、內含各格與冒號 ---- */
@@ -5398,12 +5503,6 @@ body.coach-open .coach-fab {
   line-height: 1;
 }
 
-.tools-clock.is-md {
-  min-height: 40px;
-  padding: 0 8px;
-  font-size: var(--fs-lg);
-}
-
 @media (max-width: 767px) {
   .tools-clock.is-lg {
     min-height: 64px;
@@ -5414,9 +5513,12 @@ body.coach-open .coach-fab {
 
 .tools-table {
   width: 100%;
-  margin-top: 12px;
   border-collapse: collapse;
   font-size: var(--fs-md);
+}
+
+.tools-table[hidden] {
+  display: none;
 }
 
 .tools-table th,

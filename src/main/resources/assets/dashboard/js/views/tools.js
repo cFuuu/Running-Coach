@@ -1,5 +1,9 @@
 /**
- * tools.js — 配速計算機（#/tools）：配速／跑步機／田徑場／完成時間四區同頁連動
+ * tools.js — 配速計算機（#/tools）：配速／田徑場／完成時間／跑步機四區同頁連動
+ *
+ * 手機優先：每區一張卡，標題列有類別色與單色 icon；一次只顯示一個單位的值，
+ * 單位用標題列右側的切換鍵換（配速 /km↔/mile、時速 km/h↔mph），完成時間用
+ * 下拉選距離。
  *
  * 四區共用一個速度（tools.secPerKm）：改任何一格都先換算成每公里秒數，再回填
  * 其他所有欄位——正在打字的那格不回填，免得游標被打斷，離開欄位時才整理格式。
@@ -29,13 +33,39 @@ var TRACK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8].map(function (lane) {
   return { meters: laneLengthM(lane), label: '第 ' + lane + ' 道' };
 }).concat([{ meters: WARMUP_TRACK_M, label: '暖身場' }]);
 
-// 田徑場表格的列：一圈的幾分之幾（1 圈以下是 100／200／300m 分段）
+// 田徑場分段表的列：一圈的幾分之幾（1 圈以下是 100／200／300m 分段）
 var LAP_FRACTIONS = [0.25, 0.5, 0.75, 1, 2, 3, 4, 5];
+
+// 標題列的單色 icon（24x24、stroke 用 currentColor，顏色跟著標題列文字色）
+var ICONS = {
+  pace: [
+    ['path', { d: 'M4.5 17a8.5 8.5 0 1 1 15 0' }],
+    ['path', { d: 'M12 16l3.5-5' }],
+    ['path', { d: 'M9 21h6' }]
+  ],
+  track: [
+    ['rect', { x: 3, y: 6, width: 18, height: 12, rx: 6 }],
+    ['rect', { x: 7, y: 10, width: 10, height: 4, rx: 2 }]
+  ],
+  finish: [
+    ['circle', { cx: 12, cy: 14, r: 7 }],
+    ['path', { d: 'M12 14v-3.5M9.5 3h5M12 3v4M18.2 7.3l1.3-1.3' }]
+  ],
+  treadmill: [
+    ['circle', { cx: 13, cy: 4.5, r: 1.6 }],
+    ['path', { d: 'M11 8.5l2.5 2.5-2 3.5M13.5 11l3 2.5M11.5 14.5L9 17.5' }],
+    ['path', { d: 'M3 20.5h14M19.5 20.5v-9H17' }]
+  ]
+};
+var SVG_NS = 'http://www.w3.org/2000/svg';
 
 var tools = {
   built: false,
   secPerKm: null,
   trackM: TRACK_OPTIONS[0].meters,
+  paceUnit: 'km',                          // 'km'｜'mile'
+  speedUnit: 'kmh',                        // 'kmh'｜'mph'
+  finishKm: RACE_DISTANCES[RACE_DISTANCES.length - 1].km, // 預設全馬（同原網站）
   fields: [],   // 可輸入的欄位：{ owner, write(secPerKm|null) }；owner 是事件來源，回填時跳過
   outputs: []   // 唯讀的換算結果：{ node, toText(secPerKm) }
 };
@@ -61,6 +91,7 @@ function syncFields(editing) {
 /**
  * 把一組分段輸入接進連動：打字即換算，離開時把自己整理成標準格式。
  * 全空＝清空所有欄位；格式錯誤（秒 ≥ 60 等）只標紅框，不動其他欄位。
+ * toTotal／fromTotal 在每次換算時才呼叫，所以可以讀「目前單位」這類會變的狀態。
  * @param {Object} clock clockField() 的回傳值
  * @param {function} toTotal 每公里秒數 → 這一欄的總秒數
  * @param {function} fromTotal 這一欄的總秒數 → 每公里秒數
@@ -120,95 +151,141 @@ function bindNumber(input, toText, fromNumber) {
   return input;
 }
 
-function numberInput(placeholder, ariaLabel) {
-  var input = h('input', 'tools-input');
-  input.type = 'text';
-  input.inputMode = 'decimal';
-  input.autocomplete = 'off';
-  input.spellcheck = false;
-  input.placeholder = placeholder;
-  input.setAttribute('aria-label', ariaLabel);
-  return input;
+// ------------------------------------------------------------ 共用元件
+
+function icon(kind) {
+  var svg = document.createElementNS(SVG_NS, 'svg');
+  var attrs = {
+    viewBox: '0 0 24 24', width: 22, height: 22, fill: 'none', stroke: 'currentColor',
+    'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'
+  };
+  Object.keys(attrs).forEach(function (k) { svg.setAttribute(k, attrs[k]); });
+  ICONS[kind].forEach(function (shape) {
+    var node = document.createElementNS(SVG_NS, shape[0]);
+    Object.keys(shape[1]).forEach(function (k) { node.setAttribute(k, shape[1][k]); });
+    svg.appendChild(node);
+  });
+  return svg;
 }
 
-function labeledField(label, unit, control, extraClass) {
-  var wrap = h('div', 'tools-field' + (extraClass ? ' ' + extraClass : ''));
-  wrap.appendChild(h('span', 'tools-field-label', label));
-  var row = h('span', 'tools-field-row');
+/**
+ * 一張區塊卡：類別色標題列（icon＋標題，右側可放切換鍵）＋內容。
+ * @param {string} kind ICONS 的 key，同時決定標題列的類別色（CSS .tools-theme-*）
+ * @param {string} title
+ * @param {?HTMLElement} headControl 放在標題列右側的元素（單位切換鍵）
+ * @returns {{sec:HTMLElement, body:HTMLElement}}
+ */
+function panel(kind, title, headControl) {
+  var sec = h('section', 'panel tools-panel tools-theme-' + kind);
+  var head = h('div', 'tools-panel-head');
+  head.appendChild(icon(kind));
+  head.appendChild(h('h2', 'tools-panel-title', title));
+  if (headControl) head.appendChild(headControl);
+  sec.appendChild(head);
+  var body = h('div', 'tools-panel-body');
+  sec.appendChild(body);
+  return { sec: sec, body: body };
+}
+
+/** 二選一的單位切換鍵（同一時間只有一個單位的值顯示在畫面上）。 */
+function unitSwitch(ariaLabel, options, initialKey, onChange) {
+  var group = h('div', 'tools-switch');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', ariaLabel);
+  var buttons = options.map(function (opt) {
+    var btn = h('button', null, opt.label);
+    btn.type = 'button';
+    btn.addEventListener('click', function () {
+      if (btn.getAttribute('aria-pressed') === 'true') return;
+      mark(opt.key);
+      onChange(opt.key);
+    });
+    group.appendChild(btn);
+    return { key: opt.key, node: btn };
+  });
+  function mark(activeKey) {
+    buttons.forEach(function (b) {
+      var on = b.key === activeKey;
+      b.node.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.node.classList.toggle('is-active', on);
+    });
+  }
+  mark(initialKey);
+  return group;
+}
+
+function selectField(ariaLabel, optionLabels, selectedIndex, onChange) {
+  var select = h('select', 'tools-select');
+  select.setAttribute('aria-label', ariaLabel);
+  optionLabels.forEach(function (label, i) {
+    var o = h('option', null, label);
+    o.value = String(i);
+    select.appendChild(o);
+  });
+  select.value = String(selectedIndex);
+  select.addEventListener('change', function () { onChange(Number(select.value)); });
+  return select;
+}
+
+function inputRow(control, unitText) {
+  var row = h('div', 'tools-row');
   row.appendChild(control);
-  if (unit) row.appendChild(h('span', 'tools-unit', unit));
-  wrap.appendChild(row);
-  return wrap;
-}
-
-function panel(title, hint, area) {
-  var sec = h('section', 'panel tools-panel tools-area-' + area);
-  var h2 = h('h2', 'panel-title', title);
-  if (hint) h2.appendChild(h('span', 'panel-hint', hint));
-  sec.appendChild(h2);
-  return sec;
+  var unit = h('span', 'tools-unit', unitText);
+  row.appendChild(unit);
+  return { row: row, unit: unit };
 }
 
 // ------------------------------------------------------------ 四個區塊
 
 function buildPacePanel() {
-  var sec = panel('配速', null, 'pace');
-  var row = h('div', 'tools-hero-row');
-  row.appendChild(labeledField('每公里', '/km', bindClock(
-    clockField({ parts: ['m', 's'], ariaLabel: '每公里配速', placeholders: ['5', '30'], plainUnitSec: 60, size: 'lg' }),
-    function (s) { return s; },
-    function (t) { return t; }
-  ), 'is-hero'));
-  row.appendChild(labeledField('每英里', '/mi', bindClock(
-    clockField({ parts: ['m', 's'], ariaLabel: '每英里配速', placeholders: ['8', '51'], plainUnitSec: 60, size: 'lg' }),
-    function (s) { return s * KM_PER_MILE; },
-    function (t) { return t / KM_PER_MILE; }
-  ), 'is-hero'));
-  sec.appendChild(row);
-  return sec;
-}
-
-function buildTreadmillPanel() {
-  var sec = panel('跑步機', null, 'treadmill');
-  var grid = h('div', 'tools-fields');
-  grid.appendChild(labeledField('公里時速', 'km/h', bindNumber(
-    numberInput('10.9', '公里時速'),
-    function (s) { return paceToKmh(s).toFixed(2); },
-    function (v) { return kmhToPace(v); }
-  )));
-  grid.appendChild(labeledField('英里時速', 'mph', bindNumber(
-    numberInput('6.78', '英里時速'),
-    function (s) { return (paceToKmh(s) / KM_PER_MILE).toFixed(2); },
-    function (v) { return kmhToPace(v * KM_PER_MILE); }
-  )));
-  sec.appendChild(grid);
-  return sec;
+  var factor = function () { return tools.paceUnit === 'mile' ? KM_PER_MILE : 1; };
+  var clock = bindClock(
+    clockField({ parts: ['m', 's'], ariaLabel: '配速', placeholders: ['5', '30'], plainUnitSec: 60, size: 'lg' }),
+    function (s) { return s * factor(); },
+    function (t) { return t / factor(); }
+  );
+  var line = inputRow(clock, '/km');
+  var toggle = unitSwitch('配速單位', [{ key: 'km', label: '/km' }, { key: 'mile', label: '/mile' }],
+    tools.paceUnit, function (key) {
+      tools.paceUnit = key;
+      line.unit.textContent = key === 'mile' ? '/mile' : '/km';
+      syncFields(null);
+    });
+  var p = panel('pace', '配速', toggle);
+  p.body.appendChild(line.row);
+  return p.sec;
 }
 
 function buildTrackPanel() {
-  var sec = panel('田徑場', '換道時速度不變，重算每圈時間', 'track');
-  var controls = h('div', 'tools-fields');
+  var p = panel('track', '田徑場');
 
-  var select = h('select', 'tools-input tools-select');
-  select.setAttribute('aria-label', '道次');
-  TRACK_OPTIONS.forEach(function (opt, i) {
-    var o = h('option', null, opt.label + '（' + Number(opt.meters.toFixed(1)) + 'm）');
-    o.value = String(i);
-    select.appendChild(o);
-  });
-  controls.appendChild(labeledField('道次', null, select));
+  p.body.appendChild(selectField('道次',
+    TRACK_OPTIONS.map(function (opt) { return opt.label + '（' + Number(opt.meters.toFixed(1)) + 'm）'; }),
+    0,
+    function (i) {
+      tools.trackM = TRACK_OPTIONS[i].meters;
+      renderLapLabels();
+      syncFields(null);
+    }));
 
-  controls.appendChild(labeledField('每圈', null, bindClock(
+  var clock = bindClock(
     clockField({
       parts: ['m', 's'], ariaLabel: '每圈時間', decimalSeconds: true, blankLeadingZero: true,
-      placeholders: ['0', '96'], plainUnitSec: 1
+      placeholders: ['0', '96'], plainUnitSec: 1, size: 'lg'
     }),
     function (s) { return s * tools.trackM / 1000; },
     function (t) { return t / (tools.trackM / 1000); }
-  )));
-  sec.appendChild(controls);
+  );
+  p.body.appendChild(inputRow(clock, '/圈').row);
+
+  // 分段時間預設收合（手機上省空間），按「＋」展開
+  var toggle = h('button', 'tools-expand', '分段時間');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', 'false');
+  p.body.appendChild(toggle);
 
   var table = h('table', 'tools-table');
+  table.hidden = true;
   var tbody = h('tbody');
   var labels = [];
   LAP_FRACTIONS.forEach(function (frac) {
@@ -223,7 +300,13 @@ function buildTrackPanel() {
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
-  sec.appendChild(table);
+  p.body.appendChild(table);
+
+  toggle.addEventListener('click', function () {
+    var open = table.hidden;
+    table.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
 
   function renderLapLabels() {
     labels.forEach(function (l) {
@@ -231,39 +314,53 @@ function buildTrackPanel() {
       l.node.textContent = l.frac < 1 ? meters + ' m' : l.frac + ' 圈 · ' + meters + ' m';
     });
   }
-  select.addEventListener('change', function () {
-    tools.trackM = TRACK_OPTIONS[Number(select.value)].meters;
-    renderLapLabels();
-    syncFields(null);
-  });
   renderLapLabels();
-  return sec;
+  return p.sec;
 }
 
 function buildFinishPanel() {
-  var sec = panel('完成時間', '照目前配速等速跑完各距離', 'finish');
-  var table = h('table', 'tools-table');
-  var tbody = h('tbody');
-  RACE_DISTANCES.forEach(function (d) {
-    var tr = h('tr');
-    var th = h('th', null, d.label);
-    th.scope = 'row';
-    tr.appendChild(th);
-    var td = h('td');
-    td.appendChild(bindClock(
-      clockField({
-        parts: ['h', 'm', 's'], ariaLabel: d.label + '完成時間', blankLeadingZero: true,
-        placeholders: ['0', '00', '00'], plainUnitSec: 60, size: 'md'
-      }),
-      function (s) { return s * d.km; },
-      function (t) { return t / d.km; }
-    ));
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  sec.appendChild(table);
-  return sec;
+  var p = panel('finish', '完成時間');
+  var defaultIndex = RACE_DISTANCES.map(function (d) { return d.km; }).indexOf(tools.finishKm);
+  p.body.appendChild(selectField('距離', RACE_DISTANCES.map(function (d) { return d.label; }), defaultIndex,
+    function (i) {
+      tools.finishKm = RACE_DISTANCES[i].km;
+      syncFields(null);
+    }));
+  p.body.appendChild(bindClock(
+    clockField({
+      parts: ['h', 'm', 's'], ariaLabel: '完成時間', blankLeadingZero: true,
+      placeholders: ['0', '00', '00'], plainUnitSec: 60, size: 'lg'
+    }),
+    function (s) { return s * tools.finishKm; },
+    function (t) { return t / tools.finishKm; }
+  ));
+  return p.sec;
+}
+
+function buildTreadmillPanel() {
+  var factor = function () { return tools.speedUnit === 'mph' ? KM_PER_MILE : 1; };
+  var input = h('input', 'tools-input');
+  input.type = 'text';
+  input.inputMode = 'decimal';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.placeholder = '10.9';
+  input.setAttribute('aria-label', '時速');
+  bindNumber(
+    input,
+    function (s) { return (paceToKmh(s) / factor()).toFixed(2); },
+    function (v) { return kmhToPace(v * factor()); }
+  );
+  var line = inputRow(input, 'km/h');
+  var toggle = unitSwitch('時速單位', [{ key: 'kmh', label: 'km/h' }, { key: 'mph', label: 'mph' }],
+    tools.speedUnit, function (key) {
+      tools.speedUnit = key;
+      line.unit.textContent = key === 'mph' ? 'mph' : 'km/h';
+      syncFields(null);
+    });
+  var p = panel('treadmill', '跑步機', toggle);
+  p.body.appendChild(line.row);
+  return p.sec;
 }
 
 // ------------------------------------------------------------ 入口
@@ -278,8 +375,8 @@ export function renderToolsPage() {
     '任一格輸入，其他格即時換算。時間分格填寫，打完一格按 : 或 Tab 跳下一格，空格視為 0。'));
   var grid = h('div', 'tools-grid');
   grid.appendChild(buildPacePanel());
-  grid.appendChild(buildTreadmillPanel());
   grid.appendChild(buildTrackPanel());
   grid.appendChild(buildFinishPanel());
+  grid.appendChild(buildTreadmillPanel());
   body.appendChild(grid);
 }
