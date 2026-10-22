@@ -670,6 +670,13 @@ def normalize_training_status(date_str: str, raw: dict | None) -> dict | None:
         "monthly_load_aerobic_low": load_balance.get("monthlyLoadAerobicLow"),
         "monthly_load_aerobic_high": load_balance.get("monthlyLoadAerobicHigh"),
         "monthly_load_anaerobic": load_balance.get("monthlyLoadAnaerobic"),
+        # 負荷焦點的目標範圍（2026-10-22 實測 key 名稱）
+        "monthly_load_aerobic_low_target_min": load_balance.get("monthlyLoadAerobicLowTargetMin"),
+        "monthly_load_aerobic_low_target_max": load_balance.get("monthlyLoadAerobicLowTargetMax"),
+        "monthly_load_aerobic_high_target_min": load_balance.get("monthlyLoadAerobicHighTargetMin"),
+        "monthly_load_aerobic_high_target_max": load_balance.get("monthlyLoadAerobicHighTargetMax"),
+        "monthly_load_anaerobic_target_min": load_balance.get("monthlyLoadAnaerobicTargetMin"),
+        "monthly_load_anaerobic_target_max": load_balance.get("monthlyLoadAnaerobicTargetMax"),
         "training_balance_feedback": load_balance.get("trainingBalanceFeedbackPhrase"),
     }
     if all(v is None for k, v in row.items() if k != "date"):

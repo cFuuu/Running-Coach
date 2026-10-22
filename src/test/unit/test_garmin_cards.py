@@ -100,6 +100,18 @@ class TestGetGarminCards(unittest.TestCase):
         self.assertEqual(rating["label"], "傑出")
         self.assertEqual(rating["cutoffs"], [41.7, 45.4, 51.1, 55.4])
 
+    def test_load_focus_has_three_categories_with_targets(self):
+        self.conn.execute(
+            "UPDATE training_status SET monthly_load_aerobic_low = 879, monthly_load_aerobic_high = 487, "
+            "monthly_load_anaerobic = 11, monthly_load_aerobic_low_target_min = 333, "
+            "monthly_load_aerobic_low_target_max = 552, training_balance_feedback = 'LOW_AEROBIC_OVERAGE' "
+            "WHERE date = '2026-10-21'")
+        focus = garmin_cards.get_garmin_cards(self.conn, 1, "7d")["cards"]["load_focus"]
+        self.assertEqual([c["key"] for c in focus["categories"]], ["anaerobic", "aerobic_high", "aerobic_low"])
+        low = focus["categories"][2]
+        self.assertEqual((low["value"], low["target_min"], low["target_max"]), (879, 333, 552))
+        self.assertEqual(focus["feedback"], "LOW_AEROBIC_OVERAGE")
+
     def test_cards_without_data_are_omitted(self):
         self.assertNotIn("calories", self.cards)
         self.assertNotIn("lactate_threshold", self.cards)

@@ -1825,10 +1825,12 @@ body.coach-open .coach-fab {
   }
 }
 
-/* 訓練負荷區五張卡：TSB（本專案的主指標）獨佔一列，其下 ATL／CTL、
-   Garmin 訓練負荷／訓練狀態各兩張，排成 1＋2＋2，不留孤兒卡 */
-.home-load-cards > :first-child {
-  grid-column: 1 / -1;
+/* 訓練負荷區六張卡：上列本專案 TSB／ATL／CTL，下列 Garmin 訓練負荷／訓練狀態／負荷焦點。
+   區塊夠寬時一列三張，讓兩種來源各佔一列；窄時退回兩欄。 */
+@container block (min-width: 540px) {
+  .home-load-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 /* 戰力綜覽：VDOT 卡＋五個距離的最佳成績卡，共 6 張。
@@ -1865,7 +1867,8 @@ body.coach-open .coach-fab {
   --fs-md: 16px;
   --fs-lg: 19px;
   --fs-xl: 24px;
-  --fs-2xl: 34px;
+  /* 2026-10-22：34 → 28，與綜覽、體能狀況、當週課表的主數字（24–28px）一致 */
+  --fs-2xl: 28px;
   font-size: var(--fs-md);
 }
 
@@ -1879,20 +1882,22 @@ body.coach-open .coach-fab {
   font-weight: 700;
 }
 
-/* 數字已放大到 34px，字重用半粗即可；再粗反而糊成一團（Fu 回饋） */
+/* 數字已放大，字重用半粗即可；再粗反而糊成一團（Fu 回饋） */
 #view-home .kpi-value,
 #view-home .pw-big,
 #view-home .pb-time {
   font-weight: 600;
 }
 
-/* 卡片標題：與數字拉開層級但不能小到要瞇眼看 */
-#view-home .kpi-label {
-  font-size: var(--fs-lg);
+/* 卡片標題：與數字拉開層級但不能小到要瞇眼看。2026-10-22 由 19px 降為 15px，
+   與體能狀況、當週課表的卡片標題（gc-title、pw-tile-label）同一級 */
+#view-home .kpi-label,
+#view-home .gc-title {
+  font-size: var(--fs-sm);
 }
 
 #view-home .pb-distance {
-  font-size: var(--fs-lg);
+  font-size: var(--fs-sm);
   color: var(--text);
 }
 
@@ -1954,10 +1959,26 @@ body.coach-open .coach-fab {
   color: var(--hdr-text);
 }
 
+/* Garmin 卡片放在首頁區塊裡時，標題列也套用該區塊的類別色（訓練負荷橘、體能狀況紫），
+   與同區的指標卡一致（.gc-card 內距 12px） */
+#block-load .gc-card > .gc-head,
+#block-body .gc-card > .gc-head {
+  margin: -12px -12px 10px;
+  padding: 9px 12px;
+  background: var(--hdr-bg);
+  border-bottom: 1px solid var(--hdr-border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+#block-load .gc-card .gc-title,
+#block-body .gc-card .gc-title {
+  color: var(--hdr-text);
+}
+
 /* 縮寫（TSB、ATL、HRV…）跟在白話標題後面，小一級 */
 #view-home .kpi-abbr {
   margin-left: 6px;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: 600;
   opacity: 0.8;
 }
@@ -2432,6 +2453,49 @@ body.coach-open .coach-fab {
   font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* 負荷焦點：三條共用刻度的長條，淡色框為目標範圍 */
+.gc-focus-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gc-focus-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.gc-focus-value {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.gc-focus-track {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bar-track);
+}
+
+.gc-focus-target {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  border: 1.5px dashed var(--text-muted);
+  border-radius: 4px;
+}
+
+.gc-focus-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 5px;
 }
 
 .gc-spark .sparkline {

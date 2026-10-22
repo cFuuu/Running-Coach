@@ -254,6 +254,9 @@ CREATE TABLE training_status (
     altitude_acclimation_pct INTEGER, fitness_trend INTEGER,
     monthly_load_aerobic_low REAL, monthly_load_aerobic_high REAL,
     monthly_load_anaerobic REAL, training_balance_feedback TEXT,
+    monthly_load_aerobic_low_target_min REAL, monthly_load_aerobic_low_target_max REAL,
+    monthly_load_aerobic_high_target_min REAL, monthly_load_aerobic_high_target_max REAL,
+    monthly_load_anaerobic_target_min REAL, monthly_load_anaerobic_target_max REAL,
     source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
     UNIQUE (athlete_id, date, source)
 );
@@ -1339,6 +1342,12 @@ class TestNormalizeTrainingStatus(unittest.TestCase):
                         "monthlyLoadAerobicLow": 1117.7,
                         "monthlyLoadAerobicHigh": 0.0,
                         "monthlyLoadAnaerobic": 0.0,
+                        "monthlyLoadAerobicLowTargetMin": 333,
+                        "monthlyLoadAerobicLowTargetMax": 552,
+                        "monthlyLoadAerobicHighTargetMin": 323,
+                        "monthlyLoadAerobicHighTargetMax": 542,
+                        "monthlyLoadAnaerobicTargetMin": 0,
+                        "monthlyLoadAnaerobicTargetMax": 175,
                         "trainingBalanceFeedbackPhrase": "AEROBIC_HIGH_SHORTAGE",
                     }
                 }
@@ -1370,6 +1379,10 @@ class TestNormalizeTrainingStatus(unittest.TestCase):
         self.assertEqual(row["monthly_load_aerobic_low"], 1117.7)
         self.assertEqual(row["monthly_load_anaerobic"], 0.0)
         self.assertEqual(row["training_balance_feedback"], "AEROBIC_HIGH_SHORTAGE")
+        self.assertEqual((row["monthly_load_aerobic_low_target_min"],
+                          row["monthly_load_aerobic_low_target_max"]), (333, 552))
+        self.assertEqual((row["monthly_load_anaerobic_target_min"],
+                          row["monthly_load_anaerobic_target_max"]), (0, 175))
 
     def test_selects_primary_device_not_first_key(self):
         """★ 結構陷阱迴歸：非 primary 的裝置排在字典前面時不可誤取。"""

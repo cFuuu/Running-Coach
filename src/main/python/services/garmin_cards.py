@@ -196,7 +196,12 @@ def get_garmin_cards(
     ts = _window_rows(
         conn, "training_status",
         ("training_status_phrase", "status_since_date", "acute_load", "chronic_load", "acwr_ratio", "acwr_status",
-         "chronic_load_optimal_min", "chronic_load_optimal_max", "vo2max_precise", "vo2max_date"),
+         "chronic_load_optimal_min", "chronic_load_optimal_max", "vo2max_precise", "vo2max_date",
+         "monthly_load_aerobic_low", "monthly_load_aerobic_high", "monthly_load_anaerobic",
+         "monthly_load_aerobic_low_target_min", "monthly_load_aerobic_low_target_max",
+         "monthly_load_aerobic_high_target_min", "monthly_load_aerobic_high_target_max",
+         "monthly_load_anaerobic_target_min", "monthly_load_anaerobic_target_max",
+         "training_balance_feedback"),
         resolved, window,
     )
     pm = _window_rows(
@@ -337,5 +342,19 @@ def get_garmin_cards(
     if load:
         load["series"] = _series(ts, "acute_load", "chronic_load")
         cards["training_load"] = load
+
+    focus = _latest(ts, "monthly_load_aerobic_low")
+    if focus:
+        cards["load_focus"] = {
+            "date": focus["date"],
+            "feedback": focus["training_balance_feedback"],
+            # Garmin 負荷焦點：近 4 週三類負荷與各自目標範圍
+            "categories": [
+                {"key": key, "value": focus[f"monthly_load_{key}"],
+                 "target_min": focus[f"monthly_load_{key}_target_min"],
+                 "target_max": focus[f"monthly_load_{key}_target_max"]}
+                for key in ("anaerobic", "aerobic_high", "aerobic_low")
+            ],
+        }
 
     return {**window, "note": GARMIN_NOTE, "cards": cards}

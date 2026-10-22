@@ -385,6 +385,38 @@ function renderTrainingLoad(c, body) {
     body.appendChild(bigValue(num(c.ratio, 1), null, 'gc-value-sm'));
     body.appendChild(h('div', 'gc-caption', '負荷比'));
   }
+  // 短期負荷的走勢，與首頁「近期疲勞 ATL」卡同一種迷你趨勢線
+  return sparkFrom(c.series, 'acute_load');
+}
+
+// 負荷焦點三類，由上而下的順序與配色對照 Garmin 網頁（無氧紫、高強度有氧橘、低強度有氧藍）
+var LOAD_FOCUS_LABEL = { anaerobic: '無氧', aerobic_high: '高強度有氧', aerobic_low: '低強度有氧' };
+var LOAD_FOCUS_TONE = { anaerobic: 'gc-tone-purple', aerobic_high: 'gc-tone-orange', aerobic_low: 'gc-tone-blue' };
+
+function renderLoadFocus(c, body) {
+  var cats = (c.categories || []).filter(function (x) { return x.value !== null; });
+  // 三條共用同一個刻度，才看得出彼此的比例；刻度上限留一點空間給超出目標的長條
+  var scale = Math.max.apply(null, cats.map(function (x) { return Math.max(x.value, x.target_max || 0); })) * 1.1 || 1;
+  cats.forEach(function (x) {
+    var row = h('div', 'gc-focus-row');
+    var head = h('div', 'gc-focus-head');
+    head.appendChild(h('span', 'gc-stat-label', LOAD_FOCUS_LABEL[x.key] || x.key));
+    head.appendChild(h('span', 'gc-focus-value', num(x.value)));
+    row.appendChild(head);
+    var track = h('div', 'gc-focus-track');
+    if (x.target_min !== null && x.target_max !== null) {
+      var target = h('span', 'gc-focus-target');
+      target.style.left = (x.target_min / scale * 100) + '%';
+      target.style.width = ((x.target_max - x.target_min) / scale * 100) + '%';
+      target.title = '目標 ' + num(x.target_min) + '–' + num(x.target_max);
+      track.appendChild(target);
+    }
+    var fill = h('span', 'gc-focus-fill ' + LOAD_FOCUS_TONE[x.key]);
+    fill.style.width = Math.min(100, x.value / scale * 100) + '%';
+    track.appendChild(fill);
+    row.appendChild(track);
+    body.appendChild(row);
+  });
   return null;
 }
 
@@ -433,7 +465,11 @@ export var GARMIN_CARD_DEFS = [
   { key: 'endurance_score', label: '耐力分數', render: renderEndurance,
     tip: ['Garmin 綜合長期訓練量與強度的耐力評分與分級（共 7 級）。'] },
   { key: 'training_load', label: '訓練負荷', render: renderTrainingLoad,
-    tip: ['Garmin 的短期（7 天）與長期（4 週）訓練負荷及兩者比值，尺度與本專案的 TRIMP 不同。'] }
+    tip: ['Garmin 的短期（7 天）與長期（4 週）訓練負荷及兩者比值，尺度與本專案的 TRIMP 不同。',
+      '下方趨勢線是短期負荷的每日走勢。'] },
+  { key: 'load_focus', label: '負荷焦點', render: renderLoadFocus,
+    tip: ['Garmin 把近 4 週的訓練負荷分成無氧、高強度有氧、低強度有氧三類，各自附上依你的訓練歷史推算的目標範圍。',
+      '長條是實際負荷，淡色框是目標範圍；三條共用同一個刻度。'] }
 ];
 
 var DEF_BY_KEY = {};

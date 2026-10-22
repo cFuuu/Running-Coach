@@ -464,7 +464,7 @@ var LOAD_TIPS = {
 };
 
 // 訓練負荷區接在 TSB／ATL／CTL 後面的 Garmin 卡片（views/garmin.js）
-var HOME_LOAD_GARMIN_KEYS = ['training_load', 'training_status'];
+var HOME_LOAD_GARMIN_KEYS = ['training_load', 'training_status', 'load_focus'];
 
 function lastWith(rows, key) {
   for (var i = rows.length - 1; i >= 0; i -= 1) {
@@ -515,8 +515,8 @@ export function renderHomeLoad() {
     tip: LOAD_TIPS.ctl
   }));
 
-  // Garmin 的訓練負荷與訓練狀態（2026-10-22 Fu 指定）：與趨勢頁「Garmin 數據」同一組卡片，
-  // 取代原本把兩者擠在一張「Garmin 近期負荷」卡底部小字的寫法。
+  // Garmin 的訓練負荷、訓練狀態、負荷焦點（2026-10-22 Fu 指定）：與趨勢頁「Garmin 數據」
+  // 同一組卡片。排成兩列：上列本專案 TSB／ATL／CTL，下列這三張 Garmin。
   var garmin = (kpi.garminCards && kpi.garminCards.cards) || {};
   HOME_LOAD_GARMIN_KEYS.forEach(function (key) {
     if (!garmin[key]) return;

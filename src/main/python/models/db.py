@@ -61,6 +61,12 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     # --- 2026-10-22：Garmin 網頁卡片所需欄位（見 schema.sql 註解）---
     ("athlete_profile", "sex", "TEXT"),
     ("training_status", "status_since_date", "TEXT"),
+    ("training_status", "monthly_load_aerobic_low_target_min", "REAL"),
+    ("training_status", "monthly_load_aerobic_low_target_max", "REAL"),
+    ("training_status", "monthly_load_aerobic_high_target_min", "REAL"),
+    ("training_status", "monthly_load_aerobic_high_target_max", "REAL"),
+    ("training_status", "monthly_load_anaerobic_target_min", "REAL"),
+    ("training_status", "monthly_load_anaerobic_target_max", "REAL"),
     ("daily_wellness", "readiness_level", "TEXT"),
     ("daily_wellness", "readiness_feedback_short", "TEXT"),
     ("daily_wellness", "sleep_start_local", "TEXT"),

@@ -330,6 +330,13 @@ CREATE TABLE IF NOT EXISTS training_status (
     monthly_load_aerobic_low  REAL,
     monthly_load_aerobic_high REAL,
     monthly_load_anaerobic    REAL,
+    -- 三類月負荷各自的目標範圍（Garmin「負荷焦點」長條圖上的目標區間）
+    monthly_load_aerobic_low_target_min  REAL,
+    monthly_load_aerobic_low_target_max  REAL,
+    monthly_load_aerobic_high_target_min REAL,
+    monthly_load_aerobic_high_target_max REAL,
+    monthly_load_anaerobic_target_min    REAL,
+    monthly_load_anaerobic_target_max    REAL,
     -- 負荷平衡回饋（如 AEROBIC_HIGH_SHORTAGE＝缺乏高強度有氧）
     training_balance_feedback TEXT,
     source               TEXT NOT NULL CHECK (source IN ('fit_manual', 'garmin_export', 'garmin_mcp', 'strava')),
