@@ -3,15 +3,16 @@
  *
  * 四區共用一個速度（tools.secPerKm）：改任何一格都先換算成每公里秒數，再回填
  * 其他所有欄位——正在打字的那格不回填，免得游標被打斷，離開欄位時才整理格式。
+ * 時間類欄位是分段輸入（分／秒、時／分／秒各一格，見 core/clock-field.js）。
  *
  * 全是純算術、不打 API、不讀訓練資料，所以這支檔案同時是 dashboard 的一頁，
  * 也是離線單檔 pace-calculator.html 的主體（scripts/build_pace_calculator.py 打包）。
  * 因此這裡**不可** import state／api／facts 這類 dashboard 專屬模組。
  */
 
-import * as C from '../charts.js';
 import { $, h } from '../core/dom.js';
-import { KM_PER_MILE, laneLengthM, parseClock, formatSplit, paceToKmh, kmhToPace } from '../core/pace.js';
+import { clockField } from '../core/clock-field.js';
+import { KM_PER_MILE, laneLengthM, formatSplit, paceToKmh, kmhToPace } from '../core/pace.js';
 
 var RACE_DISTANCES = [
   { km: 0.8, label: '800m' },
@@ -35,7 +36,7 @@ var tools = {
   built: false,
   secPerKm: null,
   trackM: TRACK_OPTIONS[0].meters,
-  fields: [],   // 可輸入的欄位：{ input, toText(secPerKm), fromText(text) → secPerKm|null }
+  fields: [],   // 可輸入的欄位：{ owner, write(secPerKm|null) }；owner 是事件來源，回填時跳過
   outputs: []   // 唯讀的換算結果：{ node, toText(secPerKm) }
 };
 
@@ -50,9 +51,7 @@ function setSpeed(secPerKm, editing) {
 function syncFields(editing) {
   var s = tools.secPerKm;
   tools.fields.forEach(function (f) {
-    if (f.input === editing) return;
-    f.input.value = s === null ? '' : f.toText(s);
-    f.input.classList.remove('is-invalid');
+    if (f.owner !== editing) f.write(s);
   });
   tools.outputs.forEach(function (o) {
     o.node.textContent = s === null ? '—' : o.toText(s);
@@ -60,35 +59,71 @@ function syncFields(editing) {
 }
 
 /**
- * 把一個 input 接進連動：打字即換算，離開欄位時把自己整理成標準格式。
- * 空白＝清空所有欄位；格式錯誤只標紅框，不動其他欄位。
+ * 把一組分段輸入接進連動：打字即換算，離開時把自己整理成標準格式。
+ * 全空＝清空所有欄位；格式錯誤（秒 ≥ 60 等）只標紅框，不動其他欄位。
+ * @param {Object} clock clockField() 的回傳值
+ * @param {function} toTotal 每公里秒數 → 這一欄的總秒數
+ * @param {function} fromTotal 這一欄的總秒數 → 每公里秒數
  */
-function bindField(input, toText, fromText) {
-  var field = { input: input, toText: toText, fromText: fromText };
+function bindClock(clock, toTotal, fromTotal) {
+  var field = {
+    owner: clock.node,
+    write: function (s) {
+      clock.setInvalid(false);
+      clock.write(s === null ? null : toTotal(s));
+    }
+  };
+  tools.fields.push(field);
+  clock.onChange(function () {
+    var total = clock.read();
+    if (total === null) {
+      clock.setInvalid(false);
+      setSpeed(null, clock.node);
+    } else if (isNaN(total)) {
+      clock.setInvalid(true);
+    } else {
+      clock.setInvalid(false);
+      setSpeed(fromTotal(total), clock.node);
+    }
+  });
+  clock.onBlur(function () {
+    if (tools.secPerKm !== null && !clock.isInvalid()) field.write(tools.secPerKm);
+  });
+  return clock.node;
+}
+
+/** 單一數字欄（跑步機時速）。行為同 bindClock，只是整欄一個 input。 */
+function bindNumber(input, toText, fromNumber) {
+  var field = {
+    owner: input,
+    write: function (s) {
+      input.value = s === null ? '' : toText(s);
+      input.classList.remove('is-invalid');
+    }
+  };
   tools.fields.push(field);
   input.addEventListener('input', function () {
-    if (input.value.trim() === '') {
+    var raw = input.value.trim();
+    if (raw === '') {
       input.classList.remove('is-invalid');
       setSpeed(null, input);
       return;
     }
-    var s = fromText(input.value);
-    var ok = s !== null && isFinite(s) && s > 0;
+    var n = /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
+    var ok = n > 0 && isFinite(n);
     input.classList.toggle('is-invalid', !ok);
-    if (!ok) return;
-    setSpeed(s, input);
+    if (ok) setSpeed(fromNumber(n), input);
   });
   input.addEventListener('change', function () {
-    if (tools.secPerKm !== null && !input.classList.contains('is-invalid')) {
-      input.value = toText(tools.secPerKm);
-    }
+    if (tools.secPerKm !== null && !input.classList.contains('is-invalid')) field.write(tools.secPerKm);
   });
   return input;
 }
 
-function textInput(placeholder, ariaLabel) {
+function numberInput(placeholder, ariaLabel) {
   var input = h('input', 'tools-input');
   input.type = 'text';
+  input.inputMode = 'decimal';
   input.autocomplete = 'off';
   input.spellcheck = false;
   input.placeholder = placeholder;
@@ -96,23 +131,18 @@ function textInput(placeholder, ariaLabel) {
   return input;
 }
 
-function parseSpeed(text) {
-  var raw = String(text || '').trim();
-  return /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : null;
-}
-
-function labeledField(label, unit, input) {
-  var wrap = h('label', 'tools-field');
+function labeledField(label, unit, control, extraClass) {
+  var wrap = h('div', 'tools-field' + (extraClass ? ' ' + extraClass : ''));
   wrap.appendChild(h('span', 'tools-field-label', label));
   var row = h('span', 'tools-field-row');
-  row.appendChild(input);
+  row.appendChild(control);
   if (unit) row.appendChild(h('span', 'tools-unit', unit));
   wrap.appendChild(row);
   return wrap;
 }
 
-function panel(title, hint) {
-  var sec = h('section', 'panel tools-panel');
+function panel(title, hint, area) {
+  var sec = h('section', 'panel tools-panel tools-area-' + area);
   var h2 = h('h2', 'panel-title', title);
   if (hint) h2.appendChild(h('span', 'panel-hint', hint));
   sec.appendChild(h2);
@@ -122,41 +152,41 @@ function panel(title, hint) {
 // ------------------------------------------------------------ 四個區塊
 
 function buildPacePanel() {
-  var sec = panel('配速');
-  var grid = h('div', 'tools-fields');
-  grid.appendChild(labeledField('每公里', '/km', bindField(
-    textInput('5:30', '每公里配速'),
-    function (s) { return C.formatPace(s); },
-    function (t) { return parseClock(t, 60); }
-  )));
-  grid.appendChild(labeledField('每英里', '/mi', bindField(
-    textInput('8:51', '每英里配速'),
-    function (s) { return C.formatPace(s * KM_PER_MILE); },
-    function (t) { var v = parseClock(t, 60); return v === null ? null : v / KM_PER_MILE; }
-  )));
-  sec.appendChild(grid);
+  var sec = panel('配速', null, 'pace');
+  var row = h('div', 'tools-hero-row');
+  row.appendChild(labeledField('每公里', '/km', bindClock(
+    clockField({ parts: ['m', 's'], ariaLabel: '每公里配速', placeholders: ['5', '30'], plainUnitSec: 60, size: 'lg' }),
+    function (s) { return s; },
+    function (t) { return t; }
+  ), 'is-hero'));
+  row.appendChild(labeledField('每英里', '/mi', bindClock(
+    clockField({ parts: ['m', 's'], ariaLabel: '每英里配速', placeholders: ['8', '51'], plainUnitSec: 60, size: 'lg' }),
+    function (s) { return s * KM_PER_MILE; },
+    function (t) { return t / KM_PER_MILE; }
+  ), 'is-hero'));
+  sec.appendChild(row);
   return sec;
 }
 
 function buildTreadmillPanel() {
-  var sec = panel('跑步機');
+  var sec = panel('跑步機', null, 'treadmill');
   var grid = h('div', 'tools-fields');
-  grid.appendChild(labeledField('公里時速', 'km/h', bindField(
-    textInput('10.9', '公里時速'),
+  grid.appendChild(labeledField('公里時速', 'km/h', bindNumber(
+    numberInput('10.9', '公里時速'),
     function (s) { return paceToKmh(s).toFixed(2); },
-    function (t) { var v = parseSpeed(t); return v ? kmhToPace(v) : null; }
+    function (v) { return kmhToPace(v); }
   )));
-  grid.appendChild(labeledField('英里時速', 'mph', bindField(
-    textInput('6.78', '英里時速'),
+  grid.appendChild(labeledField('英里時速', 'mph', bindNumber(
+    numberInput('6.78', '英里時速'),
     function (s) { return (paceToKmh(s) / KM_PER_MILE).toFixed(2); },
-    function (t) { var v = parseSpeed(t); return v ? kmhToPace(v * KM_PER_MILE) : null; }
+    function (v) { return kmhToPace(v * KM_PER_MILE); }
   )));
   sec.appendChild(grid);
   return sec;
 }
 
 function buildTrackPanel() {
-  var sec = panel('田徑場', '換道時速度不變，重算每圈秒數');
+  var sec = panel('田徑場', '換道時速度不變，重算每圈時間', 'track');
   var controls = h('div', 'tools-fields');
 
   var select = h('select', 'tools-input tools-select');
@@ -166,15 +196,15 @@ function buildTrackPanel() {
     o.value = String(i);
     select.appendChild(o);
   });
-  var laneWrap = h('label', 'tools-field');
-  laneWrap.appendChild(h('span', 'tools-field-label', '道次'));
-  laneWrap.appendChild(select);
-  controls.appendChild(laneWrap);
+  controls.appendChild(labeledField('道次', null, select));
 
-  controls.appendChild(labeledField('每圈', '秒', bindField(
-    textInput('96', '每圈秒數'),
-    function (s) { return formatSplit(s * tools.trackM / 1000); },
-    function (t) { var v = parseClock(t, 1); return v === null ? null : v / (tools.trackM / 1000); }
+  controls.appendChild(labeledField('每圈', null, bindClock(
+    clockField({
+      parts: ['m', 's'], ariaLabel: '每圈時間', decimalSeconds: true, blankLeadingZero: true,
+      placeholders: ['0', '96'], plainUnitSec: 1
+    }),
+    function (s) { return s * tools.trackM / 1000; },
+    function (t) { return t / (tools.trackM / 1000); }
   )));
   sec.appendChild(controls);
 
@@ -211,7 +241,7 @@ function buildTrackPanel() {
 }
 
 function buildFinishPanel() {
-  var sec = panel('完成時間', '照目前配速等速跑完各距離');
+  var sec = panel('完成時間', '照目前配速等速跑完各距離', 'finish');
   var table = h('table', 'tools-table');
   var tbody = h('tbody');
   RACE_DISTANCES.forEach(function (d) {
@@ -220,10 +250,13 @@ function buildFinishPanel() {
     th.scope = 'row';
     tr.appendChild(th);
     var td = h('td');
-    td.appendChild(bindField(
-      textInput('h:m:s', d.label + '完成時間'),
-      function (s) { return C.formatDuration(s * d.km); },
-      function (t) { var v = parseClock(t, 60); return v === null ? null : v / d.km; }
+    td.appendChild(bindClock(
+      clockField({
+        parts: ['h', 'm', 's'], ariaLabel: d.label + '完成時間', blankLeadingZero: true,
+        placeholders: ['0', '00', '00'], plainUnitSec: 60, size: 'md'
+      }),
+      function (s) { return s * d.km; },
+      function (t) { return t / d.km; }
     ));
     tr.appendChild(td);
     tbody.appendChild(tr);
@@ -242,7 +275,7 @@ export function renderToolsPage() {
   if (!body) return;
   tools.built = true;
   body.appendChild(h('p', 'tools-intro',
-    '任一欄輸入，其他欄即時換算（等速）。時間可輸入 m:s 或 h:m:s；只填數字時配速與完成時間視為分鐘、每圈視為秒。'));
+    '任一格輸入，其他格即時換算。時間分格填寫，打完一格按 : 或 Tab 跳下一格，空格視為 0。'));
   var grid = h('div', 'tools-grid');
   grid.appendChild(buildPacePanel());
   grid.appendChild(buildTreadmillPanel());

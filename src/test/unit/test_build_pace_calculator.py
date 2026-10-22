@@ -16,7 +16,7 @@ class TestBuildPaceCalculator(unittest.TestCase):
         cls.html = build_pace_calculator.build()
 
     def test_bundles_entry_and_dependencies(self):
-        for module in ("views/tools.js", "core/pace.js", "core/dom.js", "charts.js"):
+        for module in ("views/tools.js", "core/clock-field.js", "core/pace.js", "core/dom.js"):
             self.assertIn(f'__m["{module}"] = ', self.html)
         self.assertIn('__m["views/tools.js"].renderToolsPage()', self.html)
 

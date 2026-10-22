@@ -5242,7 +5242,8 @@ body.coach-open .coach-fab {
 }
 
 /* ------------------------------------------------------------ 配速計算機（#/tools）
- * 四區同頁：寬螢幕兩欄（配速｜跑步機、田徑場｜完成時間），窄螢幕單欄。
+ * 配速是主角：大型碼表式分段輸入佔滿第一列；其餘三區安靜地排在下面。
+ * 寬螢幕：配速（整列）／跑步機＋田徑場｜完成時間；窄螢幕依 DOM 順序單欄。
  * 數字一律 tabular-nums，連動換算時欄寬不會跳動。
  */
 .tools-intro {
@@ -5258,10 +5259,25 @@ body.coach-open .coach-fab {
   align-items: start;
 }
 
+/* grid-area 只在雙欄時指定：單欄時若留著，未定義的區域名稱會讓排版錯亂 */
 @media (min-width: 900px) {
   .tools-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "pace pace"
+      "treadmill finish"
+      "track finish";
   }
+  .tools-area-pace { grid-area: pace; }
+  .tools-area-treadmill { grid-area: treadmill; }
+  .tools-area-track { grid-area: track; }
+  .tools-area-finish { grid-area: finish; }
+}
+
+.tools-hero-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px 24px;
 }
 
 .tools-fields {
@@ -5285,13 +5301,17 @@ body.coach-open .coach-fab {
 .tools-field-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .tools-unit {
   font-size: var(--fs-sm);
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.tools-field.is-hero .tools-unit {
+  font-size: var(--fs-lg);
 }
 
 .tools-input {
@@ -5322,6 +5342,76 @@ body.coach-open .coach-fab {
   font-size: var(--fs-md);
 }
 
+/* ---- 分段時間輸入（js/core/clock-field.js）：一個外框、內含各格與冒號 ---- */
+
+.tools-clock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.tools-clock:focus-within {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.tools-clock.is-invalid {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.tools-seg {
+  min-width: 0;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  outline: none;
+}
+
+.tools-seg::placeholder {
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+
+.tools-colon {
+  padding: 0 2px 3px;
+  color: var(--text-muted);
+}
+
+.tools-clock.is-lg {
+  min-height: 76px;
+  padding: 0 18px;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tools-clock.is-md {
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: var(--fs-lg);
+}
+
+@media (max-width: 767px) {
+  .tools-clock.is-lg {
+    min-height: 64px;
+    padding: 0 14px;
+    font-size: 38px;
+  }
+}
+
 .tools-table {
   width: 100%;
   margin-top: 12px;
@@ -5335,12 +5425,6 @@ body.coach-open .coach-fab {
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
-}
-
-.tools-table thead th {
-  font-size: var(--fs-sm);
-  font-weight: 400;
-  color: var(--text-muted);
 }
 
 .tools-table tbody th {
