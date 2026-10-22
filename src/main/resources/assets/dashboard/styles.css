@@ -2040,9 +2040,7 @@ body.coach-open .coach-fab {
 #view-home .wp-date,
 #view-home .wp-actual,
 #view-home .rc-date,
-#view-home .rc-km,
-#view-home .rc-pace,
-#view-home .rc-hr,
+#view-home .rc-actual,
 #view-home .rc-plan {
   font-weight: 600;
 }
@@ -3048,6 +3046,7 @@ body.coach-open .coach-fab {
 
 /* ---- 今日頁：最近訓練清單 ---- */
 
+/* 與當週課表同一套表格：日期（10/19 (一)）、活動、實際、課表四欄 */
 .recent-list {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -3056,76 +3055,117 @@ body.coach-open .coach-fab {
 
 .recent-row {
   display: grid;
-  grid-template-columns: 3.4rem 5.5rem minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 0.8fr) 4.8rem;
-  align-items: center;
+  grid-template-columns: 5rem 6rem 7.6rem minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 8px 12px 8px 6px;
   border: none;
   background: none;
   color: var(--text);
   font: inherit;
   font-size: var(--fs-sm);
   text-align: left;
-  cursor: pointer;
+}
+
+.recent-row.recent-head {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
 }
 
 .recent-row + .recent-row {
   border-top: 1px solid var(--border);
 }
 
-.recent-row:hover {
+button.recent-row {
+  cursor: pointer;
+}
+
+button.recent-row:hover {
   background: var(--surface-sunken);
 }
 
-.recent-row:focus-visible {
+button.recent-row:focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: -3px;
 }
 
-.rc-date {
+/* 健走、重訓等非跑步活動：淡色、不可點（沒有單場分析頁） */
+.recent-row.is-other {
   color: var(--text-muted);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
 }
 
-.rc-type {
+/* 日期、實際欄（含表頭）置中 */
+.recent-head > :nth-child(1),
+.recent-head > :nth-child(3),
+.rc-date,
+.rc-actual {
+  text-align: center;
+}
+
+.rc-date {
+  white-space: nowrap;
+  color: var(--text-muted);
   font-weight: 600;
 }
 
-/* 對應課表：課表週的同一套文字（planSummary），沒有對應的顯示「—」 */
-.rc-plan {
+.rc-activity,
+.rc-actual {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rc-actual {
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-main {
+  font-weight: 600;
+}
+
+button.recent-row .rc-actual .rc-main {
+  color: var(--accent-text);
+}
+
+.rc-sub {
+  white-space: nowrap;
   color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+/* 課表：課表週的同一套文字（planSummary）；課表外／非跑步的「—」淡色 */
+.rc-plan {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rc-km,
-.rc-pace,
-.rc-hr {
-  font-variant-numeric: tabular-nums;
-}
-
-.rc-hr {
+.rc-plan.is-none {
   color: var(--text-muted);
-  text-align: right;
 }
 
-/* 區塊窄（手機，或首頁排成半欄）時兩行：第一行 日期｜類型｜距離，第二行 心率｜對應課表｜配速。
-   依區塊寬度而非螢幕寬度判斷，半欄時才不會把距離、配速擠到換行 */
+/* 區塊窄（手機，或首頁排成半欄）時兩行：第一行 日期｜活動｜實際，第二行課表。
+   依區塊寬度而非螢幕寬度判斷 */
 @container block (max-width: 600px) {
   .recent-row {
-    grid-template-columns: 3.4rem minmax(0, 1fr) auto;
+    grid-template-columns: 5rem minmax(0, 1fr) auto;
     row-gap: 2px;
   }
 
-  .rc-date { grid-column: 1; grid-row: 1; }
-  .rc-type { grid-column: 2; grid-row: 1; }
-  .rc-km   { grid-column: 3; grid-row: 1; text-align: right; }
-  .rc-hr   { grid-column: 1; grid-row: 2; text-align: left; font-size: var(--fs-xs); }
-  .rc-plan { grid-column: 2; grid-row: 2; font-size: var(--fs-xs); }
-  .rc-pace { grid-column: 3; grid-row: 2; text-align: right; }
+  .recent-row.recent-head {
+    display: none;
+  }
+
+  .rc-plan {
+    grid-column: 2 / -1;
+    font-size: var(--fs-xs);
+  }
 }
 
 .today-block {

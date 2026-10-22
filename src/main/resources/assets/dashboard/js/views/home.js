@@ -13,7 +13,7 @@
  */
 
 import * as C from '../charts.js';
-import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL } from '../core/state.js';
+import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
@@ -960,51 +960,81 @@ export function renderRecentSessions() {
   var node = $('recent-sessions');
   if (!node) return;
   clear(node);
-  if (!state.recentSessions) { showLoading(node, '載入近期活動'); return; }
-  if (state.recentSessions.length === 0) {
-    node.appendChild(h('div', 'state-msg state-unavailable', '近 30 天沒有跑步場次'));
+  if (!state.recentActivities) { showLoading(node, '載入近期活動'); return; }
+  if (state.recentActivities.length === 0) {
+    node.appendChild(h('div', 'state-msg state-unavailable', '近 30 天沒有活動紀錄'));
     return;
   }
 
   var list = h('div', 'recent-list');
-  state.recentSessions.slice(0, 8).forEach(function (s) {
-    var row = h('button', 'recent-row', null);
-    row.type = 'button';
-    row.addEventListener('click', function () { navigate('sessions', s.id); });
+  var head = h('div', 'recent-row recent-head');
+  ['日期', '活動', '實際', '課表'].forEach(function (t) { head.appendChild(h('span', null, t)); });
+  list.appendChild(head);
 
-    row.appendChild(h('span', 'rc-date', s.date.slice(5)));
-    row.appendChild(h('span', 'rc-type', WORKOUT_TYPE_LABEL[s.workout_type] || s.workout_type || '未分類'));
-    var plan = state.recentPlans && state.recentPlans[s.id];
-    row.appendChild(h('span', 'rc-plan', plan ? planSummary(plan) : '—'));
-    row.appendChild(h('span', 'rc-km', s.distance_km ? C.formatNumber(s.distance_km, 2) + ' km' : '—'));
-    row.appendChild(h('span', 'rc-pace', s.avg_pace_sec_per_km ? C.formatPace(s.avg_pace_sec_per_km) + '/km' : '—'));
-    row.appendChild(h('span', 'rc-hr', s.avg_hr_bpm ? s.avg_hr_bpm + ' bpm' : '—'));
+  var prev = null;
+  state.recentActivities.slice(0, 8).forEach(function (item) {
+    var a = item.activity;
+    var sameDay = prev && prev.date === item.date;
+    // 跑步才有單場分析可看（同行事曆）；健走、重訓等整列淡色、不可點
+    var row = h(a.is_running ? 'button' : 'div', 'recent-row' + (a.is_running ? '' : ' is-other'));
+    if (a.is_running) {
+      row.type = 'button';
+      row.title = '看單場分析';
+      row.addEventListener('click', function () { navigate('sessions', a.id); });
+    }
+
+    // 同一天的第二場起不重複日期
+    row.appendChild(h('span', 'rc-date', sameDay ? '' : C.shortDate(item.date) + ' (' + dowLabel(item.date) + ')'));
+
+    var act = h('span', 'rc-activity');
+    act.appendChild(h('span', 'rc-main', a.is_running
+      ? (WORKOUT_TYPE_LABEL[a.workout_type] || a.workout_type || '未分類')
+      : (ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type)));
+    if (a.is_running && a.duration_sec) act.appendChild(h('span', 'rc-sub', C.formatDuration(a.duration_sec)));
+    row.appendChild(act);
+
+    // 實際：跑步以距離為主、配速與心率小字；其他活動以時長為主
+    var actual = h('span', 'rc-actual');
+    var sub = [];
+    if (a.is_running) {
+      actual.appendChild(h('span', 'rc-main', a.distance_km ? C.formatNumber(a.distance_km, 1) + ' km' : '—'));
+      if (a.distance_km && a.duration_sec) sub.push(C.formatPace(a.duration_sec / a.distance_km) + '/km');
+    } else {
+      actual.appendChild(h('span', 'rc-main', a.duration_sec ? Math.round(a.duration_sec / 60) + ' 分' : '—'));
+    }
+    if (a.avg_hr_bpm) sub.push(Math.round(a.avg_hr_bpm) + ' bpm');
+    if (sub.length) actual.appendChild(h('span', 'rc-sub', sub.join(' · ')));
+    row.appendChild(actual);
+
+    // 課表：同一天多場對到同一份課表時，後面寫「（同上）」；跑步沒對到課表寫「課表外」
+    var planText;
+    if (item.plan) planText = sameDay && prev.plan === item.plan ? '（同上）' : planSummary(item.plan);
+    else planText = a.is_running ? '課表外' : '—';
+    row.appendChild(h('span', 'rc-plan' + (item.plan ? '' : ' is-none'), planText));
+
     list.appendChild(row);
+    prev = item;
   });
   node.appendChild(list);
 }
 
 /**
- * 近 30 天的場次，連同各場對應的課表。/api/sessions 不含課表，故另取同一段
- * 期間的 /api/calendar，以活動 id 找到當天課表（plan_match 為 none 的不算對應）。
- * 行事曆抓不到時只是少了課表欄，不影響清單本身。
+ * 近 30 天的所有活動（含健走、重訓等），連同各場對應的課表，由新到舊。
+ * /api/calendar 的每一天同時帶有活動與課表，以活動的 plan_match 判斷有沒有對應
+ * （none 不算）；同一天的活動 API 依開始時間由早到晚，這裡反過來。
  */
 export function loadRecentSessions() {
   var today = todayISO();
-  Promise.all([
-    api('/api/sessions?range=30d'),
-    api('/api/calendar?start=' + addDaysISO(today, -29) + '&end=' + today).catch(function () { return null; })
-  ]).then(function (res) {
-    state.recentSessions = (res[0] && res[0].sessions) || [];
-    var plans = {};
-    ((res[1] && res[1].days) || []).forEach(function (d) {
-      var p = (d.planned || [])[0];
-      if (!p) return;
-      (d.activities || []).forEach(function (a) {
-        if (a.plan_match && a.plan_match.state !== 'none') plans[a.id] = p;
+  api('/api/calendar?start=' + addDaysISO(today, -29) + '&end=' + today).then(function (data) {
+    var items = [];
+    ((data && data.days) || []).slice().reverse().forEach(function (d) {
+      var p = (d.planned || [])[0] || null;
+      (d.activities || []).slice().reverse().forEach(function (a) {
+        var matched = p && a.plan_match && a.plan_match.state !== 'none';
+        items.push({ date: d.date, activity: a, plan: matched ? p : null });
       });
     });
-    state.recentPlans = plans;
+    state.recentActivities = items;
     renderRecentSessions();
   }).catch(function (err) {
     showError($('recent-sessions'), err.message);
