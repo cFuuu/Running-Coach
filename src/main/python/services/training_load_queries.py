@@ -26,18 +26,9 @@ from typing import Any
 from src.main.python.services.readiness import HRV_LOOKBACK_DAYS, assess_readiness
 from src.main.python.services.training_load import (
     CTL_WARMUP_DAYS,
-    RUNNING_ACTIVITY_TYPES,
-    STRENGTH_ACTIVITY_TYPES,
     compute_daily_loads,
     compute_training_load_series,
 )
-
-# training_load.compute_activity_load() 只認得這兩類 activity_type，其餘一律
-# 被純函式排除——查詢層先用同一份集合過濾，避免撈出用不到的資料列。
-_LOAD_RELEVANT_ACTIVITY_TYPES: tuple[str, ...] = tuple(
-    RUNNING_ACTIVITY_TYPES | STRENGTH_ACTIVITY_TYPES
-)
-
 
 def get_activities_for_load(
     conn: sqlite3.Connection,
@@ -47,26 +38,23 @@ def get_activities_for_load(
 ) -> list[dict[str, Any]]:
     """查出 [start_date, end_date] 區間內、與訓練負荷計算相關的活動。
 
-    只查 RUNNING_ACTIVITY_TYPES／STRENGTH_ACTIVITY_TYPES 涵蓋的 activity_type
-    （training_load.compute_activity_load() 對其餘類型一律回傳 None 排除，
-    查詢層先過濾掉可省去下游無謂的逐筆判斷）。
+    所有活動類型都撈：哪些計入負荷（如非跑步活動的時長門檻）由
+    training_load.compute_activity_load() 判斷，查詢層不重複這條規則。
 
     回傳每筆至少含 training_load.compute_activity_load() 需要的欄位：
     "date"（datetime.date）／"activity_type"／"duration_sec"／"avg_hr_bpm"／
     "avg_pace_sec_per_km"。同一天可能有多筆（compute_daily_loads() 會加總）。
     """
-    placeholders = ",".join("?" for _ in _LOAD_RELEVANT_ACTIVITY_TYPES)
     rows = conn.execute(
-        f"""
+        """
         SELECT date(started_at) AS activity_date, activity_type, duration_sec,
                avg_hr_bpm, avg_pace_sec_per_km
         FROM activities
         WHERE athlete_id = ?
-          AND activity_type IN ({placeholders})
           AND date(started_at) >= ? AND date(started_at) <= ?
         ORDER BY started_at
         """,
-        (athlete_id, *_LOAD_RELEVANT_ACTIVITY_TYPES, start_date.isoformat(), end_date.isoformat()),
+        (athlete_id, start_date.isoformat(), end_date.isoformat()),
     ).fetchall()
 
     return [

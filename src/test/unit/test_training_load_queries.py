@@ -91,12 +91,13 @@ class TestGetActivitiesForLoad(unittest.TestCase):
         result = get_activities_for_load(self.conn, self.athlete_id, START, START)
         self.assertEqual(result, [])
 
-    def test_excludes_non_running_non_strength_activity_types(self):
+    def test_includes_other_activity_types(self):
+        """哪些活動計入負荷由 compute_activity_load() 判斷，查詢層不先過濾類型。"""
         _insert_activity(self.conn, self.athlete_id, START, activity_type="cycling")
         self.conn.commit()
 
         result = get_activities_for_load(self.conn, self.athlete_id, START, START)
-        self.assertEqual(result, [])
+        self.assertEqual([r["activity_type"] for r in result], ["cycling"])
 
     def test_includes_strength_training(self):
         _insert_activity(self.conn, self.athlete_id, START, activity_type="strength_training", duration_sec=3600)

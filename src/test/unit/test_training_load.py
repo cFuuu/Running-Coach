@@ -5,6 +5,7 @@ import math
 import unittest
 
 from src.main.python.services.training_load import (
+    NON_RUNNING_MIN_LOAD_DURATION_SEC,
     compute_activity_load,
     compute_daily_loads,
     compute_hrr_intensity_pct,
@@ -40,6 +41,19 @@ def _strength_activity(
     return {
         "date": date,
         "activity_type": "strength_training",
+        "duration_sec": duration_sec,
+        "avg_hr_bpm": avg_hr_bpm,
+    }
+
+
+def _other_activity(
+    date: datetime.date,
+    duration_sec: float = 3600.0,
+    avg_hr_bpm: float | None = None,
+) -> dict:
+    return {
+        "date": date,
+        "activity_type": "walking",
         "duration_sec": duration_sec,
         "avg_hr_bpm": avg_hr_bpm,
     }
@@ -135,15 +149,39 @@ class TestComputeActivityLoad(unittest.TestCase):
         result = compute_activity_load(activity, max_hr_bpm=MAX_HR, resting_hr_bpm=RESTING_HR)
         self.assertIsNone(result)
 
-    def test_unknown_activity_type_is_excluded(self):
-        activity = {
-            "date": datetime.date(2026, 8, 1),
-            "activity_type": "cycling",
-            "duration_sec": 1800,
-            "avg_hr_bpm": 140,
-        }
+    def test_other_activity_over_threshold_with_hr_uses_hrr_intensity(self):
+        activity = _other_activity(datetime.date(2026, 8, 1), duration_sec=3600, avg_hr_bpm=120)
+        result = compute_activity_load(activity, max_hr_bpm=MAX_HR, resting_hr_bpm=RESTING_HR)
+        self.assertIsNotNone(result)
+        self.assertFalse(result["uncertain"])
+        self.assertAlmostEqual(result["load"], compute_trimp(3600, 70 / 140), places=4)
+
+    def test_other_activity_without_hr_is_excluded(self):
+        activity = _other_activity(datetime.date(2026, 8, 1), duration_sec=3600)
         result = compute_activity_load(activity, max_hr_bpm=MAX_HR, resting_hr_bpm=RESTING_HR)
         self.assertIsNone(result)
+
+    def test_non_running_at_threshold_is_excluded(self):
+        """門檻是「超過」30 分鐘：剛好 30 分鐘的健走與重訓都不計入。"""
+        at = NON_RUNNING_MIN_LOAD_DURATION_SEC
+        for activity in (
+            _other_activity(datetime.date(2026, 8, 1), duration_sec=at, avg_hr_bpm=120),
+            _strength_activity(datetime.date(2026, 8, 1), duration_sec=at, avg_hr_bpm=120),
+        ):
+            result = compute_activity_load(activity, max_hr_bpm=MAX_HR, resting_hr_bpm=RESTING_HR)
+            self.assertIsNone(result, activity["activity_type"])
+
+    def test_non_running_just_over_threshold_counts(self):
+        activity = _other_activity(
+            datetime.date(2026, 8, 1), duration_sec=NON_RUNNING_MIN_LOAD_DURATION_SEC + 1, avg_hr_bpm=120
+        )
+        result = compute_activity_load(activity, max_hr_bpm=MAX_HR, resting_hr_bpm=RESTING_HR)
+        self.assertIsNotNone(result)
+
+    def test_short_running_is_not_subject_to_threshold(self):
+        activity = _running_activity(datetime.date(2026, 8, 1), duration_sec=600, avg_hr_bpm=140)
+        result = compute_activity_load(activity, max_hr_bpm=MAX_HR, resting_hr_bpm=RESTING_HR)
+        self.assertIsNotNone(result)
 
 
 class TestComputeDailyLoads(unittest.TestCase):

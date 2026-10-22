@@ -16,6 +16,10 @@
       缺心率資料時，退回用配速相對 VDOT easy 配速基準估算強度。
     - 重訓優先用同一套心率相對 HRR 公式；連心率都沒有，則用固定保守估計強度
       （50% HRR），並標記該筆負荷為不確定估算。
+    - 其他非跑步活動（健走、騎車、登山等）只用心率相對 HRR 算強度；沒有心率就排除，
+      不另做保守估計（這些活動強度落差太大，沒有可信的固定退回值）。
+    - 非跑步活動（含重訓）時長沒有超過 NON_RUNNING_MIN_LOAD_DURATION_SEC 的不計入：
+      短程健走、通勤騎車這類日常活動不算訓練（2026-10-22 使用者決定）。
     - 完全無法估算強度的活動（跑步無心率也無配速）明確排除，不列入負荷計算，
       不強行給 0 或預設值掩蓋缺失。
 
@@ -58,6 +62,10 @@ TRIMP_WEIGHT_B = 1.92
 # 50% HRR 對應一般認知中「輕度～中度」的體能消耗強度，作為缺乏實測時的保守下界，
 # 避免高估重訓造成的疲勞負荷。
 STRENGTH_FALLBACK_HRR_PCT = 0.5
+
+# 非跑步活動（含重訓）要**超過**這個時長才計入負荷（秒）。30 分鐘以下的健走、
+# 騎車等視為日常活動而非訓練（2026-10-22 使用者決定）。跑步不受此限。
+NON_RUNNING_MIN_LOAD_DURATION_SEC = 30 * 60
 
 # 跑步無心率、退回用配速估算強度時，配速相對 VDOT easy 配速基準的估算表：
 # key 為「活動配速 / easy 配速下界」的比值上限，value 為對應估算的 %HRR 強度。
@@ -178,7 +186,8 @@ def compute_activity_load(
 
     activity：至少包含
         - "date": datetime.date，活動日期
-        - "activity_type": str，比對 RUNNING_ACTIVITY_TYPES / STRENGTH_ACTIVITY_TYPES
+        - "activity_type": str，比對 RUNNING_ACTIVITY_TYPES / STRENGTH_ACTIVITY_TYPES，
+          其餘視為其他非跑步活動
         - "duration_sec": float，實際持續時間（秒）
         - "avg_hr_bpm"：可選，平均心率
         - "avg_pace_sec_per_km"：可選，跑步配速（重訓活動忽略此欄位）
@@ -194,6 +203,7 @@ def compute_activity_load(
                 "intensity_pct": float,
                 "uncertain": bool,  # 是否為不確定估算（重訓保守退回 / 跑步配速估算）
             }
+        非跑步活動未超過 NON_RUNNING_MIN_LOAD_DURATION_SEC 時：None。
         完全無法估算強度時：None（明確排除，不強行給 0 或預設值掩蓋缺失）。
     """
     activity_type = activity.get("activity_type")
@@ -207,13 +217,20 @@ def compute_activity_load(
         )
         if intensity_pct is None:
             return None
+    elif duration_sec <= NON_RUNNING_MIN_LOAD_DURATION_SEC:
+        # 非跑步活動沒超過門檻時長：日常活動，不算訓練。
+        return None
     elif activity_type in STRENGTH_ACTIVITY_TYPES:
         intensity_pct, uncertain = _resolve_strength_intensity(
             activity, max_hr_bpm, resting_hr_bpm
         )
     else:
-        # 非跑步/重訓類型（目前 Phase 2 範圍未涵蓋），不列入負荷計算。
-        return None
+        # 其他非跑步活動：只認心率，沒有心率就無從估算強度，明確排除。
+        avg_hr_bpm = activity.get("avg_hr_bpm")
+        if not (avg_hr_bpm and max_hr_bpm and resting_hr_bpm):
+            return None
+        intensity_pct = compute_hrr_intensity_pct(avg_hr_bpm, max_hr_bpm, resting_hr_bpm)
+        uncertain = False
 
     return {
         "load": compute_trimp(duration_sec, intensity_pct),
