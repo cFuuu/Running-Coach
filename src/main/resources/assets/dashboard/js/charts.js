@@ -1076,8 +1076,9 @@ function hypnogram(segments) {
  * 24 小時日內圖（心率、壓力、身體能量），X 軸固定 00:00～24:00。
  * @param {Array} points [[當日第幾分鐘, 數值|null], ...]
  * @param {Object} opts { mode:'line'|'bars'|'area', min, max, barClass:function(v)→class,
- *   pendingFrom:number 當日第幾分鐘起尚未同步（今天的資料才給）：該處到 24:00 畫灰底，
- *   讓「還沒更新」與「這段時間真的沒資料」分得開 }
+ *   pendingFrom:number 當日第幾分鐘起尚未同步（今天的資料才給）：在該處畫一條垂直虛線
+ *   標出「同步到這裡」，之後到 24:00 只沿底部畫點狀基線，讓「還沒更新」與「這段時間
+ *   真的沒資料」分得開，又不像整塊灰底那樣搶走資料本身的視線 }
  */
 function intradayChart(points, opts) {
   var vals = (points || []).filter(function (p) { return p[1] !== null && p[1] !== undefined; });
@@ -1091,11 +1092,9 @@ function intradayChart(points, opts) {
   function y(v) { return H - (v - min) / span * (H - 2) - 1; }
   var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', class: 'gc-intraday', 'aria-hidden': 'true' });
   if (typeof opts.pendingFrom === 'number' && opts.pendingFrom < 1440) {
-    svg.appendChild(el('rect', {
-      x: x(opts.pendingFrom).toFixed(2), y: 0,
-      width: (W - x(opts.pendingFrom)).toFixed(2), height: H,
-      class: 'gc-intraday-pending'
-    }));
+    var bx = x(opts.pendingFrom).toFixed(2);
+    svg.appendChild(el('line', { x1: bx, y1: 0, x2: bx, y2: H, class: 'gc-intraday-synced' }));
+    svg.appendChild(el('line', { x1: bx, y1: H - 1, x2: W, y2: H - 1, class: 'gc-intraday-pending' }));
   }
   if (opts.mode === 'bars') {
     var bw = W / 480; // 3 分鐘一點

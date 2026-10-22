@@ -2434,10 +2434,22 @@ body.coach-open .coach-fab {
   vector-effect: non-scaling-stroke;
 }
 
-/* 今天尚未同步到的時段：灰底，與「這段時間真的沒資料」區分 */
+/* 今天尚未同步到的時段：垂直虛線標出「同步到這裡」，之後只沿底部畫點狀基線
+   （不填色，避免整塊灰底比資料還搶眼）。preserveAspectRatio:none 會拉伸線寬，
+   用 non-scaling-stroke 維持螢幕上的細線 */
+.gc-intraday-synced {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
 .gc-intraday-pending {
-  fill: var(--text-muted);
-  opacity: 0.18;
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .gc-axis-pending {

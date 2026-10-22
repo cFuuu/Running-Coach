@@ -131,7 +131,7 @@ function weekChecks(items) {
 }
 
 /**
- * 24 小時日內圖。date 是今天時，最後一個資料點之後到 24:00 畫灰底並註明資料時間——
+ * 24 小時日內圖。date 是今天時，在最後一個資料點畫虛線、之後到 24:00 畫點狀基線並註明資料時間——
  * 今天還沒過完、也還沒同步到的時段，不能看起來像「這段時間沒資料」。
  */
 function intraday(points, opts, date) {
@@ -146,7 +146,7 @@ function intraday(points, opts, date) {
   axis.appendChild(h('span', null, '24:00'));
   wrap.appendChild(axis);
   // 說明自成一行：塞在 00:00 與 24:00 之間會在窄卡片上被截斷
-  if (pending) wrap.appendChild(h('div', 'gc-axis-pending', '灰色未同步，資料到 ' + minuteToClock(last)));
+  if (pending) wrap.appendChild(h('div', 'gc-axis-pending', '資料到 ' + minuteToClock(last) + '，虛線後尚未同步'));
   return wrap;
 }
 
