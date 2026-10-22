@@ -31,7 +31,7 @@ DASHBOARD_TASKS.md D.1 原本寫「頁面無寫入路徑……無『同步 Garmi
 
 ## 為什麼保留 dry_run 這個參數
 
-同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，90 天約 10.5 分鐘）。
+同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，90 天約 12 分鐘）。
 前端的流程是：先 `dry_run=True` 拿 `estimate.summary` 顯示給使用者確認，
 按下去才真的執行。這是 2026-09-01 與 Fu 議定的行為，CLI 與 MCP 都照做，
 dashboard 沒有理由自己發明一套。

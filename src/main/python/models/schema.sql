@@ -249,6 +249,28 @@ CREATE TABLE IF NOT EXISTS daily_wellness (
     UNIQUE (athlete_id, date, source)
 );
 
+-- 每日健康狀態（Garmin Connect「健康狀態」卡），來源為
+-- /healthstatus-service/healthstatus/summary/{date}。一個指標一列：
+-- 睡眠期間數值、Garmin 依個人歷史推算的基準上下限、判定（IN_RANGE 等）、
+-- percentage（數值在範圍內的位置，0–100）。範圍與判定皆為 Garmin 的輸出，
+-- 本專案不自行計算；僅供顯示，規則引擎與 AI 教練不讀。
+-- 手錶不支援的指標（如皮膚溫度）回傳 status=UNKNOWN 且無數值，不寫入。
+CREATE TABLE IF NOT EXISTS health_status (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id          INTEGER NOT NULL REFERENCES athlete_profile(id),
+    date                TEXT NOT NULL,
+    metric              TEXT NOT NULL,   -- HR／HRV／SPO2／RESPIRATION／SKIN_TEMP_C …
+    value               REAL,
+    baseline_lower      REAL,
+    baseline_upper      REAL,
+    status              TEXT,
+    percentage          REAL,
+    source               TEXT NOT NULL CHECK (source IN ('fit_manual', 'garmin_export', 'garmin_mcp', 'strava')),
+    source_version        TEXT,
+    fetched_at            TEXT NOT NULL,
+    UNIQUE (athlete_id, date, metric, source)
+);
+
 -- 每日的日內序列（睡眠階段時間軸、壓力、身體能量、心率），來源為
 -- get_sleep_data 的 sleepLevels、get_stress_data、get_heart_rates。
 --

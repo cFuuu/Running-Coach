@@ -198,6 +198,17 @@ class GarminApiClient:
         """取得單日心率日內序列（`heartRateValues`：`[時間戳(ms, GMT), bpm]`）。"""
         return self._call("get_heart_rates", cdate.isoformat())
 
+    def fetch_health_status(self, cdate: datetime.date) -> dict | None:
+        """取得單日健康狀態（Garmin Connect「健康狀態」卡）。
+
+        `garminconnect` 沒有對應方法，直接呼叫 Garmin Connect 網頁使用的端點
+        （Fu 於 2026-10-22 自網頁 Network 面板取得；網頁版前綴 `/gc-api` 是瀏覽器
+        專用的轉接，經 connectapi 主機時不需要）。回傳 `metrics` 陣列：每個指標的
+        睡眠期間數值、個人基準上下限、`status`（IN_RANGE 等）與 `percentage`
+        （數值在範圍內的位置），另有 `outliersCount`。實測與網頁數字完全一致。
+        """
+        return self._call("connectapi", f"/healthstatus-service/healthstatus/summary/{cdate.isoformat()}")
+
     def fetch_user_sex(self) -> str | None:
         """取得 Garmin 個人資料中的性別（MALE／FEMALE），供 VO2max 分級查表。
 
@@ -270,7 +281,8 @@ class GarminApiClient:
         `training_status` 為 2026-09-02 新增（Task 1B-9）：每日 wellness
         端點數由 4 → 5，`garmin_sync_runner._WELLNESS_ENDPOINTS_PER_DAY`
         須同步更新，否則耗時預告會低估。2026-10-22 新增 `stress_intraday`／
-        `heart_rate_intraday`（Garmin 卡片的日內圖），5 → 7。
+        `heart_rate_intraday`（Garmin 卡片的日內圖），5 → 7；同日再加
+        `health_status`（健康狀態卡），7 → 8。
         """
         out: dict[str, Any] = {"date": cdate.isoformat()}
         for key, fn in (
@@ -281,6 +293,7 @@ class GarminApiClient:
             ("training_status", self.fetch_training_status),
             ("stress_intraday", self.fetch_stress_intraday),
             ("heart_rate_intraday", self.fetch_heart_rate_intraday),
+            ("health_status", self.fetch_health_status),
         ):
             try:
                 out[key] = fn(cdate)

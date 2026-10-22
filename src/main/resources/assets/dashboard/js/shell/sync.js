@@ -11,7 +11,7 @@ import { loadHome } from '../views/home.js';
 import { loadCalendarBody } from '../views/calendar.js';
 
 // N-19 §7。同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，
-// 90 天約 10.5 分鐘），所以流程刻意分兩步：
+// 90 天約 12 分鐘），所以流程刻意分兩步：
 //
 //   1. dry_run=True 拿 estimate.summary（「45 天／226 次請求／約 3 分 46 秒」）
 //   2. 使用者確認後才真的執行

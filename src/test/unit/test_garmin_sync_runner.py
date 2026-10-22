@@ -236,6 +236,13 @@ CREATE TABLE daily_wellness (
     source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
     UNIQUE (athlete_id, date, source)
 );
+CREATE TABLE health_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id INTEGER NOT NULL, date TEXT NOT NULL, metric TEXT NOT NULL,
+    value REAL, baseline_lower REAL, baseline_upper REAL, status TEXT, percentage REAL,
+    source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
+    UNIQUE (athlete_id, date, metric, source)
+);
 CREATE TABLE wellness_intraday (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     athlete_id INTEGER NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL,
@@ -568,19 +575,19 @@ class TestResolveSyncDays(unittest.TestCase):
 class TestEstimateSyncCost(unittest.TestCase):
     """★ 同步前的耗時預告——讓使用者在打 API 前知道成本。
 
-    成本結構：活動只打 1 次（吃日期區間），wellness 逐日打 7 個端點
+    成本結構：活動只打 1 次（吃日期區間），wellness 逐日打 8 個端點
     （stats／sleep／hrv／training_readiness／training_status／
-    stress_intraday／heart_rate_intraday；2026-09-02 由 4 → 5，
-    2026-10-22 由 5 → 7），每次間隔 1 秒節流。
+    stress_intraday／heart_rate_intraday／health_status；2026-09-02 由 4 → 5，
+    2026-10-22 由 5 → 8），每次間隔 1 秒節流。
     """
 
-    def test_request_count_is_one_plus_seven_per_day(self):
+    def test_request_count_is_one_plus_eight_per_day(self):
         est = runner.estimate_sync_cost(7)
-        self.assertEqual(est["request_count"], 1 + 7 * 7)
+        self.assertEqual(est["request_count"], 1 + 7 * 8)
 
     def test_estimated_seconds_follows_throttle_interval(self):
         est = runner.estimate_sync_cost(30)
-        expected_requests = 1 + 30 * 7
+        expected_requests = 1 + 30 * 8
         self.assertEqual(est["request_count"], expected_requests)
         self.assertAlmostEqual(
             est["estimated_seconds"],
@@ -589,14 +596,14 @@ class TestEstimateSyncCost(unittest.TestCase):
         )
 
     def test_ninety_days_stays_within_reasonable_bound(self):
-        """90 天上限的實際成本：631 次請求、約 10.5 分鐘。"""
+        """90 天上限的實際成本：721 次請求、約 12 分鐘。"""
         est = runner.estimate_sync_cost(runner.MAX_AUTO_SYNC_DAYS)
-        self.assertEqual(est["request_count"], 631)
-        self.assertLess(est["estimated_seconds"], 11 * 60)
+        self.assertEqual(est["request_count"], 721)
+        self.assertLess(est["estimated_seconds"], 13 * 60)
 
     def test_human_readable_text_included(self):
         est = runner.estimate_sync_cost(7)
-        self.assertIn("50", est["summary"])
+        self.assertIn("57", est["summary"])
 
 
 class TestSyncReportsPlanAndCost(unittest.TestCase):
@@ -629,7 +636,7 @@ class TestSyncReportsPlanAndCost(unittest.TestCase):
 
     def test_result_carries_cost_estimate(self):
         result = runner.sync(self.conn, 1, days=2, client=FakeApi(), today=self.today)
-        self.assertEqual(result["estimate"]["request_count"], 1 + 2 * 7)
+        self.assertEqual(result["estimate"]["request_count"], 1 + 2 * 8)
 
     def test_truncated_flag_when_gap_exceeds_max(self):
         """★ gap 超過上限時須明確標記，讓呼叫端提示改走匯出包。"""
@@ -875,7 +882,7 @@ class TestSyncFetchesSplitsAndClassifies(unittest.TestCase):
     def test_cost_estimate_accounts_for_splits(self):
         """耗時預告須把分圈請求算進去，否則低估。"""
         est = runner.estimate_sync_cost(7, expected_activities=5)
-        self.assertEqual(est["request_count"], 1 + 7 * 7 + 5)
+        self.assertEqual(est["request_count"], 1 + 7 * 8 + 5)
 
 
 # ============================================================================
@@ -1248,6 +1255,40 @@ class TestNormalizeIntraday(unittest.TestCase):
         self.assertEqual(runner.normalize_intraday({"date": "2026-10-21"}), [])
 
 
+# 取自 2026-10-22 對真實帳號的實測回傳（/healthstatus-service/healthstatus/summary），
+# 數值與 Garmin Connect 網頁的健康狀態卡逐項一致。
+REAL_HEALTH_STATUS = {
+    "calendarDate": "2026-10-22",
+    "outliersCount": 0,
+    "metrics": [
+        {"type": "HRV", "value": 63.0, "baselineUpperLimit": 78.0, "baselineLowerLimit": 39.0,
+         "status": "IN_RANGE", "percentage": 62.0},
+        {"type": "HR", "value": 50.0, "baselineUpperLimit": 59.0, "baselineLowerLimit": 48.0,
+         "status": "IN_RANGE", "percentage": 18.0},
+        {"type": "SKIN_TEMP_C", "value": None, "baselineUpperLimit": 0.0, "baselineLowerLimit": 0.0,
+         "status": "UNKNOWN", "percentage": 0.0},
+        {"type": "RESPIRATION", "value": 14.8, "baselineUpperLimit": 16.7, "baselineLowerLimit": 13.8,
+         "status": "IN_RANGE", "percentage": 34.0},
+    ],
+}
+
+
+class TestNormalizeHealthStatus(unittest.TestCase):
+    def test_one_row_per_metric_with_baseline(self):
+        rows = runner.normalize_health_status({"date": "2026-10-22", "health_status": REAL_HEALTH_STATUS})
+        hr = next(r for r in rows if r["metric"] == "HR")
+        self.assertEqual((hr["value"], hr["baseline_lower"], hr["baseline_upper"]), (50.0, 48.0, 59.0))
+        self.assertEqual((hr["status"], hr["percentage"]), ("IN_RANGE", 18.0))
+
+    def test_unsupported_metric_without_value_is_skipped(self):
+        rows = runner.normalize_health_status({"date": "2026-10-22", "health_status": REAL_HEALTH_STATUS})
+        self.assertNotIn("SKIN_TEMP_C", [r["metric"] for r in rows])
+        self.assertEqual(len(rows), 3)
+
+    def test_missing_payload_gives_no_rows(self):
+        self.assertEqual(runner.normalize_health_status({"date": "2026-10-22"}), [])
+
+
 class TestSyncWritesIntradayAndSex(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
@@ -1266,6 +1307,13 @@ class TestSyncWritesIntradayAndSex(unittest.TestCase):
         kinds = [r["kind"] for r in self.conn.execute(
             "SELECT kind FROM wellness_intraday ORDER BY kind")]
         self.assertEqual(kinds, ["body_battery", "heart_rate", "sleep_levels", "stress"])
+
+    def test_health_status_written_and_resync_does_not_duplicate(self):
+        wellness = {"2026-10-21": {"date": "2026-10-21", "health_status": REAL_HEALTH_STATUS}}
+        api = FakeApi(wellness=wellness)
+        for _ in range(2):
+            runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=False)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM health_status").fetchone()[0], 3)
 
     def test_sex_fetched_once_then_cached(self):
         api = FakeApi(sex="MALE")

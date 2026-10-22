@@ -2502,6 +2502,39 @@ body.coach-open .coach-fab {
   border-radius: 5px;
 }
 
+/* 健康狀態：每個指標一列，左側數值與範圍、右側小型弧形量表 */
+.gc-health-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gc-health-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.gc-health-label {
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+.gc-health-gauge {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+}
+
+.gc-health-gauge .gc-gauge {
+  width: 100%;
+  height: 100%;
+}
+
+.gc-health-row.is-out .gc-focus-value,
+.gc-status-text.is-out {
+  color: var(--pct-orange);
+}
+
 .gc-focus-anaerobic { background: var(--gc-focus-anaerobic); }
 .gc-focus-high { background: var(--gc-focus-high); }
 .gc-focus-low { background: var(--gc-focus-low); }

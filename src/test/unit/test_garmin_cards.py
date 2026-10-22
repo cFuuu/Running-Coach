@@ -112,6 +112,18 @@ class TestGetGarminCards(unittest.TestCase):
         self.assertEqual((low["value"], low["target_min"], low["target_max"]), (879, 333, 552))
         self.assertEqual(focus["feedback"], "LOW_AEROBIC_OVERAGE")
 
+    def test_health_status_ordered_like_garmin_and_counts_outliers(self):
+        for metric, value, status in (("HRV", 63, "IN_RANGE"), ("SPO2", 88, "BELOW_RANGE"),
+                                      ("HR", 50, "IN_RANGE"), ("RESPIRATION", 14.8, "IN_RANGE")):
+            self.conn.execute(
+                "INSERT INTO health_status (athlete_id, date, metric, value, baseline_lower, "
+                "baseline_upper, status, percentage, source, fetched_at) "
+                "VALUES (1, '2026-10-21', ?, ?, 0, 100, ?, 50, 'garmin_export', 'x')",
+                (metric, value, status))
+        card = garmin_cards.get_garmin_cards(self.conn, 1, "7d")["cards"]["health_status"]
+        self.assertEqual([m["metric"] for m in card["metrics"]], ["HR", "HRV", "RESPIRATION", "SPO2"])
+        self.assertEqual(card["outliers"], 1)
+
     def test_cards_without_data_are_omitted(self):
         self.assertNotIn("calories", self.cards)
         self.assertNotIn("lactate_threshold", self.cards)

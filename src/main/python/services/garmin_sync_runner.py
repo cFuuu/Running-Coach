@@ -139,21 +139,21 @@ DEFAULT_SYNC_DAYS = 7
 OVERLAP_DAYS = 3
 
 # 自動模式單次回溯上限。90 天可涵蓋一個完整馬拉松訓練週期（12–16 週），
-# 成本為 631 次請求／約 10.5 分鐘（見 estimate_sync_cost；2026-10-22 每日端點
-# 5 → 7 後由 451 次上升）。更早的缺口應走
+# 成本為 721 次請求／約 12 分鐘（見 estimate_sync_cost；2026-10-22 每日端點
+# 5 → 8 後由 451 次上升）。更早的缺口應走
 # 官方匯出包——一次拿完整歷史，且含分圈與 workout_type，品質優於 API 摘要。
-# ⚠️ 不可貿然調高：wellness 是逐日各打 7 個端點，天數與請求數成正比，
-# garmin_api_client 的硬上限 365 天等於 2556 次請求／約 43 分鐘連續請求，
+# ⚠️ 不可貿然調高：wellness 是逐日各打 8 個端點，天數與請求數成正比，
+# garmin_api_client 的硬上限 365 天等於 2921 次請求／約 49 分鐘連續請求，
 # 已超出正常使用者行為的樣子，有觸發 Cloudflare 風控的風險。
 MAX_AUTO_SYNC_DAYS = 90
 
 # 每日身體數據的端點數（stats／sleep／hrv／training_readiness／
-# training_status／stress_intraday／heart_rate_intraday），與
+# training_status／stress_intraday／heart_rate_intraday／health_status），與
 # garmin_api_client.fetch_daily_wellness_raw() 的來源數一致。
 # 2026-09-02：Task 1B-9 新增 training_status，由 4 → 5；2026-10-22 新增
-# 兩支日內序列（Garmin 卡片的日內圖），5 → 7
+# 兩支日內序列（Garmin 卡片的日內圖）與健康狀態，5 → 8
 # ——若忘記同步更新，耗時預告會低估，違反與 Fu 議定的預告行為。
-_WELLNESS_ENDPOINTS_PER_DAY = 7
+_WELLNESS_ENDPOINTS_PER_DAY = 8
 
 # 節流間隔沿用 client 的預設值，讓耗時預估與實際行為一致。
 REQUEST_INTERVAL_SEC = DEFAULT_REQUEST_INTERVAL_SEC
@@ -585,6 +585,28 @@ def normalize_intraday(raw: dict) -> list[dict]:
     ]
 
 
+def normalize_health_status(raw: dict) -> list[dict]:
+    """把健康狀態回傳轉成 `health_status` 表的列（一個指標一列）。
+
+    手錶不支援的指標（皮膚溫度等）回傳 status=UNKNOWN、value=None，不產生列。
+    """
+    payload = raw.get("health_status") or {}
+    rows = []
+    for m in payload.get("metrics") or []:
+        if m.get("value") is None or not m.get("type"):
+            continue
+        rows.append({
+            "date": raw["date"],
+            "metric": m["type"],
+            "value": m.get("value"),
+            "baseline_lower": m.get("baselineLowerLimit"),
+            "baseline_upper": m.get("baselineUpperLimit"),
+            "status": m.get("status"),
+            "percentage": m.get("percentage"),
+        })
+    return rows
+
+
 def _select_primary_device(device_map: dict | None) -> dict:
     """從以 deviceId 字串為 key 的 dict 中選出主力錶（`primaryTrainingDevice=True`）。
 
@@ -971,6 +993,33 @@ def _upsert_intraday(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]
     return len(rows)
 
 
+def _upsert_health_status(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
+    """寫入 health_status。整列覆寫：Garmin 會在睡眠資料補齊後更新當日判定，
+    晚點重抓的才是最終值。"""
+    now = _utc_now_iso()
+    for row in rows:
+        conn.execute(
+            """
+            INSERT INTO health_status (
+                athlete_id, date, metric, value, baseline_lower, baseline_upper,
+                status, percentage, source, source_version, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (athlete_id, date, metric, source) DO UPDATE SET
+                value=excluded.value,
+                baseline_lower=excluded.baseline_lower,
+                baseline_upper=excluded.baseline_upper,
+                status=excluded.status,
+                percentage=excluded.percentage,
+                source_version=excluded.source_version,
+                fetched_at=excluded.fetched_at
+            """,
+            (athlete_id, row["date"], row["metric"], row["value"], row["baseline_lower"],
+             row["baseline_upper"], row["status"], row["percentage"],
+             SYNC_SOURCE, SYNC_SOURCE_VERSION, now),
+        )
+    return len(rows)
+
+
 def _sync_athlete_sex(conn: sqlite3.Connection, athlete_id: int, api: GarminApiClient) -> None:
     """athlete_profile.sex 尚未取得時，向 Garmin 個人資料取一次（之後不再打）。
 
@@ -1160,8 +1209,8 @@ def estimate_sync_cost(days: int, expected_activities: int = 0) -> dict:
     """預估同步的 API 請求數與耗時，供呼叫端在真的打 API 前告知使用者。
 
     成本結構：活動只打 1 次（`get_activities_by_date` 吃日期區間），
-    wellness 則**逐日**各打 `_WELLNESS_ENDPOINTS_PER_DAY`（7）個端點，
-    故基本總數 = 1 + days × 7。
+    wellness 則**逐日**各打 `_WELLNESS_ENDPOINTS_PER_DAY`（8）個端點，
+    故基本總數 = 1 + days × 8。
     另若要補抓分圈，**每場跑步各多 1 次**（`get_activity_splits`）——
     `expected_activities` 即該筆數，未知時傳 0（僅低估分圈部分）。
     每次呼叫之間有 `REQUEST_INTERVAL_SEC` 的節流間隔。
@@ -1243,6 +1292,7 @@ def sync(
 
         wellness_rows = []
         intraday_rows = []
+        health_rows = []
         training_status_rows = []
         for offset in range(days):
             day = start_date + datetime.timedelta(days=offset)
@@ -1251,6 +1301,7 @@ def sync(
             if normalized is not None:
                 wellness_rows.append(normalized)
             intraday_rows.extend(normalize_intraday(day_raw))
+            health_rows.extend(normalize_health_status(day_raw))
             status_row = normalize_training_status(
                 day.isoformat(), day_raw.get("training_status")
             )
@@ -1272,6 +1323,7 @@ def sync(
     n_act = _upsert_activities(conn, athlete_id, activity_rows)
     n_well = _upsert_wellness(conn, athlete_id, wellness_rows)
     n_intraday = _upsert_intraday(conn, athlete_id, intraday_rows)
+    n_health = _upsert_health_status(conn, athlete_id, health_rows)
     n_status = _upsert_training_status(conn, athlete_id, training_status_rows)
     n_perf = _upsert_performance_metrics(conn, athlete_id, performance_row)
 
@@ -1296,6 +1348,7 @@ def sync(
         "activities_synced": n_act,
         "wellness_days_synced": n_well,
         "intraday_series_synced": n_intraday,
+        "health_status_metrics_synced": n_health,
         "training_status_days_synced": n_status,
         "performance_metrics_synced": n_perf,
         "activities_skipped": len(raw_activities) - n_act,

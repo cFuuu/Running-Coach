@@ -279,6 +279,44 @@ function renderCalories(c, body) {
   return null;
 }
 
+// 健康狀態的指標名稱與單位（順序由後端依 Garmin 網頁排好）
+var HEALTH_METRIC = {
+  HR: { label: '心率', unit: 'bpm', decimals: 0 },
+  HRV: { label: 'HRV', unit: '毫秒', decimals: 0 },
+  RESPIRATION: { label: '呼吸', unit: 'brpm', decimals: 1 },
+  SPO2: { label: '脈搏血氧', unit: '%', decimals: 0 },
+  SKIN_TEMP_C: { label: '皮膚溫度', unit: '°C', decimals: 1 }
+};
+// Garmin 的判定代碼（2026-10-22 實測只有這三種）
+var HEALTH_STATUS_LABEL = { IN_RANGE: '在範圍內', BELOW: '低於範圍', ABOVE: '高於範圍' };
+
+function renderHealthStatus(c, body) {
+  // 「範圍內」對照 Garmin 網頁；有超出時寫出項數
+  body.appendChild(h('div', 'gc-status-text' + (c.outliers ? ' is-out' : ''),
+    c.outliers ? c.outliers + ' 項超出範圍' : '範圍內'));
+  (c.metrics || []).forEach(function (m) {
+    var def = HEALTH_METRIC[m.metric] || { label: m.metric, unit: '', decimals: 1 };
+    var out = m.status !== 'IN_RANGE';
+    var row = h('div', 'gc-health-row' + (out ? ' is-out' : ''));
+    var text = h('div', 'gc-health-text');
+    var head = h('div', 'gc-focus-head');
+    head.appendChild(h('span', 'gc-health-label', def.label));
+    head.appendChild(h('span', 'gc-focus-value', num(m.value, def.decimals) + ' ' + def.unit));
+    text.appendChild(head);
+    text.appendChild(h('div', 'gc-caption', (out ? (HEALTH_STATUS_LABEL[m.status] || m.status) + '，' : '')
+      + '介於 ' + num(m.lower, def.decimals) + '–' + num(m.upper, def.decimals)));
+    row.appendChild(text);
+    // 範圍內時圓點位置用 Garmin 的 percentage；超出時 percentage 不代表位置，貼齊該側邊緣
+    var pos = m.status === 'BELOW' ? 0 : m.status === 'ABOVE' ? 100 : m.percentage;
+    var gauge = h('div', 'gc-health-gauge');
+    gauge.appendChild(C.bandArc(pos, { min: 0, max: 100, bands: [{ to: 100, className: out ? 'gc-tone-orange' : 'gc-tone-blue' }] }));
+    row.appendChild(gauge);
+    row.title = def.label + '：' + (HEALTH_STATUS_LABEL[m.status] || m.status);
+    body.appendChild(row);
+  });
+  return null;
+}
+
 function renderStress(c, body) {
   body.appendChild(gaugeWithCenter(C.ringGauge(c.avg / 100, { className: stressTone(c.avg) }), num(c.avg)));
   var chart = intraday(c.intraday, { mode: 'bars', min: 0, max: 100, barClass: stressTone });
@@ -463,6 +501,9 @@ export var GARMIN_CARD_DEFS = [
     tip: ['靜止心率與 Garmin 算的近 7 天靜止心率平均；下方為當日心率走勢。'] },
   { key: 'calories', label: '燃燒的卡路里', render: renderCalories,
     tip: ['活躍卡路里（活動消耗）與靜態卡路里（基礎代謝），皆為 Garmin 的推估。'] },
+  { key: 'health_status', label: '健康狀態', render: renderHealthStatus,
+    tip: ['Garmin 把睡眠期間的心率、HRV、呼吸與血氧，和它依你近幾週資料推算的個人範圍比較。',
+      '範圍與判定都是 Garmin 給的（不是一般人的健康標準，而是「你平常落在哪裡」）；本頁不自行計算。'] },
   { key: 'stress', label: '壓力', render: renderStress,
     tip: ['Garmin 依 HRV 推估的全天平均壓力（0–100）。0–25 休息、26–50 低、51–75 中、76–100 高。',
       '下方為當日每 3 分鐘的壓力值；活動中無法量測的時段留白。'] },

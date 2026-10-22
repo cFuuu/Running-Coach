@@ -181,6 +181,41 @@ def _intensity_minutes_card(conn: sqlite3.Connection, athlete_id: int, rows: lis
     }
 
 
+# 健康狀態卡的指標順序，對照 Garmin 網頁：心率、HRV、呼吸、脈搏血氧（皮膚溫度有值才接在後面）
+HEALTH_STATUS_ORDER = ("HR", "HRV", "RESPIRATION", "SPO2", "SKIN_TEMP_C")
+
+
+def _health_status_card(conn: sqlite3.Connection, athlete_id: int, window: dict) -> dict | None:
+    """區間內最後一天的健康狀態。範圍與判定都是 Garmin 給的，這裡只排序與計數。"""
+    params: list[Any] = [athlete_id, window["end_date"]]
+    sql = "SELECT MAX(date) AS d FROM health_status WHERE athlete_id = ? AND date <= ?"
+    if window["start_date"]:
+        sql += " AND date >= ?"
+        params.append(window["start_date"])
+    latest = conn.execute(sql, params).fetchone()["d"]
+    if latest is None:
+        return None
+    rows = {
+        r["metric"]: r for r in conn.execute(
+            "SELECT metric, value, baseline_lower, baseline_upper, status, percentage "
+            "FROM health_status WHERE athlete_id = ? AND date = ?",
+            (athlete_id, latest),
+        )
+    }
+    metrics = [
+        {"metric": m, "value": rows[m]["value"], "lower": rows[m]["baseline_lower"],
+         "upper": rows[m]["baseline_upper"], "status": rows[m]["status"],
+         "percentage": rows[m]["percentage"]}
+        for m in HEALTH_STATUS_ORDER if m in rows
+    ]
+    return {
+        "date": latest,
+        # 與 Garmin 的 outliersCount 同義：狀態不是 IN_RANGE 的指標數
+        "outliers": sum(1 for m in metrics if m["status"] != "IN_RANGE"),
+        "metrics": metrics,
+    }
+
+
 def get_garmin_cards(
     conn: sqlite3.Connection,
     athlete_id: int | None = None,
@@ -342,6 +377,10 @@ def get_garmin_cards(
     if load:
         load["series"] = _series(ts, "acute_load", "chronic_load")
         cards["training_load"] = load
+
+    health = _health_status_card(conn, resolved, window)
+    if health:
+        cards["health_status"] = health
 
     focus = _latest(ts, "monthly_load_aerobic_low")
     if focus:
