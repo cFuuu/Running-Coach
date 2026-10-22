@@ -5284,8 +5284,8 @@ body.coach-open .coach-fab {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 64px;
-  padding: 8px var(--gap) 8px 12px;
+  min-height: 52px;
+  padding: 5px var(--gap) 5px 12px;
   background: var(--tp-bg);
   border-bottom: 1px solid var(--tp-border);
   box-shadow: inset 4px 0 0 var(--tp-strong);
@@ -5357,7 +5357,7 @@ body.coach-open .coach-fab {
 
 .tools-switch button {
   min-width: 64px;
-  min-height: 40px;
+  min-height: 36px;
   padding: 0 12px;
   border: none;
   border-radius: 18px;
