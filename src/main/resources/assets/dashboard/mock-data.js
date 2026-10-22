@@ -434,6 +434,7 @@
       hrv: {
         today_ms: fact(Math.round(45 + rnd() * 10), 'daily_wellness.hrv_ms', 'high'),
         weekly_avg_ms: fact(Math.round(46 + rnd() * 8), 'daily_wellness.hrv_weekly_avg_ms（7 日滾動均值）', 'high'),
+        last_night_5min_high_ms: fact(Math.round(80 + rnd() * 25), 'daily_wellness.hrv_last_night_5min_high（昨夜最高 5 分鐘平均）', 'high'),
         delta_pct: fact(Math.round((rnd() - 0.5) * 16 * 10) / 10, '(今日 - 7日均值) / 7日均值', 'low', 'HRV 短期波動百分比形式尚未經驗證（假資料示範）')
       },
       consecutive_training_days: { value: 2, threshold: 6, threshold_source: 'default' },

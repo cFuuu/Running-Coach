@@ -1170,7 +1170,8 @@ def get_today(
     wellness_today_row = conn.execute(
         """
         SELECT hrv_ms, hrv_weekly_avg_ms, hrv_status,
-               hrv_baseline_balanced_low, hrv_baseline_balanced_upper
+               hrv_baseline_balanced_low, hrv_baseline_balanced_upper,
+               hrv_last_night_5min_high
         FROM daily_wellness WHERE athlete_id = ? AND date = ?
         """,
         (resolved, today.isoformat()),
@@ -1189,7 +1190,8 @@ def get_today(
         fallback_row = conn.execute(
             """
             SELECT date, hrv_ms, hrv_weekly_avg_ms, hrv_status,
-                   hrv_baseline_balanced_low, hrv_baseline_balanced_upper
+                   hrv_baseline_balanced_low, hrv_baseline_balanced_upper,
+                   hrv_last_night_5min_high
             FROM daily_wellness
             WHERE athlete_id = ? AND date <= ? AND date >= ? AND hrv_ms IS NOT NULL
             ORDER BY date DESC LIMIT 1
@@ -1215,6 +1217,12 @@ def get_today(
                 hrv_weekly_avg_ms, source="daily_wellness.hrv_weekly_avg_ms（7 日滾動均值）"
             )
             if hrv_weekly_avg_ms is not None
+            else None,
+            "last_night_5min_high_ms": data_confidence.fact(
+                wellness_today_row["hrv_last_night_5min_high"],
+                source="daily_wellness.hrv_last_night_5min_high（昨夜最高 5 分鐘平均）",
+            )
+            if wellness_today_row["hrv_last_night_5min_high"] is not None
             else None,
             "delta_pct": data_confidence.fact(
                 delta_pct,

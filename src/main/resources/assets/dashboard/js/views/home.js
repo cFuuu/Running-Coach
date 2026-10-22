@@ -511,22 +511,67 @@ function average(vals) {
   return vals.length ? vals.reduce(function (a, v) { return a + v; }, 0) / vals.length : null;
 }
 
-/** HRV 卡下方的補充：7 日均值、昨夜較 7 日均值、Garmin 的 HRV 狀態（僅供對照）。 */
-function hrvDetails(hrv) {
+/**
+ * Garmin 風格的 HRV 平衡區間量表：一條橫軸，綠色帶是平衡區間，圓點是 7 日均值。
+ * 軸範圍取區間寬度的一半往兩側外推，圓點超出時貼齊邊緣。只畫位置，不下判讀。
+ */
+function hrvRangeGauge(weeklyAvg, low, upper) {
+  var span = upper - low;
+  var min = Math.max(0, low - span * 0.5);
+  var max = upper + span * 0.5;
+  function pct(v) { return Math.min(100, Math.max(0, (v - min) / (max - min) * 100)); }
+  var gauge = h('div', 'hrv-gauge');
+  var track = h('div', 'hrv-gauge-track');
+  var band = h('div', 'hrv-gauge-band');
+  band.style.left = pct(low) + '%';
+  band.style.width = (pct(upper) - pct(low)) + '%';
+  track.appendChild(band);
+  var dot = h('div', 'hrv-gauge-dot');
+  dot.style.left = pct(weeklyAvg) + '%';
+  track.appendChild(dot);
+  gauge.appendChild(track);
+  var scale = h('div', 'hrv-gauge-scale');
+  scale.appendChild(h('span', null, C.formatNumber(low, 0)));
+  scale.appendChild(h('span', null, C.formatNumber(upper, 0)));
+  gauge.appendChild(scale);
+  return gauge;
+}
+
+/** 夜間平均／最高 5 分鐘平均兩個並列數字（Garmin HRV 狀態頁摘要的同款排法）。 */
+function hrvNightStats(hrv, hrvToday) {
+  var row = h('div', 'hrv-stats');
+  function stat(value, label) {
+    var cell = h('div', 'hrv-stat');
+    var num = h('div', 'hrv-stat-value', C.formatNumber(value, 0));
+    num.appendChild(h('span', 'hrv-stat-unit', ' ms'));
+    cell.appendChild(num);
+    cell.appendChild(h('div', 'hrv-stat-label', label));
+    return cell;
+  }
+  if (hrvToday) row.appendChild(stat(hrvToday.value, '夜間平均'));
+  var high = hrv && hrv.last_night_5min_high_ms;
+  if (high && typeof high.value === 'number') row.appendChild(stat(high.value, '最高 5 分鐘平均'));
+  return row.childNodes.length ? row : null;
+}
+
+/** HRV 卡下方的補充：平衡區間量表、夜間數字、Garmin 的 HRV 狀態（僅供對照）。 */
+function hrvDetails(hrv, hrvToday) {
   var wrap = h('div', 'kpi-detail');
-  if (hrv.weekly_avg_ms) {
-    var weekly = h('div', 'kpi-detail-row');
-    weekly.appendChild(h('span', null, '7 日均值 ' + C.formatNumber(hrv.weekly_avg_ms.value, 1) + ' ms'));
-    if (hrv.delta_pct && typeof hrv.delta_pct.value === 'number') {
-      weekly.appendChild(h('span', null, '，昨夜較 7 日 ' + fmtDelta(hrv.delta_pct.value, 1, '%')));
-      weekly.appendChild(confBadge(hrv.delta_pct));
-    }
-    wrap.appendChild(weekly);
+  var gref = hrv.garmin_reference;
+  if (hrv.weekly_avg_ms && gref && gref.baseline_balanced_low && gref.baseline_balanced_upper) {
+    wrap.appendChild(hrvRangeGauge(hrv.weekly_avg_ms.value, gref.baseline_balanced_low, gref.baseline_balanced_upper));
+  }
+  var stats = hrvNightStats(hrv, hrvToday);
+  if (stats) wrap.appendChild(stats);
+  if (hrv.delta_pct && typeof hrv.delta_pct.value === 'number') {
+    var delta = h('div', 'kpi-detail-row');
+    delta.appendChild(h('span', null, '昨夜較 7 日均值 ' + fmtDelta(hrv.delta_pct.value, 1, '%')));
+    delta.appendChild(confBadge(hrv.delta_pct));
+    wrap.appendChild(delta);
   }
   // Garmin 自己的 HRV 狀態走 garmin_reference（for_display_only），不是 fact() 的
   // 三欄位契約——規則引擎與 AI 教練都不讀它，這裡純粹是「讓你看到手錶顯示了什麼」。
   // 平衡區間對照的是 7 日均值、不是昨夜值（實測 39/39 天吻合，昨夜值只有 29/39）。
-  var gref = hrv.garmin_reference;
   if (gref && gref.status) {
     var status = h('div', 'kpi-detail-row');
     status.appendChild(h('span', null, 'Garmin 狀態 '));
@@ -554,24 +599,30 @@ export function renderHomeBody() {
   var hrv = state.today && state.today.hrv;
 
   // HRV：主數字取 /api/today 的事實（帶信賴度）；沒有時退回 30 天序列的最後一筆
+  // 主數字與 Garmin HRV 狀態頁一致：7 日均值（hrv_weekly_avg_ms）；夜間平均與最高 5 分鐘
+  // 平均放在卡片下方。沒有 7 日均值時退回昨夜值。
   var hrvVals = numericValues(kpi.hrvPoints);
+  var weeklyVals = numericValues(kpi.hrvWeeklyPoints);
   var hrvToday = hrv && hrv.today_ms && typeof hrv.today_ms.value === 'number' ? hrv.today_ms : null;
-  if (hrvToday || hrvVals.length) {
+  var hrvWeekly = hrv && hrv.weekly_avg_ms && typeof hrv.weekly_avg_ms.value === 'number' ? hrv.weekly_avg_ms : null;
+  if (hrvWeekly || hrvToday || hrvVals.length) {
+    var useWeekly = !!hrvWeekly;
     var hrvCard = kpiCard({
       label: '心率變異度',
-      abbr: 'HRV 昨夜',
-      value: C.formatNumber(hrvToday ? hrvToday.value : hrvVals[hrvVals.length - 1], hrvToday ? 1 : 0),
+      abbr: useWeekly ? 'HRV 7 天平均' : 'HRV 昨夜',
+      value: C.formatNumber(useWeekly ? hrvWeekly.value
+        : (hrvToday ? hrvToday.value : hrvVals[hrvVals.length - 1]), 0),
       unit: 'ms',
-      badge: hrvToday ? confBadge(hrvToday) : null,
-      note: hrv && hrv.as_of ? hrv.as_of + ' 的資料（今日尚未同步）' : '近 30 天走勢',
-      series: hrvVals,
+      badge: useWeekly ? confBadge(hrvWeekly) : (hrvToday ? confBadge(hrvToday) : null),
+      note: hrv && hrv.as_of ? hrv.as_of + ' 的資料（今日尚未同步）' : '近 30 天走勢（7 日均值）',
+      series: useWeekly && weeklyVals.length ? weeklyVals : hrvVals,
       tip: [
-        '心率變異度（HRV）：睡眠期間相鄰心跳間隔變化的均方根（RMSSD），由手錶整夜量測後取平均。',
-        '數值高低因人而異，只能和自己的基準比較；單晚的值波動大，看 7 日均值與走勢比較穩。',
-        'Garmin 的 HRV 狀態與平衡區間是拿 7 日均值判的，不是昨夜值。'
+        '心率變異度（HRV）：睡眠期間相鄰心跳間隔變化的均方根（RMSSD），由手錶整夜量測。',
+        '主數字是近 7 天夜間平均的滾動均值，與 Garmin 的 HRV 狀態頁同一口徑；單晚的夜間平均與最高 5 分鐘平均列在下方。',
+        '數值高低因人而異，只能和自己的基準比較。量表上的綠帶是 Garmin 算出的平衡區間，圓點是 7 日均值。'
       ]
     });
-    if (hrv) hrvCard.appendChild(hrvDetails(hrv));
+    if (hrv) hrvCard.appendChild(hrvDetails(hrv, hrvToday));
     cards.appendChild(hrvCard);
   }
 
@@ -639,6 +690,7 @@ export function loadTodayKpi() {
       loadSeries: (load && load.series) || [],
       garminLoad: (load && load.garmin_reference) || null,
       hrvPoints: pts('hrv_ms'),
+      hrvWeeklyPoints: pts('hrv_weekly_avg_ms'),
       rhrPoints: pts('resting_hr_bpm'),
       sleepPoints: pts('sleep_score'),
       sleepDurationPoints: pts('sleep_duration_sec'),

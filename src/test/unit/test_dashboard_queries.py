@@ -715,6 +715,23 @@ class TestToday(DashboardQueryTestCase):
         # 不可有 fact() 的三欄位形狀，否則下游會誤用
         self.assertNotIn("confidence", gref)
 
+    def test_hrv_last_night_5min_high_is_a_fact(self):
+        """首頁 HRV 卡比照 Garmin HRV 狀態頁列出「最高 5 分鐘平均」；
+        這是手錶量測值不是黑盒判讀，走 fact()；沒有值時回 None。"""
+        self.conn.execute(
+            "UPDATE daily_wellness SET hrv_last_night_5min_high = 98 WHERE date = '2026-03-10'"
+        )
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        high = result["hrv"]["last_night_5min_high_ms"]
+        self.assertEqual(high["value"], 98)
+        self.assertIn("confidence", high)
+
+        self.conn.execute(
+            "UPDATE daily_wellness SET hrv_last_night_5min_high = NULL WHERE date = '2026-03-10'"
+        )
+        result = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))
+        self.assertIsNone(result["hrv"]["last_night_5min_high_ms"])
+
     def test_planned_today_reflects_training_plan_row(self):
         """fixture 的 training_plan 只有 2026-03-09 一筆（lsd 12km）。"""
         result = queries.get_today(self.conn, today=datetime.date(2026, 3, 9))

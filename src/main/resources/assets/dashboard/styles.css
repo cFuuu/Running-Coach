@@ -2037,6 +2037,62 @@ body.coach-open .coach-fab {
   color: var(--text-muted);
 }
 
+/* HRV 平衡區間量表：綠帶＝Garmin 平衡區間，圓點＝7 日均值（只標位置，不下判讀） */
+.hrv-gauge {
+  padding: 4px 0 2px;
+}
+
+.hrv-gauge-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.hrv-gauge-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  background: var(--c-good, var(--accent));
+  opacity: 0.55;
+}
+
+.hrv-gauge-dot {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 2px solid var(--surface, #fff);
+  transform: translate(-50%, -50%);
+}
+
+.hrv-gauge-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+}
+
+.hrv-stats {
+  display: flex;
+  gap: 16px;
+}
+
+.hrv-stat-value {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.hrv-stat-unit {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 /* ---- 今日頁：KPI 條（大數字 + 迷你趨勢線） ---- */
 
 /* auto-fit + minmax 讓卡片數量隨寬度自動分行，不必為每個斷點各寫一次。
