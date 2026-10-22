@@ -1825,6 +1825,12 @@ body.coach-open .coach-fab {
   }
 }
 
+/* 訓練負荷區五張卡：TSB（本專案的主指標）獨佔一列，其下 ATL／CTL、
+   Garmin 訓練負荷／訓練狀態各兩張，排成 1＋2＋2，不留孤兒卡 */
+.home-load-cards > :first-child {
+  grid-column: 1 / -1;
+}
+
 /* 戰力綜覽：VDOT 卡＋五個距離的最佳成績卡，共 6 張。
    寬：一列放完（VDOT 佔兩格）；中：3＋3 兩列；窄：兩兩一列共三列。
    VDOT 只佔一格、不獨佔整列（2026-10-22 Fu：VDOT 佔比太大，整塊少一列） */

@@ -13,7 +13,7 @@
  */
 
 import * as C from '../charts.js';
-import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
+import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
@@ -23,7 +23,7 @@ import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTile
 import { activityDots, firstRunningActivity } from './calendar.js';
 import { renderSettingsSync } from './settings.js';
 import { zoneSplitBar } from './overview.js';
-import { renderGarminWall } from './garmin.js';
+import { renderGarminWall, renderGarminCard } from './garmin.js';
 import { navigate } from '../shell/router.js';
 import { renderSidebarSync } from '../shell/sync.js';
 
@@ -460,12 +460,11 @@ var LOAD_TIPS = {
   ctl: [
     'CTL（慢性訓練負荷）：每日訓練負荷（TRIMP）的 42 日指數加權平均，代表長期累積的體能基礎。',
     '變化很慢：穩定訓練數週才會明顯上升，停練也要數週才明顯下降。'
-  ],
-  garmin: [
-    'Garmin（Firstbeat）以 EPOC（運動後過量耗氧）推估的 7 日急性負荷，演算法未公開，尺度與本專案的 TRIMP 不同。',
-    '建議範圍與負荷比都是手錶的輸出，僅供對照方向，不作為判讀依據。'
   ]
 };
+
+// 訓練負荷區接在 TSB／ATL／CTL 後面的 Garmin 卡片（views/garmin.js）
+var HOME_LOAD_GARMIN_KEYS = ['training_load', 'training_status'];
 
 function lastWith(rows, key) {
   for (var i = rows.length - 1; i >= 0; i -= 1) {
@@ -485,7 +484,7 @@ export function renderHomeLoad() {
   if (load.as_of) node.appendChild(h('div', 'sync-fallback-note', unsyncedNote(load.as_of)));
 
   var rows = kpi.loadSeries || [];
-  var cards = h('div', 'home-cards');
+  var cards = h('div', 'home-cards home-load-cards');
   var tsb = load.tsb && load.tsb.value;
   var ctl = load.ctl && load.ctl.value;
   cards.appendChild(kpiCard({
@@ -516,30 +515,15 @@ export function renderHomeLoad() {
     tip: LOAD_TIPS.ctl
   }));
 
-  var ref = kpi.garminLoad;
-  var latest = ref && ref.series && ref.series.length ? ref.series[ref.series.length - 1] : null;
-  if (latest) {
-    var refBadge = h('span', 'conf-badge conf-reference', '僅供對照');
-    refBadge.title = ref.note || '';
-    var statusKey = (latest.status || '').replace(/_\d+$/, '');
-    var parts = [];
-    if (latest.acute_load_optimal_min !== null && latest.acute_load_optimal_max !== null) {
-      parts.push('建議 ' + C.formatNumber(latest.acute_load_optimal_min, 0) + '–' + C.formatNumber(latest.acute_load_optimal_max, 0));
-    }
-    if (latest.acwr !== null) {
-      parts.push('負荷比 ' + C.formatNumber(latest.acwr, 1)
-        + (latest.acwr_status ? '（' + (GARMIN_ACWR_STATUS_LABEL[latest.acwr_status] || latest.acwr_status) + '）' : ''));
-    }
-    if (statusKey) parts.push(GARMIN_TRAINING_STATUS_LABEL[statusKey] || latest.status);
-    cards.appendChild(kpiCard({
-      label: 'Garmin 近期負荷',
-      value: C.formatNumber(latest.acute_load, 0),
-      badge: refBadge,
-      note: parts.join('，'),
-      series: ref.series.map(function (d) { return d.acute_load; }),
-      tip: LOAD_TIPS.garmin
-    }));
-  }
+  // Garmin 的訓練負荷與訓練狀態（2026-10-22 Fu 指定）：與趨勢頁「Garmin 數據」同一組卡片，
+  // 取代原本把兩者擠在一張「Garmin 近期負荷」卡底部小字的寫法。
+  var garmin = (kpi.garminCards && kpi.garminCards.cards) || {};
+  HOME_LOAD_GARMIN_KEYS.forEach(function (key) {
+    if (!garmin[key]) return;
+    var slot = h('div');
+    renderGarminCard(key, garmin[key], slot);
+    cards.appendChild(slot);
+  });
   node.appendChild(cards);
 }
 
@@ -567,7 +551,6 @@ export function loadTodayKpi() {
     var load = res[0];
     state.todayKpi = {
       loadSeries: (load && load.series) || [],
-      garminLoad: (load && load.garmin_reference) || null,
       garminCards: res[1]
     };
     renderHomeLoad();
