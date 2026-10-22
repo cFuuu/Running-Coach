@@ -221,6 +221,49 @@ class TestAssessReadinessHrv(unittest.TestCase):
         )
 
 
+def _trend_wellness(baseline_days: int, recent: list[float]) -> list[dict]:
+    """前段為穩定基線（60/64 交替，SD 不為 0），後段接 recent。
+
+    hrv_weekly_avg_ms 刻意跟著當日值走，模擬「7 日均值隨使用者一起下沉」
+    ——15% 規則因此不會觸發，正是 SWC 要補的情境。
+    """
+    values = [60.0 if i % 2 else 64.0 for i in range(baseline_days)] + recent
+    return _wellness(
+        {i: {"hrv_ms": v, "hrv_weekly_avg_ms": v} for i, v in enumerate(values)}
+    )
+
+
+class TestAssessReadinessHrvTrend(unittest.TestCase):
+    """HRV 趨勢（SWC）與 15% 規則並存：只提醒，不影響 readiness。"""
+
+    def test_sustained_decline_flags_below_without_changing_readiness(self):
+        wellness = _trend_wellness(28, [50.0] * 7)
+        series = _load_series([0.0] * len(wellness))
+        last = assess_readiness(series, wellness)[-1]
+        self.assertEqual(last["hrv_trend"]["status"], "below")
+        self.assertEqual(last["readiness"], "normal")
+        self.assertFalse(any(t["dimension"] == "hrv" for t in last["triggers"]))
+        self.assertEqual(last["hrv_trend"]["confidence"]["level"], "low")
+
+    def test_stable_hrv_is_within(self):
+        wellness = _trend_wellness(35, [])
+        series = _load_series([0.0] * len(wellness))
+        self.assertEqual(assess_readiness(series, wellness)[-1]["hrv_trend"]["status"], "within")
+
+    def test_short_baseline_is_not_assessed(self):
+        """基線不足 20 筆時不評——None 不等於 within。"""
+        wellness = _trend_wellness(10, [50.0] * 3)
+        series = _load_series([0.0] * len(wellness))
+        trend = assess_readiness(series, wellness)[-1]["hrv_trend"]
+        self.assertIsNone(trend["status"])
+        self.assertIn("基線", trend["reason"])
+
+    def test_no_hrv_today_is_not_assessed(self):
+        wellness = _trend_wellness(35, [])
+        series = _load_series([0.0] * (len(wellness) + 1))
+        self.assertIsNone(assess_readiness(series, wellness)[-1]["hrv_trend"]["status"])
+
+
 class TestAssessReadinessGeneral(unittest.TestCase):
     def test_empty_series_returns_empty_result(self):
         self.assertEqual(assess_readiness([], []), [])

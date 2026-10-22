@@ -1350,6 +1350,7 @@ def _serialize_readiness_entry(entry: dict | None) -> dict | None:
         "dimensions_evaluated": entry["dimensions_evaluated"],
         "not_assessed": entry["not_assessed"],
         "measurements": entry["measurements"],
+        "hrv_trend": entry["hrv_trend"],
     }
 
 

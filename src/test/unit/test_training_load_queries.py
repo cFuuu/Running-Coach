@@ -341,6 +341,25 @@ class TestComputeReadinessForAthlete(unittest.TestCase):
             "hrv", [item["dimension"] for item in result[0]["not_assessed"]]
         )
 
+    def test_hrv_trend_baseline_reaches_before_start_date(self):
+        """HRV 趨勢（SWC）的 28 天基線同樣要看得到 start_date 之前的資料，
+        單日查詢不能因回看不夠而永遠「基線尚未建立」。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        days = 36
+        for i in range(days):
+            date = START + datetime.timedelta(days=i)
+            _insert_activity(conn, athlete_id, date, avg_hr_bpm=140)
+            _insert_wellness(conn, athlete_id, date, hrv_ms=50.0 + i % 3, hrv_weekly_avg_ms=51.0)
+        conn.commit()
+
+        target = START + datetime.timedelta(days=days - 1)
+        result = compute_readiness_for_athlete(conn, athlete_id, target, target)
+
+        self.assertIn(result[0]["hrv_trend"]["status"], ("within", "below"))
+
     def test_hrv_still_not_assessed_when_genuinely_too_few_points(self):
         """真的測量點不足時仍須誠實標為不可評——回看視窗擴大不得把
         「查不到」變成「假裝夠」（與上一項測試互為邊界）。"""

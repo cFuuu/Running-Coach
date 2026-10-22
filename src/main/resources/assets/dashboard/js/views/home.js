@@ -157,6 +157,9 @@ var READINESS_TIPS = [
   '各觸發項旁的標籤是信賴度：連續天數只是數活動日，可信；TSB 取決於最大心率是否實測；'
     + 'HRV 的百分比門檻尚未經文獻驗證，標為低。',
   '資料不足的維度會跳過（例如 HRV 近 7 天少於 3 筆、當天尚未同步）。',
+  '「HRV 趨勢」是另一條規則，只是提醒，不計入判定：HRV 7 日平均低於你前 4 週基線'
+    + '（ln 尺度 mean − 0.5×SD）時以橘字標示。它補的是上面 15% 規則抓不到的慢性下滑，'
+    + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。',
   '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
     + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
 ];
@@ -209,6 +212,22 @@ function readinessRow(def, entry) {
   return row;
 }
 
+/** HRV 趨勢（SWC）列：只是提醒，與上面三個維度不同，不影響右側判定。 */
+function hrvTrendRow(entry) {
+  var trend = entry && entry.hrv_trend;
+  var below = trend && trend.status === 'below';
+  var hasValue = trend && trend.status;
+  var row = h('div', 'wt-row rd-row' + (below ? ' is-hint' : ''));
+  row.appendChild(h('span', 'wt-row-label', 'HRV 趨勢'));
+  var val = h('span', 'wt-row-value');
+  val.appendChild(h('span', 'rd-value', hasValue ? C.formatNumber(trend.value_ms, 1) : '—'));
+  if (hasValue) val.appendChild(h('span', 'wt-planned', '/ ' + C.formatNumber(trend.line_ms, 1) + ' ms'));
+  row.appendChild(val);
+  if (below) row.appendChild(h('span', 'conf-badge conf-reference', '提醒'));
+  if (trend) row.title = trend.detail || trend.reason || '';
+  return row;
+}
+
 /** 右側的判定圖示：實心圓＋符號，下方寫判定文字。 */
 function readinessStatus(value) {
   var s = readinessStateOf(value);
@@ -242,6 +261,7 @@ export function renderTodayReadinessBlock(readiness) {
   var card = h('div', 'wt-card');
   var rows = h('div', 'wt-figs');
   READINESS_ROWS.forEach(function (def) { rows.appendChild(readinessRow(def, todayMissing ? null : entry)); });
+  rows.appendChild(hrvTrendRow(todayMissing ? null : entry));
   card.appendChild(rows);
   card.appendChild(readinessStatus(todayMissing ? null : entry.readiness));
   block.appendChild(card);

@@ -326,6 +326,11 @@ def get_readiness_status(
     dimensions_evaluated（實際評估了哪些維度）與 not_assessed（未評的
     維度與原因），行為約束第 2 條「不可評的維度就不評」同樣適用於此。
 
+    每筆另附 hrv_trend（status: below/within/None）：HRV 7 日平均對個人
+    4 週基線（SWC）的偏離提醒，**不計入 readiness**。below 只代表「偏離
+    近期基線」，不知原因，且約四分之一的日子本來就會落在線下——可提醒
+    「近期 HRV 持續偏低」，不可單憑它判定疲勞或建議休息。
+
     start_date／end_date 格式為 YYYY-MM-DD。athlete_id 省略時預設取
     資料庫中第一位學員。
     """

@@ -37,7 +37,9 @@ athlete_profile，任何寫入都必須是呼叫端另外執行的獨立步驟�
 from __future__ import annotations
 
 import datetime
+import math
 import sqlite3
+import statistics
 from typing import Any
 
 from . import data_confidence
@@ -94,6 +96,22 @@ MIN_HRV_POINTS_PER_WEEK = 3
 # 幾天的回看視窗會落在資料之外，被誤判為「測量點不足」而不評。
 # 見 training_load_queries.compute_readiness_for_athlete() 的 warmup 處理。
 HRV_LOOKBACK_DAYS = 7
+
+# HRV 趨勢（SWC，與上面的 15% 規則並存，只當提醒、不影響 readiness 判定）。
+# 做法依 docs/research/physiological-thresholds.md 主題四：
+# LnrMSSD₇d（含當日往回 7 天的 ln(HRV) 平均，至少 3 點，當日須有值）
+# 對照前 28 天（不含當日）每日 ln(HRV) 的 mean − 0.5×SD。
+# 2026-10-22 對照實測（339 天）：兩條規則只重疊 6 天；SWC 觸發 24%（現行 7.7%），
+# 且抓到現行規則漏掉的 8 月兩週慢性疲勞。基線若改用 LnrMSSD₇d 序列算 SD，
+# 序列太平滑、觸發率升至 44%，故不採。
+HRV_TREND_ROLL_DAYS = 7
+HRV_TREND_ROLL_MIN_POINTS = MIN_HRV_POINTS_PER_WEEK
+HRV_TREND_BASELINE_DAYS = 28
+HRV_TREND_BASELINE_MIN_VALUES = 20
+HRV_TREND_SWC_FACTOR = 0.5
+
+# ⚠️ 查詢層必須往前多抓這麼多天的 wellness，否則區間最前面幾天的基線會落在資料之外。
+HRV_TREND_LOOKBACK_DAYS = HRV_TREND_ROLL_DAYS + HRV_TREND_BASELINE_DAYS
 
 # suggest_recovery_threshold() 用同一套 HRV 下降門檻判斷「該次連續訓練是否
 # 觀察到恢復訊號惡化」，與 _evaluate_hrv() 的判斷基準一致，避免兩套標準漂移。
@@ -205,6 +223,55 @@ def _evaluate_hrv(
     }
 
 
+def _evaluate_hrv_trend(
+    date: datetime.date, ln_hrv_by_date: dict[datetime.date, float]
+) -> dict[str, Any]:
+    """HRV 趨勢（SWC）：回傳 {"status": "below"|"within"|None, ...}。
+
+    只是提醒，呼叫端不得把它併進 triggers／readiness。status 為 None 時
+    "reason" 說明為何不可評（同樣不等於 within）。
+    """
+    def _values(offsets: range) -> list[float]:
+        days = (date - datetime.timedelta(days=o) for o in offsets)
+        return [ln_hrv_by_date[d] for d in days if d in ln_hrv_by_date]
+
+    if date not in ln_hrv_by_date:
+        return {"status": None, "reason": "當日無 HRV 紀錄"}
+
+    recent = _values(range(HRV_TREND_ROLL_DAYS))
+    if len(recent) < HRV_TREND_ROLL_MIN_POINTS:
+        return {
+            "status": None,
+            "reason": f"過去 {HRV_TREND_ROLL_DAYS} 天有效 HRV 測量點少於 {HRV_TREND_ROLL_MIN_POINTS} 筆",
+        }
+    rolling = statistics.fmean(recent)
+    baseline = _values(range(1, HRV_TREND_BASELINE_DAYS + 1))
+    if len(baseline) < HRV_TREND_BASELINE_MIN_VALUES:
+        return {
+            "status": None,
+            "reason": (
+                f"前 {HRV_TREND_BASELINE_DAYS} 天基線僅 {len(baseline)} 筆 HRV，"
+                f"少於 {HRV_TREND_BASELINE_MIN_VALUES} 筆，個人基線尚未建立"
+            ),
+        }
+    line = statistics.fmean(baseline) - HRV_TREND_SWC_FACTOR * statistics.stdev(baseline)
+    below = rolling < line
+    value_ms, line_ms = math.exp(rolling), math.exp(line)
+    return {
+        "status": "below" if below else "within",
+        "value_ms": round(value_ms, 1),
+        "line_ms": round(line_ms, 1),
+        "detail": (
+            f"HRV 7 日平均 {value_ms:.1f}ms，"
+            f"{'低於' if below else '高於'}個人 4 週基線門檻 {line_ms:.1f}ms"
+        ),
+        "confidence": {
+            "level": data_confidence.combine_level(["hrv_swc_simplified"]),
+            "biases": [data_confidence.describe_bias("hrv_swc_simplified")],
+        },
+    }
+
+
 def assess_readiness(
     training_load_series: list[dict[str, Any]],
     daily_wellness: list[dict[str, Any]],
@@ -246,6 +313,11 @@ def assess_readiness(
         日一律填 load=0.0，本函式若不靠這個參數，無法分辨「今天真的沒練」
         與「今天的資料還沒同步進來」。省略時視為空集合（沿用既有行為，
         呼叫端未提供時不強制啟用此檢查）。
+
+    hrv_trend（與 15% 規則並存的 SWC 提醒）：每筆另附 "hrv_trend"
+        {"status": "below"|"within"|None, ...}，**不併入 triggers、不影響
+        readiness**。補的是 15% 規則漏掉的慢性下滑（基準會跟著下沉）。
+        需要 daily_wellness 往前涵蓋 HRV_TREND_LOOKBACK_DAYS 天才有完整基線。
 
     回傳：依日期升冪排序的 list，每筆
         {
@@ -293,6 +365,10 @@ def assess_readiness(
     # 每天各自數「過去 7 天內有幾個有效 HRV 測量點」，供充足度檢查使用。
     hrv_dates = {
         day["date"] for day in daily_wellness if day.get("hrv_ms") is not None
+    }
+
+    ln_hrv_by_date = {
+        d["date"]: math.log(d["hrv_ms"]) for d in daily_wellness if d.get("hrv_ms")
     }
 
     results: list[dict[str, Any]] = []
@@ -404,6 +480,11 @@ def assess_readiness(
                 "threshold_source": threshold_source,
                 "consecutive_training_days": consecutive_days,
                 "measurements": measurements,
+                "hrv_trend": (
+                    {"status": None, "reason": "此日期無任何 activities／daily_wellness 紀錄"}
+                    if no_data_today
+                    else _evaluate_hrv_trend(date, ln_hrv_by_date)
+                ),
             }
         )
 

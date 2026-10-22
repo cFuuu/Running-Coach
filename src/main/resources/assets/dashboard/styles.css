@@ -3632,6 +3632,12 @@ button.recent-row .rc-actual .rc-main {
   color: var(--ready-low-text);
 }
 
+/* HRV 趨勢偏離：只是提醒、不計入判定，用信賴度「低」的橘色而非偏低的紅色 */
+.rd-row.is-hint .rd-value,
+.rd-row.is-hint .wt-row-label {
+  color: var(--conf-low-text);
+}
+
 .rd-status-icon {
   display: flex;
   align-items: center;
