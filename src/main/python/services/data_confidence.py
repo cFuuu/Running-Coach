@@ -134,16 +134,6 @@ KNOWN_BIASES: dict[str, tuple[ConfidenceLevel, str]] = {
         "之後每天約 −0.3%）。折減是群體經驗值；且取「最長」中斷是本專案的解讀——"
         "中斷後若已練回來，實際能力可能高於此值，要等新的比賽成績才能確認",
     ),
-    "race_predict_endurance_assumption": (
-        "low",
-        "Daniels 的完賽預測假設跑者已具備目標距離所需的訓練量。由較短距離推估"
-        "半馬／全馬時，週跑量不足的跑者後段會掉速，實際完賽時間通常明顯慢於預測",
-    ),
-    "race_predict_formula_extrapolated": (
-        "low",
-        "Daniels 的 %VO2max 迴歸式以約 1500m～全馬的比賽成績擬合，更短的距離"
-        "（如 800m）屬外推；短距離偏重無氧能力，換算誤差較大",
-    ),
     "strength_hr_missing": (
         "low",
         "該重訓活動無心率資料，強度以固定保守值 50% HRR 估算，"

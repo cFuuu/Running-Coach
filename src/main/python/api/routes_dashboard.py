@@ -241,23 +241,3 @@ def read_overview(
         today_date,
         race_names=race_names.load_race_names(profile_path),
     )
-
-
-@router.get("/tools/race-predict")
-def read_race_predict(
-    targets: str = Query(..., description="目標距離（公里），逗號分隔，例如 5,10,21.0975"),
-    distance_km: float | None = Query(default=None, description="基準成績的距離（公里）"),
-    time_sec: float | None = Query(default=None, description="基準成績的完賽時間（秒）"),
-    vdot: float | None = Query(default=None, description="直接指定 VDOT（與基準成績二擇一）"),
-) -> dict:
-    """配速計算機的完成時間推估（Daniels 公式），不讀資料庫。"""
-    try:
-        targets_km = [float(t) for t in targets.split(",") if t.strip()]
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"targets 格式錯誤：{targets}") from exc
-    try:
-        return queries.get_race_prediction(
-            targets_km, distance_km=distance_km, time_sec=time_sec, vdot=vdot
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc

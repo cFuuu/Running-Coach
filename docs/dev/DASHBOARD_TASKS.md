@@ -252,17 +252,6 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 - **VDOT** 為 Daniels 原版公式（實際距離直接代入）；不走心率換算（次最大推估，系統性偏高）
 - **AI 分析**不在此 API，另見下方 `/api/analysis`
 
-### `GET /api/tools/race-predict?targets=5,10,42.195&distance_km=10&time_sec=3000`（2026-10-22 新增：配速計算機）
-
-工具頁（`#/tools`）「完成時間」的跑力推估用。不讀資料庫；基準給 `distance_km`＋`time_sec` 或 `vdot`（20～85）二擇一，不合理輸入回 400。
-等速換算（配速／跑步機／田徑場／等速完成時間）是純算術，全在前端 `js/core/pace.js`，不經 API。
-
-| 欄位 | 內容 |
-|---|---|
-| `vdot` | fact（基準成績代入 Daniels 公式，或指定值） |
-| `predictions[]` | `distance_km`＋`time_sec`（fact）。<1.5 km 標 `race_predict_formula_extrapolated`；半馬以上且比基準長標 `race_predict_endurance_assumption` |
-| `pace_zones` | `easy`／`marathon`／`tempo`／`interval` 的 `fast_sec_per_km`／`slow_sec_per_km`（同 `compute_pace_zones`，不含與 easy 重複的 lsd） |
-
 ### `/api/analysis*`（2026-10-15 新增：總覽「AI 分析」按鈕）
 
 按鈕 → `POST /api/analysis` → 後端在背景啟動 **Claude Code 無互動 session**（`claude -p`，`services/coach_analysis.py`），

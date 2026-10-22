@@ -1352,55 +1352,6 @@ class TestOverview(DashboardQueryTestCase):
         self.assertFalse(result["available"])
 
 
-class TestRacePrediction(unittest.TestCase):
-    """配速計算機的完成時間推估：純計算，不需要資料庫。"""
-
-    def test_vdot_50_matches_daniels_table(self):
-        # Daniels 表 VDOT 50：5K 19:57、10K 41:21、半馬 1:31:35、全馬 3:10:49
-        result = queries.get_race_prediction([5, 10, 21.0975, 42.195], vdot=50)
-        times = [p["time_sec"]["value"] for p in result["predictions"]]
-        for actual, expected in zip(times, [1197, 2481, 5495, 11449]):
-            # 出版的表與公式反解有小落差，距離越長越大（全馬差 9 秒），容許 0.1%
-            self.assertAlmostEqual(actual, expected, delta=expected * 0.001)
-        self.assertEqual(result["vdot"]["value"], 50)
-
-    def test_race_result_round_trips_to_same_distance(self):
-        result = queries.get_race_prediction([10], distance_km=10, time_sec=3000)
-        self.assertAlmostEqual(result["predictions"][0]["time_sec"]["value"], 3000, delta=1)
-
-    def test_long_target_from_shorter_basis_flags_endurance_assumption(self):
-        result = queries.get_race_prediction([10, 42.195], distance_km=5, time_sec=1500)
-        ten_k, marathon = (p["time_sec"]["confidence"] for p in result["predictions"])
-        self.assertEqual(ten_k["level"], "high")
-        self.assertEqual(marathon["level"], "low")
-        self.assertEqual(
-            [b["code"] for b in marathon["biases"]], ["race_predict_endurance_assumption"]
-        )
-
-    def test_marathon_basis_does_not_flag_its_own_distance(self):
-        result = queries.get_race_prediction([42.195], distance_km=42.195, time_sec=4 * 3600)
-        self.assertEqual(result["predictions"][0]["time_sec"]["confidence"]["level"], "high")
-
-    def test_short_distance_is_flagged_extrapolated(self):
-        result = queries.get_race_prediction([0.8], vdot=45)
-        codes = [b["code"] for b in result["predictions"][0]["time_sec"]["confidence"]["biases"]]
-        self.assertEqual(codes, ["race_predict_formula_extrapolated"])
-
-    def test_pace_zones_exclude_duplicate_lsd(self):
-        result = queries.get_race_prediction([5], vdot=45)
-        self.assertEqual(set(result["pace_zones"]), {"easy", "marathon", "tempo", "interval"})
-
-    def test_invalid_inputs_raise(self):
-        with self.assertRaises(ValueError):
-            queries.get_race_prediction([5])  # 沒有基準
-        with self.assertRaises(ValueError):
-            queries.get_race_prediction([5], vdot=120)
-        with self.assertRaises(ValueError):
-            queries.get_race_prediction([5], distance_km=5, time_sec=60)  # 0:12/km
-        with self.assertRaises(ValueError):
-            queries.get_race_prediction([0], vdot=45)
-
-
 class TestNoFastapiDependency(unittest.TestCase):
     def test_query_layer_does_not_import_fastapi(self):
         """查詢層必須維持純粹，才能在沒有 web 框架的情境下重用（也才好測）。
