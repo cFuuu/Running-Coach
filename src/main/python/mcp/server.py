@@ -46,6 +46,7 @@ from mcp.server.mcpserver import Context
 
 from src.main.python.models.db import get_connection
 from src.main.python.services import context_notes_store
+from src.main.python.services import daily_feel_store
 from src.main.python.services import dashboard_queries
 from src.main.python.services import garmin_sync_runner
 from src.main.python.services import session_quality
@@ -129,6 +130,7 @@ READ_ONLY_TOOL_NAMES = frozenset(
         "get_active_training_plan",
         "get_today",
         "get_context_notes",
+        "get_daily_feel",
     }
 )
 
@@ -138,6 +140,7 @@ WRITE_TOOL_NAMES = frozenset(
         "generate_training_plan",
         "add_context_note",
         "save_external_workouts",
+        "record_daily_feel",
     }
 )
 
@@ -555,6 +558,58 @@ def add_context_note(
 
 
 @mcp.tool()
+def get_daily_feel(
+    ctx: Context[AppContext],
+    start_date: str,
+    end_date: str,
+    athlete_id: int | None = None,
+) -> list[dict]:
+    """取得學員每日自評的體感（very_tired／tired／normal／good），沒記的日子不出現。
+
+    用途是對照規則判讀：readiness 說偏低、HRV 趨勢說偏離時，學員當天是否真的累。
+    source 為 backfill 的是事後回想補填，可信度低於當天記錄（dashboard／coach）。
+
+    ⚠️ 體感**不是事實層資料，永遠不進任何計算**，不可拿它調整判讀門檻。
+    回述事實清單時須與量測數據分開列出，標明是學員自評。日期格式 YYYY-MM-DD。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return []
+    return _serialize(
+        daily_feel_store.get_feels_in_range(_conn(ctx), resolved_athlete_id, start_date, end_date)
+    )
+
+
+@mcp.tool()
+def record_daily_feel(
+    ctx: Context[AppContext],
+    date: str,
+    feel: str,
+    note: str | None = None,
+    athlete_id: int | None = None,
+) -> dict:
+    """⚠️ 會寫入資料庫：記錄學員某天的體感，同一天再記會覆寫。
+
+    feel 只能是 very_tired（很累）／tired（有點累）／normal（普通）／good（很好）。
+    學員說「今天有點累」「今天精神很好」時使用；說法對不上四級時先問學員選哪一級，
+    **不要代為判斷**。具體原因（睡不好、腳緊）放 note，記原話。
+    跨多天的情境（出差、生病）仍用 add_context_note。
+
+    ⚠️ 體感永遠不進事實層、不參與任何計算（見 get_daily_feel）。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return {"saved": False, "reason": "資料庫中沒有任何學員資料"}
+    try:
+        row = daily_feel_store.set_feel(
+            _conn(ctx), resolved_athlete_id, date, feel, "coach", note
+        )
+    except ValueError as exc:
+        return {"saved": False, "reason": str(exc)}
+    return {"saved": True, **row}
+
+
+@mcp.tool()
 def save_external_workouts(
     ctx: Context[AppContext],
     workouts: list[dict],
@@ -679,6 +734,9 @@ _BEHAVIOR_CONSTRAINTS = """\
 - 這類情境可用 `add_context_note` 記下來（記原話、不要代為摘要或分級），
   日後用 `get_context_notes` 查回，用來解釋訓練偏差的原因。回述事實清單時
   須與量測數據**分開列出**，標明它來自學員自述。
+- 學員說今天累不累時，用 `record_daily_feel` 記成四級之一（對不上就問學員，
+  不要代為分級）；`get_daily_feel` 可查回，用來對照規則判讀是否貼近體感。
+  同樣不進事實層。
 
 ### 6. 不給醫療建議
 涉及疼痛、傷病症狀時，不做診斷、不給治療建議。說明數據上看到什麼，
@@ -693,7 +751,7 @@ _BEHAVIOR_CONSTRAINTS = """\
 - `save_external_workouts` 用於落地跑團／實體教練給的課表，同樣須經學員
   明確指示，寫入前先複述你整理出的逐日內容。**一旦有外部課表，它就是唯一
   基準**——不要並列建議自己的課表，也不要在教練沒排的日子自動補課。
-- `add_context_note` 只記錄學員自述的情境，不改動任何訓練安排。
+- `add_context_note`／`record_daily_feel` 只記錄學員自述的情境與體感，不改動任何訓練安排。
 """
 
 _OUTPUT_SHAPE = """\

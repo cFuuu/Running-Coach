@@ -34,6 +34,9 @@
     兩者共用同一份來源判斷（見 api/client_access.py）。
     上面「不可對外網開放」的紅線不因此改變。
 
+    唯一的區網可寫端點是 `/api/daily-feel`（每日體感）：只寫本機資料庫、
+    不花錢不打外部 API，且主要在手機上使用，故沿用區網放行。
+
 不 hardcode 任何路徑或個人識別資訊：--db-path 必填，athlete 從資料庫查
 （見 dashboard_queries.resolve_athlete_id）。
 """

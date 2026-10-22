@@ -22,11 +22,13 @@ from src.main.python.mcp.server import (
     get_athlete_meta,
     get_readiness_status,
     get_context_notes,
+    get_daily_feel,
     get_recovery_impact,
     get_session_detail,
     get_today,
     get_wellness_trend,
     list_running_sessions,
+    record_daily_feel,
     save_external_workouts,
 )
 
@@ -422,6 +424,32 @@ class TestContextNoteTools(unittest.TestCase):
         self.assertEqual(
             get_context_notes(_fake_ctx(conn), start_date="2026-09-01", end_date="2026-09-05"), []
         )
+
+
+class TestDailyFeelTools(unittest.TestCase):
+    """每日體感的 MCP 介面：AI 教練寫入時標 source=coach。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        _build_athlete(self.conn)
+        self.conn.commit()
+
+    def test_record_then_get_roundtrip(self):
+        result = record_daily_feel(
+            _fake_ctx(self.conn), date="2026-10-22", feel="tired", note="昨晚只睡 5 小時"
+        )
+        self.assertTrue(result["saved"])
+        feels = get_daily_feel(_fake_ctx(self.conn), start_date="2026-10-22", end_date="2026-10-22")
+        self.assertEqual(feels[0]["feel"], "tired")
+        self.assertEqual(feels[0]["source"], "coach")
+        self.assertEqual(feels[0]["note"], "昨晚只睡 5 小時")
+
+    def test_invalid_feel_returns_reason_instead_of_raising(self):
+        result = record_daily_feel(_fake_ctx(self.conn), date="2026-10-22", feel="累")
+        self.assertFalse(result["saved"])
+
+    def test_constraints_mention_feel_tools(self):
+        self.assertIn("record_daily_feel", _BEHAVIOR_CONSTRAINTS)
 
 
 class TestCoachPromptMentionsNewTools(unittest.TestCase):

@@ -39,21 +39,21 @@ export function api(path) {
 }
 
 /**
- * POST 版的 api()。目前只有 /api/sync 用得到。
+ * 寫入類請求（POST／PUT／DELETE）的共用入口：/api/sync 與 /api/daily-feel 用。
  *
  * 與 api() 分開而非加參數，是因為兩者的錯誤語意不同：GET 失敗多半是
  * 資料還沒進來，POST 失敗（403／422）要把後端的 detail 原文顯示給使用者
  * ——那是可操作的指引（例如「請設定 RC_SYNC_ALLOW_PRIVATE_NETWORK=1」），
  * 吞掉只留狀態碼會讓使用者不知道下一步該做什麼。
  */
-export function apiPost(path, body) {
+export function apiSend(method, path, body) {
   var full = withAthlete(path);
   if (useMock) return window.MOCK_API.request(full, body);
 
   return fetch('.' + full, {
-    method: 'POST',
+    method: method,
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {})
+    body: method === 'DELETE' ? undefined : JSON.stringify(body || {})
   }).then(function (res) {
     return res.json().catch(function () { return {}; }).then(function (data) {
       if (!res.ok) {
@@ -62,4 +62,8 @@ export function apiPost(path, body) {
       return data;
     });
   });
+}
+
+export function apiPost(path, body) {
+  return apiSend('POST', path, body);
 }

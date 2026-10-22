@@ -14,8 +14,9 @@ import sqlite3
 from pathlib import Path
 from typing import Callable, Iterator
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
+from src.main.python.services import daily_feel_store
 from src.main.python.services import dashboard_queries as queries
 from src.main.python.services import garmin_cards
 from src.main.python.services import race_names
@@ -252,3 +253,60 @@ def read_overview(
         today_date,
         race_names=race_names.load_race_names(profile_path),
     )
+
+
+# --------------------------------------------------------------------------
+# /api/daily-feel：每日體感（首頁卡片的按鈕）
+# --------------------------------------------------------------------------
+# ⚠️ 這是 dashboard 唯一的寫入端點，刻意**不加**來源限制、與唯讀端點同樣區網放行：
+# 主要情境就是早上在手機上點一下。代價只是「區網內有人可以改你的體感紀錄」，
+# 不花錢、不打外部 API（與 /api/chat、/api/sync 的「被觸發」代價不同）。
+
+
+def _resolve_athlete_id(conn: sqlite3.Connection, athlete_id: int | None) -> int:
+    resolved = queries.resolve_athlete_id(conn, athlete_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="資料庫中沒有任何學員資料")
+    return resolved
+
+
+@router.get("/daily-feel")
+def read_daily_feel(
+    start: str = Query(description="起始日 YYYY-MM-DD"),
+    end: str = Query(description="結束日 YYYY-MM-DD"),
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    start_date = _parse_date_param(start, "start")
+    end_date = _parse_date_param(end, "end")
+    resolved = _resolve_athlete_id(conn, athlete_id)
+    return {"feels": daily_feel_store.get_feels_in_range(conn, resolved, start_date, end_date)}
+
+
+@router.put("/daily-feel/{date}")
+def write_daily_feel(
+    date: str,
+    payload: dict = Body(default_factory=dict),
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """寫入（覆寫）某天體感。body：{"feel": "very_tired|tired|normal|good", "note"?: str}"""
+    day = _parse_date_param(date, "date")
+    resolved = _resolve_athlete_id(conn, athlete_id)
+    try:
+        return daily_feel_store.set_feel(
+            conn, resolved, day, payload.get("feel"), "dashboard", payload.get("note")
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/daily-feel/{date}")
+def remove_daily_feel(
+    date: str,
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    day = _parse_date_param(date, "date")
+    resolved = _resolve_athlete_id(conn, athlete_id)
+    return {"deleted": daily_feel_store.delete_feel(conn, resolved, day)}

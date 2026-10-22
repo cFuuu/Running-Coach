@@ -14,7 +14,7 @@
 
 import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL } from '../core/state.js';
-import { api } from '../core/api.js';
+import { api, apiSend } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
 import { addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
@@ -160,6 +160,8 @@ var READINESS_TIPS = [
   '「HRV 趨勢」是另一條規則，只是提醒，不計入判定：HRV 7 日平均低於你前 4 週基線'
     + '（ln 尺度 mean − 0.5×SD）時以橘字標示。它補的是上面 15% 規則抓不到的慢性下滑，'
     + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。',
+  '「今天體感」只是記錄，不影響上面的判定；累積下來用來檢驗這些規則抓到的日子是不是真的累。'
+    + '點一下記錄，再點同一顆取消。',
   '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
     + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
 ];
@@ -228,6 +230,66 @@ function hrvTrendRow(entry) {
   return row;
 }
 
+// 每日體感（4 級，由累到好），值對應後端 daily_feel_store.FEEL_LEVELS
+var FEEL_OPTIONS = [
+  { value: 'very_tired', label: '很累' },
+  { value: 'tired', label: '有點累' },
+  { value: 'normal', label: '普通' },
+  { value: 'good', label: '很好' }
+];
+
+/**
+ * 「今天體感」按鈕列：點一下記錄、再點同一顆取消。
+ * 只是記錄供日後對照規則準不準，不影響任何判定（後端規則模組不讀這張表）。
+ */
+function renderFeelRow(dateStr) {
+  var row = h('div', 'feel-row');
+  row.appendChild(h('span', 'feel-label', '今天體感'));
+  var group = h('div', 'feel-options');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', '今天體感');
+  var status = h('span', 'feel-status');
+  var current = null;
+  var buttons = FEEL_OPTIONS.map(function (opt) {
+    var btn = h('button', 'range-btn feel-btn', opt.label);
+    btn.type = 'button';
+    btn.addEventListener('click', function () { save(opt.value === current ? null : opt.value); });
+    group.appendChild(btn);
+    return btn;
+  });
+  row.appendChild(group);
+  row.appendChild(status);
+
+  function paint() {
+    FEEL_OPTIONS.forEach(function (opt, i) {
+      var on = opt.value === current;
+      buttons[i].classList.toggle('is-active', on);
+      buttons[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function save(value) {
+    var path = '/api/daily-feel/' + dateStr;
+    var req = value ? apiSend('PUT', path, { feel: value }) : apiSend('DELETE', path);
+    status.textContent = '儲存中…';
+    req.then(function () {
+      current = value;
+      paint();
+      status.textContent = value ? '已記錄' : '已取消';
+    }).catch(function (err) {
+      status.textContent = '儲存失敗：' + err.message;
+    });
+  }
+
+  api('/api/daily-feel?start=' + dateStr + '&end=' + dateStr).then(function (data) {
+    var feels = (data && data.feels) || [];
+    current = feels.length ? feels[0].feel : null;
+    paint();
+  }).catch(function () { /* 讀不到就當沒記過，按鈕照樣可用 */ });
+
+  return row;
+}
+
 /** 右側的判定圖示：實心圓＋符號，下方寫判定文字。 */
 function readinessStatus(value) {
   var s = readinessStateOf(value);
@@ -267,6 +329,8 @@ export function renderTodayReadinessBlock(readiness) {
   block.appendChild(card);
 
   if (unsynced) block.appendChild(h('div', 'sync-fallback-note', '今日資料尚未同步'));
+  // 體感記在「今天」，即使上面因未同步而顯示較早一天的判定
+  block.appendChild(renderFeelRow((state.today && state.today.date) || todayISO()));
   if (todayMissing) {
     var reasons = (entry && entry.not_assessed || []).map(function (na) { return na.reason; });
     block.appendChild(h('div', 'today-note wt-note', reasons.length ? reasons[0] : '今日尚無足夠資料可評估'));
