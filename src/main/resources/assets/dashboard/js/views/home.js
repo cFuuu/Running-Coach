@@ -13,16 +13,17 @@
  */
 
 import * as C from '../charts.js';
-import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL, HRV_STATUS_CLASS, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
+import { state, WORKOUT_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
-import { fmtDelta, addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
+import { addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
 import { activityDots, firstRunningActivity } from './calendar.js';
 import { renderSettingsSync } from './settings.js';
 import { zoneSplitBar } from './overview.js';
+import { renderGarminWall } from './garmin.js';
 import { navigate } from '../shell/router.js';
 import { renderSidebarSync } from '../shell/sync.js';
 
@@ -544,213 +545,14 @@ export function renderHomeLoad() {
 
 // ------------------------------------------------------------ 體能狀況卡片
 
-function numericValues(points) {
-  return (points || []).map(function (p) { return p.value; })
-    .filter(function (v) { return typeof v === 'number' && isFinite(v); });
-}
-
-function average(vals) {
-  return vals.length ? vals.reduce(function (a, v) { return a + v; }, 0) / vals.length : null;
-}
-
-/**
- * Garmin 風格的 HRV 平衡區間量表：一條橫軸，綠色帶是平衡區間，圓點是 7 日均值。
- * 軸範圍取區間寬度的一半往兩側外推，圓點超出時貼齊邊緣。只畫位置，不下判讀。
- */
-function hrvRangeGauge(weeklyAvg, low, upper) {
-  var span = upper - low;
-  var min = Math.max(0, low - span * 0.5);
-  var max = upper + span * 0.5;
-  function pct(v) { return Math.min(100, Math.max(0, (v - min) / (max - min) * 100)); }
-  var gauge = h('div', 'hrv-gauge');
-  var track = h('div', 'hrv-gauge-track');
-  var band = h('div', 'hrv-gauge-band');
-  band.style.left = pct(low) + '%';
-  band.style.width = (pct(upper) - pct(low)) + '%';
-  track.appendChild(band);
-  var dot = h('div', 'hrv-gauge-dot');
-  dot.style.left = pct(weeklyAvg) + '%';
-  track.appendChild(dot);
-  gauge.appendChild(track);
-  var scale = h('div', 'hrv-gauge-scale');
-  scale.appendChild(h('span', null, C.formatNumber(low, 0)));
-  scale.appendChild(h('span', null, C.formatNumber(upper, 0)));
-  gauge.appendChild(scale);
-  return gauge;
-}
-
-/** Garmin 綜合分數（HRV 狀態、睡眠分數、訓練完備程度）旁的標籤，標明來源是 Garmin 而非本專案。 */
-var GARMIN_DATA_BADGE = 'Garmin數據';
-
-/** 睡眠分數分級，門檻與 Garmin 網頁的色帶一致（優 90+、良 80–89、尚可 60–79、差 <60）。 */
-var SLEEP_SCORE_BANDS = [
-  { min: 0, max: 59, label: '差', cls: 'sleep-band-poor' },
-  { min: 60, max: 79, label: '尚可', cls: 'sleep-band-fair' },
-  { min: 80, max: 89, label: '良', cls: 'sleep-band-good' },
-  { min: 90, max: 100, label: '優', cls: 'sleep-band-excellent' }
-];
-
-function sleepBandOf(score) {
-  for (var i = 0; i < SLEEP_SCORE_BANDS.length; i += 1) {
-    if (score <= SLEEP_SCORE_BANDS[i].max) return SLEEP_SCORE_BANDS[i];
-  }
-  return SLEEP_SCORE_BANDS[SLEEP_SCORE_BANDS.length - 1];
-}
-
-/** Garmin 網頁式睡眠分數色帶：四段分級，圓點標出今日分數，不另下判讀。 */
-function sleepScoreDetails(score) {
-  var band = sleepBandOf(score);
-  var wrap = h('div', 'kpi-detail');
-  var head = h('div', 'kpi-detail-row');
-  head.appendChild(h('span', 'sleep-band-label ' + band.cls, band.label));
-  var badge = h('span', 'conf-badge conf-reference', GARMIN_DATA_BADGE);
-  badge.title = 'Garmin（Firstbeat）算出的睡眠分數與分級，演算法未公開，不納入本專案判斷。';
-  head.appendChild(badge);
-  wrap.appendChild(head);
-
-  var gauge = h('div', 'hrv-gauge');
-  var track = h('div', 'sleep-gauge-track');
-  SLEEP_SCORE_BANDS.forEach(function (b) {
-    var seg = h('div', 'sleep-gauge-seg ' + b.cls);
-    seg.style.width = (b.max - b.min + 1) + '%';
-    track.appendChild(seg);
-  });
-  var dot = h('div', 'hrv-gauge-dot');
-  dot.style.left = Math.min(100, Math.max(0, score)) + '%';
-  track.appendChild(dot);
-  gauge.appendChild(track);
-  wrap.appendChild(gauge);
-  return wrap;
-}
-
-/** 夜間平均／最高 5 分鐘平均兩個並列數字（Garmin HRV 狀態頁摘要的同款排法）。 */
-function hrvNightStats(hrv, hrvToday) {
-  var row = h('div', 'hrv-stats');
-  function stat(value, label) {
-    var cell = h('div', 'hrv-stat');
-    var num = h('div', 'hrv-stat-value', C.formatNumber(value, 0));
-    num.appendChild(h('span', 'hrv-stat-unit', ' ms'));
-    cell.appendChild(num);
-    cell.appendChild(h('div', 'hrv-stat-label', label));
-    return cell;
-  }
-  if (hrvToday) row.appendChild(stat(hrvToday.value, '夜間平均'));
-  var high = hrv && hrv.last_night_5min_high_ms;
-  if (high && typeof high.value === 'number') row.appendChild(stat(high.value, '最高 5 分鐘平均'));
-  return row.childNodes.length ? row : null;
-}
-
-/** HRV 卡下方的補充：平衡區間量表、夜間數字、Garmin 的 HRV 狀態（僅供對照）。 */
-function hrvDetails(hrv, hrvToday) {
-  var wrap = h('div', 'kpi-detail');
-  var gref = hrv.garmin_reference;
-  // Garmin 自己的 HRV 狀態走 garmin_reference（for_display_only），不是 fact() 的
-  // 三欄位契約——規則引擎與 AI 教練都不讀它，這裡純粹是「讓你看到手錶顯示了什麼」。
-  // 平衡區間對照的是 7 日均值、不是昨夜值（實測 39/39 天吻合，昨夜值只有 29/39）。
-  // 排法照 Garmin 網頁：狀態在最上、其次平衡區間量表、最後是夜間數字。
-  if (gref && gref.status) {
-    var status = h('div', 'kpi-detail-row');
-    status.appendChild(h('span', 'hrv-status-line ' + (HRV_STATUS_CLASS[gref.status] || ''), HRV_STATUS_LABEL[gref.status] || gref.status));
-    var refBadge = h('span', 'conf-badge conf-reference', GARMIN_DATA_BADGE);
-    refBadge.title = gref.note || '';
-    status.appendChild(refBadge);
-    wrap.appendChild(status);
-  }
-  if (hrv.weekly_avg_ms && gref && gref.baseline_balanced_low && gref.baseline_balanced_upper) {
-    wrap.appendChild(hrvRangeGauge(hrv.weekly_avg_ms.value, gref.baseline_balanced_low, gref.baseline_balanced_upper));
-  }
-  var stats = hrvNightStats(hrv, hrvToday);
-  if (stats) wrap.appendChild(stats);
-  return wrap;
-}
+// 首頁體能狀況要放的 Garmin 卡片（2026-10-22 Fu 指定）：原有四張＋身體能量指數＋最大攝氧量。
+// 卡片本身與趨勢頁「Garmin 數據」共用 views/garmin.js，這裡只決定放哪幾張。
+var HOME_GARMIN_KEYS = ['hrv', 'heart_rate', 'sleep', 'training_readiness', 'body_battery', 'vo2max'];
 
 export function renderHomeBody() {
   var node = $('kpi-strip');
   if (!node) return;
-  clear(node);
-  var kpi = state.todayKpi;
-  if (!kpi) { showLoading(node, '載入體能狀況'); return; }
-
-  var cards = h('div', 'home-cards');
-  var hrv = state.today && state.today.hrv;
-
-  // HRV：主數字取 /api/today 的事實（帶信賴度）；沒有時退回 30 天序列的最後一筆
-  // 主數字與 Garmin HRV 狀態頁一致：7 日均值（hrv_weekly_avg_ms）；夜間平均與最高 5 分鐘
-  // 平均放在卡片下方。沒有 7 日均值時退回昨夜值。
-  var hrvVals = numericValues(kpi.hrvPoints);
-  var weeklyVals = numericValues(kpi.hrvWeeklyPoints);
-  var hrvToday = hrv && hrv.today_ms && typeof hrv.today_ms.value === 'number' ? hrv.today_ms : null;
-  var hrvWeekly = hrv && hrv.weekly_avg_ms && typeof hrv.weekly_avg_ms.value === 'number' ? hrv.weekly_avg_ms : null;
-  if (hrvWeekly || hrvToday || hrvVals.length) {
-    var useWeekly = !!hrvWeekly;
-    var hrvCard = kpiCard({
-      label: '心率變異度',
-      abbr: useWeekly ? 'HRV 7 天平均' : 'HRV 昨夜',
-      value: C.formatNumber(useWeekly ? hrvWeekly.value
-        : (hrvToday ? hrvToday.value : hrvVals[hrvVals.length - 1]), 0),
-      unit: 'ms',
-      badge: useWeekly ? confBadge(hrvWeekly) : (hrvToday ? confBadge(hrvToday) : null),
-      note: hrv && hrv.as_of ? hrv.as_of + ' 的資料（今日尚未同步）' : '近 30 天走勢（7 日均值）',
-      series: useWeekly && weeklyVals.length ? weeklyVals : hrvVals,
-      tip: [
-        '心率變異度（HRV）：睡眠期間相鄰心跳間隔變化的均方根（RMSSD），由手錶整夜量測。',
-        '主數字是近 7 天夜間平均的滾動均值，與 Garmin 的 HRV 狀態頁同一口徑；單晚的夜間平均與最高 5 分鐘平均列在下方。',
-        '數值高低因人而異，只能和自己的基準比較。量表上的綠帶是 Garmin 算出的平衡區間，圓點是 7 日均值。'
-      ]
-    });
-    if (hrv) hrvCard.appendChild(hrvDetails(hrv, hrvToday));
-    cards.appendChild(hrvCard);
-  }
-
-  var rhrVals = numericValues(kpi.rhrPoints);
-  if (rhrVals.length) {
-    cards.appendChild(kpiCard({
-      label: '靜止心率',
-      value: C.formatNumber(rhrVals[rhrVals.length - 1], 0),
-      unit: 'bpm',
-      note: '30 天平均 ' + C.formatNumber(average(rhrVals), 0) + ' bpm',
-      series: rhrVals,
-      invert: true,
-      tip: ['手錶整天量到的最低心率區段平均（多在睡眠中）。', '和自己近期的平均比較才有意義；連續幾天明顯偏高，常與疲勞、睡眠不足或生病有關。']
-    }));
-  }
-
-  var sleepVals = numericValues(kpi.sleepPoints);
-  if (sleepVals.length) {
-    var durs = numericValues(kpi.sleepDurationPoints);
-    var lastDur = durs.length ? durs[durs.length - 1] : null;
-    var sleepScore = sleepVals[sleepVals.length - 1];
-    var sleepCard = kpiCard({
-      label: '睡眠分數',
-      value: C.formatNumber(sleepScore, 0),
-      note: lastDur ? '時長 ' + Math.floor(lastDur / 3600) + ' 小時 ' + Math.round((lastDur % 3600) / 60) + ' 分' : '近 30 天走勢',
-      series: sleepVals,
-      tip: ['Garmin 依睡眠時長、各睡眠階段比例、壓力與中斷次數算出的 0–100 分數，演算法未公開。',
-        '分級色帶：優 90 以上、良 80–89、尚可 60–79、差 59 以下，圓點是最新一晚的分數。']
-    });
-    sleepCard.appendChild(sleepScoreDetails(sleepScore));
-    cards.appendChild(sleepCard);
-  }
-
-  var readyVals = numericValues(kpi.readinessPoints);
-  if (readyVals.length) {
-    var readyBadge = h('span', 'conf-badge conf-reference', GARMIN_DATA_BADGE);
-    cards.appendChild(kpiCard({
-      label: '訓練完備程度',
-      value: C.formatNumber(readyVals[readyVals.length - 1], 0),
-      badge: readyBadge,
-      note: '近 30 天走勢',
-      series: readyVals,
-      tip: ['Garmin 綜合睡眠、恢復時間、HRV 與近期負荷給出的 0–100 分數（即 Garmin 的訓練準備度），演算法未公開。',
-        '與「今天」區塊的綜合訓練完備程度（本專案規則引擎）是兩回事：規則引擎的依據公開、帶信賴度；這個是 Garmin 數據，不納入本專案判斷。']
-    }));
-  }
-
-  if (!cards.childNodes.length) {
-    showUnavailable(node, '近 30 天沒有身體數據');
-    return;
-  }
-  node.appendChild(cards);
+  renderGarminWall(node, state.todayKpi && state.todayKpi.garminCards, HOME_GARMIN_KEYS, '載入體能狀況');
 }
 
 /**
@@ -760,21 +562,13 @@ export function renderHomeBody() {
 export function loadTodayKpi() {
   Promise.all([
     api('/api/training-load?range=30d').catch(function () { return null; }),
-    api('/api/wellness-trend?range=30d').catch(function () { return null; })
+    api('/api/garmin-cards?range=30d').catch(function () { return { cards: {} }; })
   ]).then(function (res) {
     var load = res[0];
-    var wellness = res[1];
-    var metrics = (wellness && wellness.metrics) || {};
-    function pts(key) { return (metrics[key] && metrics[key].points) || []; }
     state.todayKpi = {
       loadSeries: (load && load.series) || [],
       garminLoad: (load && load.garmin_reference) || null,
-      hrvPoints: pts('hrv_ms'),
-      hrvWeeklyPoints: pts('hrv_weekly_avg_ms'),
-      rhrPoints: pts('resting_hr_bpm'),
-      sleepPoints: pts('sleep_score'),
-      sleepDurationPoints: pts('sleep_duration_sec'),
-      readinessPoints: pts('training_readiness_score')
+      garminCards: res[1]
     };
     renderHomeLoad();
     renderHomeBody();

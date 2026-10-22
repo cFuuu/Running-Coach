@@ -971,11 +971,162 @@ function sparkline(values, opts) {
   return svg;
 }
 
+// ---------------------------------------------------------------- Garmin 卡片小圖
+// 以下四個是 Garmin 網頁卡片牆的固定尺寸小圖（views/garmin.js 使用），
+// 與上方的時間序列圖不同：尺寸固定、不吃容器寬度、沒有座標軸。
+
+var GAUGE_SIZE = 100;
+var GAUGE_R = 42;
+
+function polar(cx, cy, r, deg) {
+  var rad = (deg - 90) * Math.PI / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+/** 圓弧路徑：角度以 12 點鐘為 0°，順時針遞增。 */
+function arcPath(cx, cy, r, fromDeg, toDeg) {
+  var a = polar(cx, cy, r, fromDeg);
+  var b = polar(cx, cy, r, toDeg);
+  var large = toDeg - fromDeg > 180 ? 1 : 0;
+  return 'M' + a.x.toFixed(2) + ' ' + a.y.toFixed(2)
+    + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + b.x.toFixed(2) + ' ' + b.y.toFixed(2);
+}
+
+/**
+ * 環形進度（步數、樓層、熱血時間、身體能量、壓力）：整圈為目標，超過目標時畫滿。
+ * @param {number} fraction 0～1（超出會被夾住）
+ * @param {Object} [opts] { className:string 填色的 class }
+ */
+function ringGauge(fraction, opts) {
+  var options = opts || {};
+  var c = GAUGE_SIZE / 2;
+  var svg = el('svg', { viewBox: '0 0 ' + GAUGE_SIZE + ' ' + GAUGE_SIZE, class: 'gc-gauge', 'aria-hidden': 'true' });
+  svg.appendChild(el('circle', { cx: c, cy: c, r: GAUGE_R, class: 'gc-gauge-track' }));
+  var f = Math.max(0, Math.min(1, fraction || 0));
+  if (f >= 0.999) {
+    svg.appendChild(el('circle', { cx: c, cy: c, r: GAUGE_R, class: 'gc-gauge-fill ' + (options.className || '') }));
+  } else if (f > 0) {
+    svg.appendChild(el('path', { d: arcPath(c, c, GAUGE_R, 0, f * 360), class: 'gc-gauge-fill ' + (options.className || '') }));
+  }
+  return svg;
+}
+
+/**
+ * 分段弧形量表（訓練完備程度、VO2max 分級）：缺口朝下的 270° 弧，
+ * 各分段依 bands 上色，圓點標出數值位置。只標位置，不另寫判讀。
+ * @param {number} value
+ * @param {Object} opts { min, max, bands:[{to:number, className:string}] 依序遞增 }
+ */
+function bandArc(value, opts) {
+  var c = GAUGE_SIZE / 2;
+  var start = -135;
+  var sweep = 270;
+  var gap = 3; // 段與段之間留縫，對應 Garmin 的分段樣式
+  var span = opts.max - opts.min;
+  function degOf(v) { return start + (Math.max(opts.min, Math.min(opts.max, v)) - opts.min) / span * sweep; }
+  var svg = el('svg', { viewBox: '0 0 ' + GAUGE_SIZE + ' ' + GAUGE_SIZE, class: 'gc-gauge', 'aria-hidden': 'true' });
+  var from = opts.min;
+  opts.bands.forEach(function (band, i) {
+    var a = degOf(from) + (i === 0 ? 0 : gap / 2);
+    var b = degOf(band.to) - (i === opts.bands.length - 1 ? 0 : gap / 2);
+    if (b > a) svg.appendChild(el('path', { d: arcPath(c, c, GAUGE_R, a, b), class: 'gc-band ' + band.className }));
+    from = band.to;
+  });
+  if (typeof value === 'number' && isFinite(value)) {
+    var p = polar(c, c, GAUGE_R, degOf(value));
+    svg.appendChild(el('circle', { cx: p.x.toFixed(2), cy: p.y.toFixed(2), r: 5, class: 'gc-band-dot' }));
+  }
+  return svg;
+}
+
+function hhmmToMinutes(s) {
+  var parts = String(s).split(':');
+  return Number(parts[0]) * 60 + Number(parts[1]);
+}
+
+/**
+ * 睡眠階段圖：由下而上為深眠、淺眠、REM、清醒（Garmin 的排法），
+ * 每段畫成從底部長起的柱，高度代表階段。跨午夜的時間自動接續。
+ * @param {Array} segments [["HH:MM","HH:MM",階段], ...]，階段 0 深眠 1 淺眠 2 REM 3 清醒
+ */
+function hypnogram(segments) {
+  if (!segments || !segments.length) return null;
+  var W = 200;
+  var H = 64;
+  var heights = { 0: 0.35, 1: 0.6, 2: 0.8, 3: 1 };
+  var classes = { 0: 'gc-sleep-deep', 1: 'gc-sleep-light', 2: 'gc-sleep-rem', 3: 'gc-sleep-awake' };
+  var base = hhmmToMinutes(segments[0][0]);
+  function rel(s) { var m = hhmmToMinutes(s) - base; return m < 0 ? m + 1440 : m; }
+  var total = rel(segments[segments.length - 1][1]) || 1;
+  var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', class: 'gc-hypnogram', 'aria-hidden': 'true' });
+  segments.forEach(function (seg) {
+    var x0 = rel(seg[0]) / total * W;
+    var x1 = rel(seg[1]) / total * W;
+    var hgt = (heights[seg[2]] || 0.5) * H;
+    svg.appendChild(el('rect', {
+      x: x0.toFixed(2), y: (H - hgt).toFixed(2),
+      width: Math.max(0.6, x1 - x0).toFixed(2), height: hgt.toFixed(2),
+      class: classes[seg[2]] || 'gc-sleep-light'
+    }));
+  });
+  return svg;
+}
+
+/**
+ * 24 小時日內圖（心率、壓力、身體能量），X 軸固定 00:00～24:00。
+ * @param {Array} points [[當日第幾分鐘, 數值|null], ...]
+ * @param {Object} opts { mode:'line'|'bars'|'area', min, max, barClass:function(v)→class }
+ */
+function intradayChart(points, opts) {
+  var vals = (points || []).filter(function (p) { return p[1] !== null && p[1] !== undefined; });
+  if (vals.length < 2) return null;
+  var W = 240;
+  var H = 48;
+  var min = opts.min !== undefined ? opts.min : Math.min.apply(null, vals.map(function (p) { return p[1]; }));
+  var max = opts.max !== undefined ? opts.max : Math.max.apply(null, vals.map(function (p) { return p[1]; }));
+  var span = max - min || 1;
+  function x(m) { return m / 1440 * W; }
+  function y(v) { return H - (v - min) / span * (H - 2) - 1; }
+  var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', class: 'gc-intraday', 'aria-hidden': 'true' });
+  if (opts.mode === 'bars') {
+    var bw = W / 480; // 3 分鐘一點
+    vals.forEach(function (p) {
+      svg.appendChild(el('rect', {
+        x: x(p[0]).toFixed(2), y: y(p[1]).toFixed(2), width: bw.toFixed(2),
+        height: (H - y(p[1])).toFixed(2), class: opts.barClass ? opts.barClass(p[1]) : 'gc-intraday-bar'
+      }));
+    });
+    return svg;
+  }
+  // 折線：null 點斷開，不跨越無資料區段
+  var d = '';
+  var pen = false;
+  (points || []).forEach(function (p) {
+    if (p[1] === null || p[1] === undefined) { pen = false; return; }
+    d += (pen ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1) + ' ';
+    pen = true;
+  });
+  if (opts.mode === 'area') {
+    var first = vals[0][0];
+    var last = vals[vals.length - 1][0];
+    svg.appendChild(el('path', {
+      d: d + 'L' + x(last).toFixed(1) + ' ' + H + ' L' + x(first).toFixed(1) + ' ' + H + ' Z',
+      class: 'gc-intraday-area'
+    }));
+  }
+  svg.appendChild(el('path', { d: d, class: 'gc-intraday-line' }));
+  return svg;
+}
+
 // ---------------------------------------------------------------- 對外介面
 
 export {
   lapPaceChart,
   sparkline,
+  ringGauge,
+  bandArc,
+  hypnogram,
+  intradayChart,
   recordsChart,
   hrZoneChart,
   trendLineChart,

@@ -10,6 +10,7 @@ export var state = {
   selectedSessionId: null,
   sessionDetail: null,
   wellness: null,
+  garminCards: null,     // 趨勢頁「Garmin 數據」：/api/garmin-cards（吃 range）
   trainingDays: [],
   recoveryImpacts: [],
   meta: null,
@@ -23,7 +24,7 @@ export var state = {
 
   // 今日頁的身體狀況趨勢與最近訓練清單。兩者都取固定區間（近 30 天），
   // 與頂列的 range 切換無關——今日頁不吃 range（見 VIEWS.today.hasRange）。
-  todayKpi: null,        // { loadSeries, hrvPoints, rhrPoints, sleepPoints, sleepDurationPoints }
+  todayKpi: null,        // { loadSeries, garminLoad, garminCards }（首頁固定近 30 天）
   recentSessions: null,  // /api/sessions 近 30 天的場次（取前 8 筆顯示）
   overview: null,        // 趨勢頁區間摘要用的 /api/overview（吃 range）
 
@@ -151,7 +152,7 @@ export var CONFIDENCE_LABEL = { high: '可信', low: '低信心度', unusable: '
 // 只取前綴對照
 export var GARMIN_TRAINING_STATUS_LABEL = {
   PEAKING: '巔峰',
-  PRODUCTIVE: '有效訓練',
+  PRODUCTIVE: '高效訓練',
   MAINTAINING: '維持',
   RECOVERY: '恢復',
   UNPRODUCTIVE: '效率低落',
@@ -159,7 +160,8 @@ export var GARMIN_TRAINING_STATUS_LABEL = {
   OVERREACHING: '過度訓練',
   STRAINED: '疲勞'
 };
-export var GARMIN_ACWR_STATUS_LABEL = { LOW: '偏低', OPTIMAL: '最佳', HIGH: '偏高', VERY_HIGH: '非常高' };
+// PRODUCTIVE「高效訓練」與 OPTIMAL「極佳」對照 Garmin Connect 網頁用詞（2026-10-22）
+export var GARMIN_ACWR_STATUS_LABEL = { LOW: '偏低', OPTIMAL: '極佳', HIGH: '偏高', VERY_HIGH: '非常高' };
 
 export var HRV_STATUS_LABEL = {
   BALANCED: '平衡',

@@ -2,6 +2,7 @@
  * trends.js — 趨勢 view：依類別排列的走勢圖（吃頂列時間範圍）
  *
  * 類別與預設順序（2026-10-21 與 Fu 議定）：訓練負荷 → 恢復與身體 → 強度分布 → 能力 → 訓練量。
+ * 2026-10-22 加入「Garmin 數據」（恢復與身體之後），卡片定義在 views/garmin.js。
  * 分類依據見 docs/dev/FRONTEND_REFACTOR.md 階段 6；首頁放「現在的值」，這裡放「走勢」。
  *
  * 自訂（core/customize.js）：類別的順序與顯隱（偏好 key 'trends'），以及各類別內圖表的
@@ -19,6 +20,7 @@ import { customizer, visibleDefs } from '../core/customize.js';
 import { renderTsbChart, renderGarminAcuteChart, renderSessionTrend, SESSION_TRENDS } from './load.js';
 import { renderWellnessMetric } from './wellness.js';
 import { renderOverviewStrip, renderWeeklyVolume, renderRecentVolume, renderZones } from './overview.js';
+import { GARMIN_CARD_DEFS, renderGarminCard } from './garmin.js';
 
 // 歸在「訓練負荷」而非「恢復與身體」的 Garmin 每日指標
 var LOAD_WELLNESS_KEYS = ['acwr', 'recovery_time_hours'];
@@ -34,6 +36,20 @@ function wellnessDefsFor(keys, include) {
         render: function (node) { renderWellnessMetric(d, node); }
       };
     });
+}
+
+/** Garmin 卡片：資料還沒回來時顯示載入中（整頁重畫時各卡各自判斷）。 */
+function garminCardDefs() {
+  return GARMIN_CARD_DEFS.map(function (d) {
+    return {
+      key: d.key,
+      label: d.label,
+      render: function (node) {
+        if (!state.garminCards) { showLoading(node, '載入 ' + d.label); return; }
+        renderGarminCard(d.key, state.garminCards.cards[d.key], node);
+      }
+    };
+  });
 }
 
 function sessionTrend(key) {
@@ -55,6 +71,13 @@ var CATEGORIES = [
   {
     key: 'body', label: '恢復與身體', settingsKey: 'wellness', hint: '淡色背景為訓練日',
     charts: function () { return wellnessDefsFor(LOAD_WELLNESS_KEYS, false); }
+  },
+  {
+    // 2026-10-22：仿 Garmin Connect 網頁的卡片牆。卡片小、一列多張，故用自己的格線
+    key: 'garmin', label: 'Garmin 數據', settingsKey: 'trends-garmin',
+    hint: '手錶與 Garmin Connect 的輸出，僅供顯示，不納入本專案判斷',
+    gridClass: 'gc-grid', cardClass: 'gc-slot',
+    charts: garminCardDefs
   },
   {
     key: 'intensity', label: '強度分布', settingsKey: 'trends-intensity',
@@ -112,13 +135,13 @@ export function renderTrendsPage() {
     }));
     section.appendChild(catHead);
 
-    var grid = h('div', 'trend-grid');
+    var grid = h('div', cat.gridClass || 'trend-grid');
     var shown = visibleDefs(cat.settingsKey, charts);
     if (shown.length === 0) {
       grid.appendChild(h('div', 'state-msg state-unavailable', '這個類別的圖表都已隱藏，可在右上角「⚙ 自訂」重新勾選。'));
     }
     shown.forEach(function (chart) {
-      var card = h('div', 'trend-card');
+      var card = h('div', cat.cardClass || 'trend-card');
       grid.appendChild(card);
       jobs.push({ chart: chart, node: card });
     });
@@ -133,6 +156,7 @@ export function renderTrendsPage() {
 export function showTrendsLoading() {
   state.loadSeries = null;
   state.wellness = null;
+  state.garminCards = null;
   state.overview = null;
   state.sessionsReady = false;
   var body = $('trends-body');

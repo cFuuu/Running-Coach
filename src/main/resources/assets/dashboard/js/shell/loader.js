@@ -86,6 +86,13 @@ export function loadRangeData() {
     showError($('trends-body'), err.message);
   });
 
+  // Garmin 卡片牆（獨立失敗：拿不到只影響這個類別，各卡顯示無資料）
+  api('/api/garmin-cards?range=' + state.range).catch(function () { return { cards: {} }; })
+    .then(function (data) {
+      state.garminCards = data;
+      renderOrDefer('trends', renderTrendsPage);
+    });
+
   // 訓練負荷（獨立於場次/身體狀況，走同一個 range）
   loadLoadSeries();
   loadOverview();
