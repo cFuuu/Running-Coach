@@ -339,7 +339,10 @@ function raceListPanel(all) {
     var name = raceNameRow(race, 'race-list-name');
     if (race.is_target) name.appendChild(h('span', 'race-target-tag', '目標'));
     row.appendChild(name);
-    row.appendChild(h('span', 'race-list-days', race.days_left === 0 ? '比賽日' : race.days_left + ' 天'));
+    var days = h('span', 'race-list-days');
+    days.appendChild(h('span', null, race.days_left === 0 ? '比賽日' : race.days_left + ' 天'));
+    if (race.days_left !== 0) days.appendChild(h('span', 'race-weeks', raceWeeksText(race.days_left)));
+    row.appendChild(days);
     list.appendChild(row);
   });
   return list;

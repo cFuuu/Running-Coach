@@ -76,7 +76,21 @@
   <!-- ---------------------------------------------------------- 側邊列 -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      <span class="sidebar-brand-mark" aria-hidden="true">🏃</span>
+      <!--
+        單色品牌圖：向前傾的跑者（實心頭、四肢線條）、左側三條速度線、腳下兩道跑道弧線。
+        stroke 用 currentColor，顏色由 .sidebar-brand-mark 的 color 決定（深淺色自動跟著變）。
+      -->
+      <svg class="sidebar-brand-mark" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="20.5" cy="6.5" r="2.7" fill="currentColor" stroke="none"></circle>
+        <path d="M18.4 11.6 14.6 18"></path>
+        <path d="M17.6 12.6 21.6 15.2 24.8 13"></path>
+        <path d="M17.6 12.6 13.4 13.2 11.4 16.4"></path>
+        <path d="M14.6 18 19.4 20.2 17.4 25.2"></path>
+        <path d="M14.6 18 10.8 21.6 7.6 20.6"></path>
+        <path d="M2.5 9.5h4M1.5 13.5h3.6M3.5 17.5h2.6" stroke-width="1.6"></path>
+        <path d="M4.5 27c7.4 2.2 15.6 2.2 23 0" stroke-width="1.7"></path>
+        <path d="M11 30.6c3.4 .8 6.6 .8 10 0" stroke-width="1.5"></path>
+      </svg>
       <span class="sidebar-brand-text">Running Coach</span>
     </div>
 
