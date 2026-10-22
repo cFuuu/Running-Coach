@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.main.python.services.race_names import (
     is_personal_test,
+    load_easy_pace_range,
     load_race_names,
     load_race_schedule,
     race_countdown,
@@ -181,6 +182,32 @@ class RaceCountdownTest(unittest.TestCase):
             race_countdown({"target": None, "upcoming": []}, self.TODAY),
             {"next": None, "target": None},
         )
+
+
+class LoadEasyPaceRangeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _load(self, heading, value):
+        text = f"## {heading}\n\n| 項目 | 值 |\n|---|---|\n| 輕鬆配速 | {value} |\n"
+        path = Path(self.tmp.name) / "profile.md"
+        path.write_text(text, encoding="utf-8")
+        return load_easy_pace_range(path)
+
+    def test_reads_range(self):
+        self.assertEqual(self._load("輕鬆跑能力", "6:00~6:30 /km"), (360, 390))
+
+    def test_reversed_range_is_ordered_fast_to_slow(self):
+        self.assertEqual(self._load("輕鬆跑能力", "**6:30–6:00** /km"), (360, 390))
+
+    def test_missing_section_or_bad_value_is_none(self):
+        self.assertIsNone(self._load("別的小節", "6:00~6:30"))
+        self.assertIsNone(self._load("輕鬆跑能力", "很慢"))
+
+    def test_missing_file_is_none(self):
+        self.assertIsNone(load_easy_pace_range(Path(self.tmp.name) / "nope.md"))
+        self.assertIsNone(load_easy_pace_range(None))
 
 
 class IsPersonalTestTest(unittest.TestCase):

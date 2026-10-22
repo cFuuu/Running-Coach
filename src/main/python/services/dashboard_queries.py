@@ -1356,11 +1356,16 @@ def get_calendar(
     start: str | None = None,
     end: str | None = None,
     today: datetime.date | None = None,
+    easy_pace_range: tuple[int, int] | None = None,
 ) -> dict:
     """[start, end] 內每一天的課表與實際活動（全部運動類型），供週條與
     行事曆共用。**刻意不走 resolve_range()**——那個函式錨定「資料庫最新
     一天」，會讓行事曆被截斷；行事曆要用真實今天當作參照點（呼應既有
     Phase 6 規格：行事曆用真實今天，其他 range 圖表維持錨定資料庫最新日）。
+
+    easy_pace_range：學員檔的輕鬆配速 (較快, 較慢) 秒/公里。課表只寫時間、沒寫距離的
+    課，用「時間 ÷ 區間中點」推算 estimated_distance_km；沒給或課表已有距離則為 None。
+    推算值與 planned_distance_km 分開放，呈現端才分得出哪個是教練寫的、哪個是估的。
 
     課表與活動的配對重用 plan_reconciliation.match_activity_to_plan()——
     與單場明細（_fetch_planned）走同一套規則，避免行事曆另立一份配對邏輯。
@@ -1394,13 +1399,23 @@ def get_calendar(
         (resolved, start, end),
     ).fetchall()
     plans_by_date: dict[str, list[dict]] = {}
+    easy_mid_pace = sum(easy_pace_range) / 2 if easy_pace_range else None
     for row in plan_rows:
-        plans_by_date.setdefault(row["planned_date"], []).append(dict(row))
+        plan = dict(row)
+        plan["estimated_distance_km"] = (
+            plan["planned_duration_sec"] / easy_mid_pace
+            if easy_mid_pace
+            and not plan["planned_distance_km"]
+            and plan["planned_duration_sec"]
+            and plan["workout_type"] in plan_reconciliation.RUNNING_WORKOUT_TYPES
+            else None
+        )
+        plans_by_date.setdefault(row["planned_date"], []).append(plan)
 
     activity_rows = conn.execute(
         """
         SELECT id, date(started_at) AS d, activity_type, workout_type,
-               title, distance_km, duration_sec
+               title, distance_km, duration_sec, avg_hr_bpm
         FROM activities
         WHERE athlete_id = ? AND date(started_at) >= ? AND date(started_at) <= ?
         ORDER BY started_at
@@ -1449,6 +1464,7 @@ def get_calendar(
                     "workout_type": activity_row["workout_type"],
                     "distance_km": activity_row["distance_km"],
                     "duration_sec": activity_row["duration_sec"],
+                    "avg_hr_bpm": activity_row["avg_hr_bpm"],
                     "title": activity_row["title"],
                     "plan_match": {
                         "state": match["state"],
@@ -1486,6 +1502,7 @@ def get_calendar(
                         "planned_distance_km": p["planned_distance_km"],
                         "planned_pace_sec_per_km": p["planned_pace_sec_per_km"],
                         "planned_duration_sec": p["planned_duration_sec"],
+                        "estimated_distance_km": p["estimated_distance_km"],
                         "plan_source": p["plan_source"],
                         # 外部課表的教練原文（跑班寫法如 P"6:05-5:55、r400m3'30）放在這裡，
                         # 前端顯示原文而非只顯示課種，避免資訊被壓扁成「節奏跑 13 km」

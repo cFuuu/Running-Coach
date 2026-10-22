@@ -822,6 +822,45 @@ class TestCalendar(DashboardQueryTestCase):
         self.assertEqual(plan["planned_duration_sec"], 3900)
         self.assertEqual(plan["notes"], "D1：60'-70'FR+ST*3")
 
+    def test_time_only_plan_gets_estimated_distance_from_easy_pace_midpoint(self):
+        """課表只寫時間：用輕鬆配速區間中點換算預計里程，與教練寫的距離分開放。"""
+        self.conn.execute(
+            "INSERT INTO training_plan (athlete_id, planned_date, workout_type, "
+            "planned_duration_sec, plan_source, created_at) VALUES (?, '2026-03-02', "
+            "'easy', 2700, 'external', '2026-03-01T00:00:00')",
+            (self.athlete_id,),
+        )
+        result = queries.get_calendar(
+            self.conn, start="2026-03-02", end="2026-03-02",
+            today=datetime.date(2026, 3, 10), easy_pace_range=(360, 390),
+        )
+        plan = result["days"][0]["planned"][0]
+        self.assertIsNone(plan["planned_distance_km"])
+        self.assertAlmostEqual(plan["estimated_distance_km"], 2700 / 375)
+
+    def test_no_estimate_without_easy_pace_or_when_distance_given(self):
+        self.conn.execute(
+            "INSERT INTO training_plan (athlete_id, planned_date, workout_type, "
+            "planned_duration_sec, plan_source, created_at) VALUES (?, '2026-03-02', "
+            "'easy', 2700, 'external', '2026-03-01T00:00:00')",
+            (self.athlete_id,),
+        )
+        self.conn.execute(
+            "INSERT INTO training_plan (athlete_id, planned_date, workout_type, "
+            "planned_distance_km, planned_duration_sec, plan_source, created_at) "
+            "VALUES (?, '2026-03-03', 'easy', 8.0, 3000, 'external', '2026-03-01T00:00:00')",
+            (self.athlete_id,),
+        )
+        no_pace = queries.get_calendar(
+            self.conn, start="2026-03-02", end="2026-03-02", today=datetime.date(2026, 3, 10)
+        )
+        self.assertIsNone(no_pace["days"][0]["planned"][0]["estimated_distance_km"])
+        with_distance = queries.get_calendar(
+            self.conn, start="2026-03-03", end="2026-03-03",
+            today=datetime.date(2026, 3, 10), easy_pace_range=(360, 390),
+        )
+        self.assertIsNone(with_distance["days"][0]["planned"][0]["estimated_distance_km"])
+
     def test_planned_day_matched_to_activity_is_planned_done(self):
         """2026-03-09 有 lsd 課表且有一場跑步活動——應配對成功。"""
         result = queries.get_calendar(

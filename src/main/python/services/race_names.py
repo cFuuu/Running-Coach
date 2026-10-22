@@ -169,6 +169,27 @@ def load_race_schedule(path: Path | str | None) -> dict[str, Any]:
     return {"target": target, "upcoming": upcoming}
 
 
+# 學員檔裡「輕鬆跑能力」小節（項目｜值 的鍵值表）：輕鬆配速寫成「6:00~6:30 /km」
+EASY_PACE_SECTION_HEADING = "輕鬆跑能力"
+_EASY_PACE_RANGE = re.compile(r"(\d{1,2}):([0-5]\d)\s*[~～\-–—]\s*(\d{1,2}):([0-5]\d)")
+
+
+def load_easy_pace_range(path: Path | str | None) -> tuple[int, int] | None:
+    """讀學員檔的輕鬆配速區間，回傳 (較快, 較慢) 秒/公里；沒寫或格式不對回傳 None。
+
+    課表只寫時間沒寫距離時，呼叫端用它的中點把時間換算成預計里程。
+    讀不到就回 None，呼叫端不推算，不去猜一個預設配速。
+    """
+    _, rows = _read_table(_read_lines(path), EASY_PACE_SECTION_HEADING, ("項目", "值"))
+    fields = {cells[0]: cells[1] for cells in rows if len(cells) >= 2}
+    match = _EASY_PACE_RANGE.search(fields.get("輕鬆配速", ""))
+    if not match:
+        return None
+    a = int(match.group(1)) * 60 + int(match.group(2))
+    b = int(match.group(3)) * 60 + int(match.group(4))
+    return (min(a, b), max(a, b))
+
+
 def race_countdown(schedule: dict[str, Any], today: datetime.date) -> dict[str, Any]:
     """由賽程算出「下場賽事」與「目標賽事」各還有幾天（比賽當天為 0）。
 

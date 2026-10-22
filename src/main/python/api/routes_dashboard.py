@@ -185,6 +185,7 @@ def read_calendar(
     ),
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
+    profile_path: Path | None = Depends(get_profile_path),
 ) -> dict:
     """[start, end] 內每日課表與實際活動，供週條與行事曆共用。
 
@@ -197,7 +198,14 @@ def read_calendar(
     if start_date > end_date:
         raise HTTPException(status_code=400, detail=f"start 不可晚於 end：{start} > {end}")
     today_date = _parse_date_param(today, "today") if today else None
-    return queries.get_calendar(conn, athlete_id, start, end, today_date)
+    return queries.get_calendar(
+        conn,
+        athlete_id,
+        start,
+        end,
+        today_date,
+        easy_pace_range=race_names.load_easy_pace_range(profile_path),
+    )
 
 
 @router.get("/training-load")
