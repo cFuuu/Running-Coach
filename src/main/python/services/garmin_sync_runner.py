@@ -139,18 +139,21 @@ DEFAULT_SYNC_DAYS = 7
 OVERLAP_DAYS = 3
 
 # 自動模式單次回溯上限。90 天可涵蓋一個完整馬拉松訓練週期（12–16 週），
-# 成本為 451 次請求／約 7.5 分鐘（見 estimate_sync_cost）。更早的缺口應走
+# 成本為 631 次請求／約 10.5 分鐘（見 estimate_sync_cost；2026-10-22 每日端點
+# 5 → 7 後由 451 次上升）。更早的缺口應走
 # 官方匯出包——一次拿完整歷史，且含分圈與 workout_type，品質優於 API 摘要。
-# ⚠️ 不可貿然調高：wellness 是逐日各打 5 個端點，天數與請求數成正比，
-# garmin_api_client 的硬上限 365 天等於 1826 次請求／約 30 分鐘連續請求，
+# ⚠️ 不可貿然調高：wellness 是逐日各打 7 個端點，天數與請求數成正比，
+# garmin_api_client 的硬上限 365 天等於 2556 次請求／約 43 分鐘連續請求，
 # 已超出正常使用者行為的樣子，有觸發 Cloudflare 風控的風險。
 MAX_AUTO_SYNC_DAYS = 90
 
 # 每日身體數據的端點數（stats／sleep／hrv／training_readiness／
-# training_status），與 garmin_api_client.fetch_daily_wellness_raw() 的
-# 來源數一致。2026-09-02：Task 1B-9 新增 training_status，由 4 → 5
+# training_status／stress_intraday／heart_rate_intraday），與
+# garmin_api_client.fetch_daily_wellness_raw() 的來源數一致。
+# 2026-09-02：Task 1B-9 新增 training_status，由 4 → 5；2026-10-22 新增
+# 兩支日內序列（Garmin 卡片的日內圖），5 → 7
 # ——若忘記同步更新，耗時預告會低估，違反與 Fu 議定的預告行為。
-_WELLNESS_ENDPOINTS_PER_DAY = 5
+_WELLNESS_ENDPOINTS_PER_DAY = 7
 
 # 節流間隔沿用 client 的預設值，讓耗時預估與實際行為一致。
 REQUEST_INTERVAL_SEC = DEFAULT_REQUEST_INTERVAL_SEC
@@ -456,11 +459,130 @@ def normalize_wellness(raw: dict) -> dict | None:
         # --- Training Readiness 快照的時點資訊（缺陷 C）---
         "readiness_input_context": readiness.get("inputContext"),
         "readiness_timestamp_local": readiness.get("timestampLocal"),
+        # --- 2026-10-22：Garmin 網頁卡片所需欄位（皆在既有 payload 內）---
+        "readiness_level": readiness.get("level"),
+        "readiness_feedback_short": readiness.get("feedbackShort"),
+        "sleep_start_local": _local_ms_to_iso(sleep_dto.get("sleepStartTimestampLocal")),
+        "sleep_end_local": _local_ms_to_iso(sleep_dto.get("sleepEndTimestampLocal")),
+        "respiration_sleep_avg": sleep_dto.get("averageRespirationValue"),
+        "respiration_low": stats.get("lowestRespirationValue"),
+        "respiration_high": stats.get("highestRespirationValue"),
+        "spo2_lowest": stats.get("lowestSpo2"),
+        "spo2_latest": stats.get("latestSpo2"),
+        "body_battery_latest": stats.get("bodyBatteryMostRecentValue"),
+        "body_battery_charged": stats.get("bodyBatteryChargedValue"),
+        "body_battery_drained": stats.get("bodyBatteryDrainedValue"),
+        "calories_active": _round_or_none(stats.get("activeKilocalories")),
+        "calories_resting": _round_or_none(stats.get("bmrKilocalories")),
+        "intensity_minutes_moderate": stats.get("moderateIntensityMinutes"),
+        "intensity_minutes_vigorous": stats.get("vigorousIntensityMinutes"),
+        "intensity_minutes_weekly_goal": stats.get("intensityMinutesGoal"),
+        "floors_ascended": stats.get("floorsAscended"),
+        "floors_goal": _round_or_none(stats.get("userFloorsAscendedGoal")),
+        "steps_goal": stats.get("dailyStepGoal"),
     }
     # 除了日期以外全為 None 代表該日無任何資料，不寫入空列。
     if all(v is None for k, v in row.items() if k != "date"):
         return None
     return row
+
+
+def _local_ms_to_iso(ms: float | None) -> str | None:
+    """Garmin 的 `*TimestampLocal` 是「把當地牆上時間當成 UTC」的毫秒數，
+    以 UTC 解讀即得當地時間，不可再套時區。"""
+    if ms is None:
+        return None
+    return (
+        datetime.datetime.fromtimestamp(ms / 1000, tz=datetime.timezone.utc)
+        .replace(tzinfo=None)
+        .isoformat(timespec="seconds")
+    )
+
+
+def _descriptor_index(descriptors: list[dict] | None, key: str, default: int) -> int:
+    """依 payload 附的欄位描述找出某欄在每個點裡的位置，找不到就用實測的預設位置。
+
+    壓力與心率的描述用 `index`／`key`，身體能量用
+    `bodyBatteryValueDescriptorIndex`／`bodyBatteryValueDescriptorKey`。
+    """
+    for d in descriptors or []:
+        name = d.get("key", d.get("bodyBatteryValueDescriptorKey"))
+        if name == key:
+            return d.get("index", d.get("bodyBatteryValueDescriptorIndex", default))
+    return default
+
+
+def _intraday_points(payload: dict, array_key: str, descriptors_key: str,
+                     value_key: str, value_default_index: int) -> list | None:
+    """把一支日內端點的序列轉成 `[[當日第幾分鐘, 數值], ...]`（當地時間）。
+
+    時間戳是 GMT 毫秒；用 payload 自帶的 `startTimestampLocal − startTimestampGMT`
+    換算當地時間，不寫死時區。負值（Garmin 的「無資料／活動中」）存成 None。
+    """
+    values = payload.get(array_key) or []
+    start_gmt = payload.get("startTimestampGMT")
+    start_local = payload.get("startTimestampLocal")
+    if not values or not start_gmt or not start_local:
+        return None
+    gmt = datetime.datetime.fromisoformat(start_gmt[:19])
+    local = datetime.datetime.fromisoformat(start_local[:19])
+    offset_ms = (local - gmt).total_seconds() * 1000
+    local_midnight = local.replace(hour=0, minute=0, second=0)
+    ts_i = _descriptor_index(payload.get(descriptors_key), "timestamp", 0)
+    val_i = _descriptor_index(payload.get(descriptors_key), value_key, value_default_index)
+    points = []
+    for p in values:
+        if not p or len(p) <= max(ts_i, val_i) or p[ts_i] is None:
+            continue
+        t = datetime.datetime.fromtimestamp((p[ts_i] + offset_ms) / 1000, tz=datetime.timezone.utc)
+        minute = int((t.replace(tzinfo=None) - local_midnight).total_seconds() // 60)
+        v = p[val_i]
+        points.append([minute, v if v is not None and v >= 0 else None])
+    return points or None
+
+
+def _sleep_level_segments(sleep: dict) -> list | None:
+    """睡眠階段時間軸：`[["HH:MM", "HH:MM", 階段], ...]`（當地時間）。"""
+    levels = sleep.get("sleepLevels") or []
+    dto = sleep.get("dailySleepDTO") or {}
+    local_ms = dto.get("sleepStartTimestampLocal")
+    gmt_ms = dto.get("sleepStartTimestampGMT")
+    if not levels or local_ms is None or gmt_ms is None:
+        return None
+    offset = datetime.timedelta(milliseconds=local_ms - gmt_ms)
+    segments = []
+    for lv in levels:
+        try:
+            start = datetime.datetime.fromisoformat(lv["startGMT"][:19]) + offset
+            end = datetime.datetime.fromisoformat(lv["endGMT"][:19]) + offset
+        except (KeyError, TypeError, ValueError):
+            continue
+        segments.append([start.strftime("%H:%M"), end.strftime("%H:%M"), int(lv.get("activityLevel") or 0)])
+    return segments or None
+
+
+def normalize_intraday(raw: dict) -> list[dict]:
+    """把單日原始回傳中的日內序列轉成 `wellness_intraday` 的列（每種一列）。
+
+    格式見 schema.sql 的 wellness_intraday 註解。沒有資料的種類不產生列。
+    """
+    stress = raw.get("stress_intraday") or {}
+    heart = raw.get("heart_rate_intraday") or {}
+    series = {
+        "sleep_levels": _sleep_level_segments(raw.get("sleep") or {}),
+        "stress": _intraday_points(
+            stress, "stressValuesArray", "stressValueDescriptorsDTOList", "stressLevel", 1),
+        "body_battery": _intraday_points(
+            stress, "bodyBatteryValuesArray", "bodyBatteryValueDescriptorsDTOList",
+            "bodyBatteryLevel", 2),
+        "heart_rate": _intraday_points(
+            heart, "heartRateValues", "heartRateValueDescriptors", "heartrate", 1),
+    }
+    return [
+        {"date": raw["date"], "kind": kind, "points_json": json.dumps(points, separators=(",", ":"))}
+        for kind, points in series.items()
+        if points
+    ]
 
 
 def _select_primary_device(device_map: dict | None) -> dict:
@@ -782,108 +904,72 @@ def _upsert_activities(conn: sqlite3.Connection, athlete_id: int, rows: list[dic
 
 
 def _upsert_wellness(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
+    """寫入 daily_wellness；重抓時只補空值不覆寫（COALESCE，理由見 OVERLAP_DAYS）。
+
+    欄位清單取自 normalize_wellness() 的輸出，INSERT 欄位、佔位符、
+    COALESCE 子句與參數都由同一份清單產生——原本四處手寫，每加一欄就要
+    改四個地方，對錯位置會讓值靜默寫進別的欄位。
+    """
+    if not rows:
+        return 0
     now = _utc_now_iso()
-    count = 0
+    columns = [k for k in rows[0] if k != "date"]
+    insert_cols = ", ".join(["athlete_id", "date", *columns, "source", "source_version", "fetched_at"])
+    placeholders = ", ".join("?" * (len(columns) + 5))
+    updates = ",\n".join(f"{c}=COALESCE(excluded.{c}, {c})" for c in columns)
+    sql = f"""
+        INSERT INTO daily_wellness ({insert_cols}) VALUES ({placeholders})
+        ON CONFLICT (athlete_id, date, source) DO UPDATE SET
+            {updates},
+            source_version=excluded.source_version,
+            fetched_at=excluded.fetched_at
+    """  # noqa: S608 — 欄位名來自程式內的 normalize_wellness，不含外部輸入
+    for row in rows:
+        conn.execute(
+            sql,
+            (athlete_id, row["date"], *(row[c] for c in columns),
+             SYNC_SOURCE, SYNC_SOURCE_VERSION, now),
+        )
+    return len(rows)
+
+
+def _upsert_intraday(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
+    """寫入 wellness_intraday。與每日摘要不同，重抓時整串覆寫：
+    當天稍早抓到的序列只到同步當下，晚點重抓的才完整。"""
+    now = _utc_now_iso()
     for row in rows:
         conn.execute(
             """
-            INSERT INTO daily_wellness (
-                athlete_id, date, resting_hr_bpm, hrv_ms, hrv_weekly_avg_ms, spo2_pct,
-                skin_temp_c, respiration_rate, sleep_duration_sec, sleep_quality,
-                sleep_score, stress_avg, all_day_stress_avg, body_battery_max,
-                body_battery_min, steps, training_readiness_score, recovery_time_hours,
-                acwr, hrv_baseline_low_upper, hrv_baseline_balanced_low,
-                hrv_baseline_balanced_upper, hrv_status, hrv_last_night_5min_high,
-                acute_load, rhr_7day_avg_bpm, sleep_deep_sec, sleep_light_sec,
-                sleep_rem_sec, sleep_awake_sec, body_battery_at_wake,
-                readiness_input_context, readiness_timestamp_local,
-                source, source_version, fetched_at
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )
-            ON CONFLICT (athlete_id, date, source) DO UPDATE SET
-                resting_hr_bpm=COALESCE(excluded.resting_hr_bpm, resting_hr_bpm),
-                hrv_ms=COALESCE(excluded.hrv_ms, hrv_ms),
-                hrv_weekly_avg_ms=COALESCE(excluded.hrv_weekly_avg_ms, hrv_weekly_avg_ms),
-                spo2_pct=COALESCE(excluded.spo2_pct, spo2_pct),
-                respiration_rate=COALESCE(excluded.respiration_rate, respiration_rate),
-                sleep_duration_sec=COALESCE(excluded.sleep_duration_sec, sleep_duration_sec),
-                sleep_score=COALESCE(excluded.sleep_score, sleep_score),
-                stress_avg=COALESCE(excluded.stress_avg, stress_avg),
-                all_day_stress_avg=COALESCE(excluded.all_day_stress_avg, all_day_stress_avg),
-                body_battery_max=COALESCE(excluded.body_battery_max, body_battery_max),
-                body_battery_min=COALESCE(excluded.body_battery_min, body_battery_min),
-                steps=COALESCE(excluded.steps, steps),
-                training_readiness_score=COALESCE(
-                    excluded.training_readiness_score, training_readiness_score),
-                recovery_time_hours=COALESCE(excluded.recovery_time_hours, recovery_time_hours),
-                acwr=COALESCE(excluded.acwr, acwr),
-                hrv_baseline_low_upper=COALESCE(
-                    excluded.hrv_baseline_low_upper, hrv_baseline_low_upper),
-                hrv_baseline_balanced_low=COALESCE(
-                    excluded.hrv_baseline_balanced_low, hrv_baseline_balanced_low),
-                hrv_baseline_balanced_upper=COALESCE(
-                    excluded.hrv_baseline_balanced_upper, hrv_baseline_balanced_upper),
-                hrv_status=COALESCE(excluded.hrv_status, hrv_status),
-                hrv_last_night_5min_high=COALESCE(
-                    excluded.hrv_last_night_5min_high, hrv_last_night_5min_high),
-                acute_load=COALESCE(excluded.acute_load, acute_load),
-                rhr_7day_avg_bpm=COALESCE(excluded.rhr_7day_avg_bpm, rhr_7day_avg_bpm),
-                sleep_deep_sec=COALESCE(excluded.sleep_deep_sec, sleep_deep_sec),
-                sleep_light_sec=COALESCE(excluded.sleep_light_sec, sleep_light_sec),
-                sleep_rem_sec=COALESCE(excluded.sleep_rem_sec, sleep_rem_sec),
-                sleep_awake_sec=COALESCE(excluded.sleep_awake_sec, sleep_awake_sec),
-                body_battery_at_wake=COALESCE(
-                    excluded.body_battery_at_wake, body_battery_at_wake),
-                readiness_input_context=COALESCE(
-                    excluded.readiness_input_context, readiness_input_context),
-                readiness_timestamp_local=COALESCE(
-                    excluded.readiness_timestamp_local, readiness_timestamp_local),
+            INSERT INTO wellness_intraday (
+                athlete_id, date, kind, points_json, source, source_version, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (athlete_id, date, kind, source) DO UPDATE SET
+                points_json=excluded.points_json,
                 source_version=excluded.source_version,
                 fetched_at=excluded.fetched_at
             """,
-            (
-                athlete_id,
-                row["date"],
-                row["resting_hr_bpm"],
-                row["hrv_ms"],
-                row["hrv_weekly_avg_ms"],
-                row["spo2_pct"],
-                row["skin_temp_c"],
-                row["respiration_rate"],
-                row["sleep_duration_sec"],
-                row["sleep_quality"],
-                row["sleep_score"],
-                row["stress_avg"],
-                row["all_day_stress_avg"],
-                row["body_battery_max"],
-                row["body_battery_min"],
-                row["steps"],
-                row["training_readiness_score"],
-                row["recovery_time_hours"],
-                row["acwr"],
-                row["hrv_baseline_low_upper"],
-                row["hrv_baseline_balanced_low"],
-                row["hrv_baseline_balanced_upper"],
-                row["hrv_status"],
-                row["hrv_last_night_5min_high"],
-                row["acute_load"],
-                row["rhr_7day_avg_bpm"],
-                row["sleep_deep_sec"],
-                row["sleep_light_sec"],
-                row["sleep_rem_sec"],
-                row["sleep_awake_sec"],
-                row["body_battery_at_wake"],
-                row["readiness_input_context"],
-                row["readiness_timestamp_local"],
-                SYNC_SOURCE,
-                SYNC_SOURCE_VERSION,
-                now,
-            ),
+            (athlete_id, row["date"], row["kind"], row["points_json"],
+             SYNC_SOURCE, SYNC_SOURCE_VERSION, now),
         )
-        count += 1
-    return count
+    return len(rows)
+
+
+def _sync_athlete_sex(conn: sqlite3.Connection, athlete_id: int, api: GarminApiClient) -> None:
+    """athlete_profile.sex 尚未取得時，向 Garmin 個人資料取一次（之後不再打）。
+
+    抓取失敗不影響同步——只是 VO2max 暫時沒有分級。
+    """
+    row = conn.execute(
+        "SELECT sex FROM athlete_profile WHERE id = ?", (athlete_id,)
+    ).fetchone()
+    if row is None or row["sex"]:
+        return
+    try:
+        sex = api.fetch_user_sex()
+    except GarminFetchError:
+        return
+    if sex:
+        conn.execute("UPDATE athlete_profile SET sex = ? WHERE id = ?", (sex, athlete_id))
 
 
 def _upsert_training_status(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
@@ -1130,8 +1216,8 @@ def estimate_sync_cost(days: int, expected_activities: int = 0) -> dict:
     """預估同步的 API 請求數與耗時，供呼叫端在真的打 API 前告知使用者。
 
     成本結構：活動只打 1 次（`get_activities_by_date` 吃日期區間），
-    wellness 則**逐日**各打 `_WELLNESS_ENDPOINTS_PER_DAY`（5）個端點，
-    故基本總數 = 1 + days × 5。
+    wellness 則**逐日**各打 `_WELLNESS_ENDPOINTS_PER_DAY`（7）個端點，
+    故基本總數 = 1 + days × 7。
     另若要補抓分圈，**每場跑步各多 1 次**（`get_activity_splits`）——
     `expected_activities` 即該筆數，未知時傳 0（僅低估分圈部分）。
     每次呼叫之間有 `REQUEST_INTERVAL_SEC` 的節流間隔。
@@ -1212,6 +1298,7 @@ def sync(
         ]
 
         wellness_rows = []
+        intraday_rows = []
         training_status_rows = []
         for offset in range(days):
             day = start_date + datetime.timedelta(days=offset)
@@ -1219,6 +1306,7 @@ def sync(
             normalized = normalize_wellness(day_raw)
             if normalized is not None:
                 wellness_rows.append(normalized)
+            intraday_rows.extend(normalize_intraday(day_raw))
             status_row = normalize_training_status(
                 day.isoformat(), day_raw.get("training_status")
             )
@@ -1230,6 +1318,7 @@ def sync(
         performance_row = normalize_performance_metrics(
             end_date.isoformat(), api.fetch_performance_metrics_raw(end_date)
         )
+        _sync_athlete_sex(conn, athlete_id, api)
     except GarminRateLimited as e:
         return {**plan, "available": False, "dry_run": False,
                 "reason": str(e), "rate_limited": True}
@@ -1238,6 +1327,7 @@ def sync(
 
     n_act = _upsert_activities(conn, athlete_id, activity_rows)
     n_well = _upsert_wellness(conn, athlete_id, wellness_rows)
+    n_intraday = _upsert_intraday(conn, athlete_id, intraday_rows)
     n_status = _upsert_training_status(conn, athlete_id, training_status_rows)
     n_perf = _upsert_performance_metrics(conn, athlete_id, performance_row)
 
@@ -1261,6 +1351,7 @@ def sync(
         "dry_run": False,
         "activities_synced": n_act,
         "wellness_days_synced": n_well,
+        "intraday_series_synced": n_intraday,
         "training_status_days_synced": n_status,
         "performance_metrics_synced": n_perf,
         "activities_skipped": len(raw_activities) - n_act,

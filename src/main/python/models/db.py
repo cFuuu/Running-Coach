@@ -58,6 +58,28 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("daily_wellness", "body_battery_at_wake", "INTEGER"),
     ("daily_wellness", "readiness_input_context", "TEXT"),
     ("daily_wellness", "readiness_timestamp_local", "TEXT"),
+    # --- 2026-10-22：Garmin 網頁卡片所需欄位（見 schema.sql 註解）---
+    ("athlete_profile", "sex", "TEXT"),
+    ("daily_wellness", "readiness_level", "TEXT"),
+    ("daily_wellness", "readiness_feedback_short", "TEXT"),
+    ("daily_wellness", "sleep_start_local", "TEXT"),
+    ("daily_wellness", "sleep_end_local", "TEXT"),
+    ("daily_wellness", "respiration_sleep_avg", "REAL"),
+    ("daily_wellness", "respiration_low", "REAL"),
+    ("daily_wellness", "respiration_high", "REAL"),
+    ("daily_wellness", "spo2_lowest", "REAL"),
+    ("daily_wellness", "spo2_latest", "REAL"),
+    ("daily_wellness", "body_battery_latest", "INTEGER"),
+    ("daily_wellness", "body_battery_charged", "INTEGER"),
+    ("daily_wellness", "body_battery_drained", "INTEGER"),
+    ("daily_wellness", "calories_active", "INTEGER"),
+    ("daily_wellness", "calories_resting", "INTEGER"),
+    ("daily_wellness", "intensity_minutes_moderate", "INTEGER"),
+    ("daily_wellness", "intensity_minutes_vigorous", "INTEGER"),
+    ("daily_wellness", "intensity_minutes_weekly_goal", "INTEGER"),
+    ("daily_wellness", "floors_ascended", "REAL"),
+    ("daily_wellness", "floors_goal", "INTEGER"),
+    ("daily_wellness", "steps_goal", "INTEGER"),
 ]
 
 

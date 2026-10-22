@@ -186,6 +186,27 @@ class GarminApiClient:
         """取得單日總覽統計（步數、靜止心率、壓力等）。"""
         return self._call("get_stats", cdate.isoformat())
 
+    def fetch_stress_intraday(self, cdate: datetime.date) -> dict | None:
+        """取得單日壓力與身體能量的日內序列（每 3 分鐘一點）。
+
+        實測 2026-10-22：`stressValuesArray` 為 `[時間戳(ms, GMT), 壓力]`，
+        `bodyBatteryValuesArray` 為 `[時間戳, 狀態, 數值, 版本]`，同一支回傳。
+        """
+        return self._call("get_stress_data", cdate.isoformat())
+
+    def fetch_heart_rate_intraday(self, cdate: datetime.date) -> dict | None:
+        """取得單日心率日內序列（`heartRateValues`：`[時間戳(ms, GMT), bpm]`）。"""
+        return self._call("get_heart_rates", cdate.isoformat())
+
+    def fetch_user_sex(self) -> str | None:
+        """取得 Garmin 個人資料中的性別（MALE／FEMALE），供 VO2max 分級查表。
+
+        個人資料含生日等其他欄位，這裡只取性別一項往外傳，其餘不落地也不回傳。
+        """
+        profile = self._call("get_user_profile") or {}
+        sex = (profile.get("userData") or {}).get("gender")
+        return sex if sex in ("MALE", "FEMALE") else None
+
     def fetch_training_status(self, cdate: datetime.date) -> dict | None:
         """取得單日訓練狀態與訓練負荷（Training Status）。
 
@@ -248,7 +269,8 @@ class GarminApiClient:
 
         `training_status` 為 2026-09-02 新增（Task 1B-9）：每日 wellness
         端點數由 4 → 5，`garmin_sync_runner._WELLNESS_ENDPOINTS_PER_DAY`
-        須同步更新，否則耗時預告會低估。
+        須同步更新，否則耗時預告會低估。2026-10-22 新增 `stress_intraday`／
+        `heart_rate_intraday`（Garmin 卡片的日內圖），5 → 7。
         """
         out: dict[str, Any] = {"date": cdate.isoformat()}
         for key, fn in (
@@ -257,6 +279,8 @@ class GarminApiClient:
             ("hrv", self.fetch_hrv),
             ("training_readiness", self.fetch_training_readiness),
             ("training_status", self.fetch_training_status),
+            ("stress_intraday", self.fetch_stress_intraday),
+            ("heart_rate_intraday", self.fetch_heart_rate_intraday),
         ):
             try:
                 out[key] = fn(cdate)

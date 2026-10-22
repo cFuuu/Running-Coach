@@ -187,7 +187,7 @@ class TestNormalizeWellness(unittest.TestCase):
 # CLAUDE.md「絕不複製貼上程式碼區塊」，故抽成模組級常數集中維護。
 # 欄位名稱與型別對齊 schema.sql（不含 CHECK，測試不需要驗證約束合法性）。
 FULL_TEST_SCHEMA_SQL = """
-CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, sex TEXT);
 CREATE TABLE activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     athlete_id INTEGER NOT NULL, external_id TEXT,
@@ -224,8 +224,24 @@ CREATE TABLE daily_wellness (
     sleep_deep_sec INTEGER, sleep_light_sec INTEGER, sleep_rem_sec INTEGER,
     sleep_awake_sec INTEGER, body_battery_at_wake INTEGER,
     readiness_input_context TEXT, readiness_timestamp_local TEXT,
+    readiness_level TEXT, readiness_feedback_short TEXT,
+    sleep_start_local TEXT, sleep_end_local TEXT,
+    respiration_sleep_avg REAL, respiration_low REAL, respiration_high REAL,
+    spo2_lowest REAL, spo2_latest REAL,
+    body_battery_latest INTEGER, body_battery_charged INTEGER, body_battery_drained INTEGER,
+    calories_active INTEGER, calories_resting INTEGER,
+    intensity_minutes_moderate INTEGER, intensity_minutes_vigorous INTEGER,
+    intensity_minutes_weekly_goal INTEGER,
+    floors_ascended REAL, floors_goal INTEGER, steps_goal INTEGER,
     source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
     UNIQUE (athlete_id, date, source)
+);
+CREATE TABLE wellness_intraday (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id INTEGER NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL,
+    points_json TEXT NOT NULL,
+    source TEXT NOT NULL, source_version TEXT, fetched_at TEXT NOT NULL,
+    UNIQUE (athlete_id, date, kind, source)
 );
 CREATE TABLE training_status (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,13 +291,19 @@ INSERT INTO athlete_profile (name) VALUES ('Test');
 class FakeApi:
     """假的 API client——回傳固定資料，不發網路請求。"""
 
-    def __init__(self, activities=None, wellness=None, splits=None, performance=None):
+    def __init__(self, activities=None, wellness=None, splits=None, performance=None, sex=None):
         self._activities = activities if activities is not None else [REAL_ACTIVITY]
         self._wellness = wellness or {}
         self._splits = splits or {}
         self._performance = performance if performance is not None else {}
+        self._sex = sex
         self.activity_calls = 0
         self.split_calls = []
+        self.sex_calls = 0
+
+    def fetch_user_sex(self):
+        self.sex_calls += 1
+        return self._sex
 
     def fetch_activities(self, start_date, end_date):
         self.activity_calls += 1
@@ -543,18 +565,19 @@ class TestResolveSyncDays(unittest.TestCase):
 class TestEstimateSyncCost(unittest.TestCase):
     """★ 同步前的耗時預告——讓使用者在打 API 前知道成本。
 
-    成本結構：活動只打 1 次（吃日期區間），wellness 逐日打 5 個端點
-    （stats／sleep／hrv／training_readiness／training_status，
-    2026-09-02 由 4 → 5，見 Task 1B-9），每次間隔 1 秒節流。
+    成本結構：活動只打 1 次（吃日期區間），wellness 逐日打 7 個端點
+    （stats／sleep／hrv／training_readiness／training_status／
+    stress_intraday／heart_rate_intraday；2026-09-02 由 4 → 5，
+    2026-10-22 由 5 → 7），每次間隔 1 秒節流。
     """
 
-    def test_request_count_is_one_plus_five_per_day(self):
+    def test_request_count_is_one_plus_seven_per_day(self):
         est = runner.estimate_sync_cost(7)
-        self.assertEqual(est["request_count"], 1 + 7 * 5)
+        self.assertEqual(est["request_count"], 1 + 7 * 7)
 
     def test_estimated_seconds_follows_throttle_interval(self):
         est = runner.estimate_sync_cost(30)
-        expected_requests = 1 + 30 * 5
+        expected_requests = 1 + 30 * 7
         self.assertEqual(est["request_count"], expected_requests)
         self.assertAlmostEqual(
             est["estimated_seconds"],
@@ -563,14 +586,14 @@ class TestEstimateSyncCost(unittest.TestCase):
         )
 
     def test_ninety_days_stays_within_reasonable_bound(self):
-        """90 天上限的實際成本：451 次請求、約 7.5 分鐘。"""
+        """90 天上限的實際成本：631 次請求、約 10.5 分鐘。"""
         est = runner.estimate_sync_cost(runner.MAX_AUTO_SYNC_DAYS)
-        self.assertEqual(est["request_count"], 451)
-        self.assertLess(est["estimated_seconds"], 8 * 60)
+        self.assertEqual(est["request_count"], 631)
+        self.assertLess(est["estimated_seconds"], 11 * 60)
 
     def test_human_readable_text_included(self):
         est = runner.estimate_sync_cost(7)
-        self.assertIn("36", est["summary"])
+        self.assertIn("50", est["summary"])
 
 
 class TestSyncReportsPlanAndCost(unittest.TestCase):
@@ -603,7 +626,7 @@ class TestSyncReportsPlanAndCost(unittest.TestCase):
 
     def test_result_carries_cost_estimate(self):
         result = runner.sync(self.conn, 1, days=2, client=FakeApi(), today=self.today)
-        self.assertEqual(result["estimate"]["request_count"], 1 + 2 * 5)
+        self.assertEqual(result["estimate"]["request_count"], 1 + 2 * 7)
 
     def test_truncated_flag_when_gap_exceeds_max(self):
         """★ gap 超過上限時須明確標記，讓呼叫端提示改走匯出包。"""
@@ -849,7 +872,7 @@ class TestSyncFetchesSplitsAndClassifies(unittest.TestCase):
     def test_cost_estimate_accounts_for_splits(self):
         """耗時預告須把分圈請求算進去，否則低估。"""
         est = runner.estimate_sync_cost(7, expected_activities=5)
-        self.assertEqual(est["request_count"], 1 + 7 * 5 + 5)
+        self.assertEqual(est["request_count"], 1 + 7 * 7 + 5)
 
 
 # ============================================================================
@@ -1104,6 +1127,149 @@ class TestNormalizeWellnessNewFields(unittest.TestCase):
     def test_body_battery_at_wake(self):
         row = runner.normalize_wellness(self._raw())
         self.assertEqual(row["body_battery_at_wake"], 75)
+
+
+def _gmt_ms(iso: str) -> int:
+    return int(datetime.datetime.fromisoformat(iso)
+               .replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
+
+
+class TestNormalizeWellnessGarminCardFields(unittest.TestCase):
+    """★ 2026-10-22：Garmin 網頁卡片所需欄位。key 名稱經真實帳號實測確認
+    （避免測試與實作共用同一個錯誤猜測）。"""
+
+    def _raw(self):
+        return {
+            "date": "2026-10-21",
+            "stats": {
+                "lowestRespirationValue": 7.0, "highestRespirationValue": 20.0,
+                "lowestSpo2": 85, "latestSpo2": 90,
+                "bodyBatteryMostRecentValue": 84, "bodyBatteryChargedValue": 61,
+                "bodyBatteryDrainedValue": 12,
+                "activeKilocalories": 42.0, "bmrKilocalories": 891.0,
+                "moderateIntensityMinutes": 10, "vigorousIntensityMinutes": 20,
+                "intensityMinutesGoal": 150,
+                "floorsAscended": 1.2, "userFloorsAscendedGoal": 10,
+                "dailyStepGoal": 12360,
+            },
+            "sleep": {"dailySleepDTO": {
+                # 當地 01:37 入睡、08:05 起床（Local 毫秒以 UTC 解讀即為牆上時間）
+                "sleepStartTimestampLocal": _gmt_ms("2026-10-21T01:37:00"),
+                "sleepEndTimestampLocal": _gmt_ms("2026-10-21T08:05:00"),
+                "averageRespirationValue": 14.0,
+            }},
+            "training_readiness": [{"score": 72, "level": "MODERATE",
+                                    "feedbackShort": "GOOD_SLEEP_HISTORY",
+                                    "inputContext": "AFTER_WAKEUP_RESET"}],
+        }
+
+    def test_readiness_level_and_feedback(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["readiness_level"], "MODERATE")
+        self.assertEqual(row["readiness_feedback_short"], "GOOD_SLEEP_HISTORY")
+
+    def test_sleep_window_is_local_wall_clock(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["sleep_start_local"], "2026-10-21T01:37:00")
+        self.assertEqual(row["sleep_end_local"], "2026-10-21T08:05:00")
+
+    def test_respiration_and_spo2(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(row["respiration_sleep_avg"], 14.0)
+        self.assertEqual((row["respiration_low"], row["respiration_high"]), (7.0, 20.0))
+        self.assertEqual((row["spo2_lowest"], row["spo2_latest"]), (85, 90))
+
+    def test_body_battery_calories_intensity_floors_steps(self):
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual((row["body_battery_latest"], row["body_battery_charged"],
+                          row["body_battery_drained"]), (84, 61, 12))
+        self.assertEqual((row["calories_active"], row["calories_resting"]), (42, 891))
+        self.assertEqual((row["intensity_minutes_moderate"], row["intensity_minutes_vigorous"],
+                          row["intensity_minutes_weekly_goal"]), (10, 20, 150))
+        self.assertEqual((row["floors_ascended"], row["floors_goal"]), (1.2, 10))
+        self.assertEqual(row["steps_goal"], 12360)
+
+
+class TestNormalizeIntraday(unittest.TestCase):
+    """★ 日內序列：GMT 時間戳須換成當地時間，負值（無資料）存 null。"""
+
+    def _raw(self):
+        # 台北 UTC+8：當地 00:00 = GMT 前一天 16:00
+        stress = {
+            "startTimestampGMT": "2026-10-20T16:00:00.0",
+            "startTimestampLocal": "2026-10-21T00:00:00.0",
+            "stressValueDescriptorsDTOList": [{"index": 0, "key": "timestamp"},
+                                              {"index": 1, "key": "stressLevel"}],
+            "stressValuesArray": [[_gmt_ms("2026-10-20T16:03:00"), 25],
+                                  [_gmt_ms("2026-10-20T16:06:00"), -1]],
+            "bodyBatteryValueDescriptorsDTOList": [
+                {"bodyBatteryValueDescriptorIndex": 0, "bodyBatteryValueDescriptorKey": "timestamp"},
+                {"bodyBatteryValueDescriptorIndex": 1, "bodyBatteryValueDescriptorKey": "bodyBatteryStatus"},
+                {"bodyBatteryValueDescriptorIndex": 2, "bodyBatteryValueDescriptorKey": "bodyBatteryLevel"},
+                {"bodyBatteryValueDescriptorIndex": 3, "bodyBatteryValueDescriptorKey": "bodyBatteryVersion"}],
+            "bodyBatteryValuesArray": [[_gmt_ms("2026-10-21T00:00:00"), "MEASURED", 70, 3.0]],
+        }
+        heart = {
+            "startTimestampGMT": "2026-10-20T16:00:00.0",
+            "startTimestampLocal": "2026-10-21T00:00:00.0",
+            "heartRateValueDescriptors": [{"index": 0, "key": "timestamp"},
+                                          {"index": 1, "key": "heartrate"}],
+            "heartRateValues": [[_gmt_ms("2026-10-21T04:00:00"), 62], [_gmt_ms("2026-10-21T04:02:00"), None]],
+        }
+        sleep = {
+            "dailySleepDTO": {"sleepStartTimestampLocal": _gmt_ms("2026-10-21T00:43:00"),
+                              "sleepStartTimestampGMT": _gmt_ms("2026-10-20T16:43:00")},
+            "sleepLevels": [{"startGMT": "2026-10-20T16:43:24.0", "endGMT": "2026-10-20T16:56:24.0",
+                             "activityLevel": 1.0}],
+        }
+        return {"date": "2026-10-21", "stress_intraday": stress,
+                "heart_rate_intraday": heart, "sleep": sleep}
+
+    def _by_kind(self):
+        return {r["kind"]: json.loads(r["points_json"]) for r in runner.normalize_intraday(self._raw())}
+
+    def test_stress_minutes_are_local_and_negative_is_null(self):
+        self.assertEqual(self._by_kind()["stress"], [[3, 25], [6, None]])
+
+    def test_body_battery_reads_level_column(self):
+        # GMT 00:00 = 當地 08:00 = 第 480 分鐘
+        self.assertEqual(self._by_kind()["body_battery"], [[480, 70]])
+
+    def test_heart_rate_local_minutes(self):
+        self.assertEqual(self._by_kind()["heart_rate"], [[720, 62], [722, None]])
+
+    def test_sleep_levels_local_hhmm(self):
+        self.assertEqual(self._by_kind()["sleep_levels"], [["00:43", "00:56", 1]])
+
+    def test_missing_payloads_produce_no_rows(self):
+        self.assertEqual(runner.normalize_intraday({"date": "2026-10-21"}), [])
+
+
+class TestSyncWritesIntradayAndSex(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(FULL_TEST_SCHEMA_SQL)
+        self.today = datetime.date(2026, 10, 21)
+        self.wellness = {"2026-10-21": TestNormalizeIntraday()._raw()}
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_intraday_written_and_resync_overwrites(self):
+        api = FakeApi(wellness=self.wellness)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=False)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=False)
+        kinds = [r["kind"] for r in self.conn.execute(
+            "SELECT kind FROM wellness_intraday ORDER BY kind")]
+        self.assertEqual(kinds, ["body_battery", "heart_rate", "sleep_levels", "stress"])
+
+    def test_sex_fetched_once_then_cached(self):
+        api = FakeApi(sex="MALE")
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=False)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=False)
+        self.assertEqual(self.conn.execute("SELECT sex FROM athlete_profile").fetchone()[0], "MALE")
+        self.assertEqual(api.sex_calls, 1)
 
 
 class TestSelectPrimaryDevice(unittest.TestCase):

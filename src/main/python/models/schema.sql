@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS athlete_profile (
     -- 每場的區間停留時間是手錶自己算好的（hrTimeInZone_N），不依賴此欄。
     -- NULL 代表未設定，顯示端不換算 bpm、也不套任何預設值。
     hr_zone_hrr_bounds_json TEXT,
+    -- 性別（MALE／FEMALE），取自 Garmin 個人資料。只用於查 VO2max 的
+    -- Cooper Institute 分級表（Garmin 手冊同一份表，依年齡與性別分欄）。
+    -- NULL 代表未取得，顯示端不給分級。
+    sex             TEXT,
     updated_at      TEXT NOT NULL
 );
 
@@ -211,10 +215,63 @@ CREATE TABLE IF NOT EXISTS daily_wellness (
     -- 以下兩欄記錄實際採用的是哪一筆，讓下游知道分數代表的時點。
     readiness_input_context      TEXT,
     readiness_timestamp_local    TEXT,
+    -- --- 2026-10-22：Garmin 網頁卡片所需欄位（皆取自既有端點，零額外請求）---
+    -- Training Readiness 等級（LOW／MODERATE／HIGH／PRIME 等）與回饋代碼。
+    -- Garmin 黑盒衍生值，僅供顯示。
+    readiness_level              TEXT,
+    readiness_feedback_short     TEXT,
+    -- 主睡眠的入睡／起床時間（當地時間 ISO 字串）
+    sleep_start_local            TEXT,
+    sleep_end_local              TEXT,
+    -- 睡眠期間平均呼吸率（brpm）；respiration_rate 是清醒平均
+    respiration_sleep_avg        REAL,
+    respiration_low              REAL,
+    respiration_high             REAL,
+    spo2_lowest                  REAL,
+    spo2_latest                  REAL,
+    -- 身體能量：當日最新值、充電量、消耗量
+    body_battery_latest          INTEGER,
+    body_battery_charged         INTEGER,
+    body_battery_drained         INTEGER,
+    -- 熱量（kcal）：活躍與靜態（基礎代謝）
+    calories_active              INTEGER,
+    calories_resting             INTEGER,
+    -- 熱血時間（分鐘）：當日中等／高強度；目標為 Garmin 的每週目標
+    intensity_minutes_moderate   INTEGER,
+    intensity_minutes_vigorous   INTEGER,
+    intensity_minutes_weekly_goal INTEGER,
+    floors_ascended              REAL,
+    floors_goal                  INTEGER,
+    steps_goal                   INTEGER,
     source               TEXT NOT NULL CHECK (source IN ('fit_manual', 'garmin_export', 'garmin_mcp', 'strava')),
     source_version        TEXT,
     fetched_at            TEXT NOT NULL,
     UNIQUE (athlete_id, date, source)
+);
+
+-- 每日的日內序列（睡眠階段時間軸、壓力、身體能量、心率），來源為
+-- get_sleep_data 的 sleepLevels、get_stress_data、get_heart_rates。
+--
+-- 為何獨立建表而非併入 daily_wellness：一天數百個點、形狀與每日摘要
+-- 完全不同，放進 daily_wellness 會讓每列膨脹十倍以上，而絕大多數查詢
+-- （趨勢、規則引擎）根本用不到。只有 Garmin 卡片的日內圖會讀。
+--
+-- points_json 格式依 kind：
+--   sleep_levels：[[開始, 結束, 階段], ...]，時間為當地 "HH:MM"，
+--                 階段 0=深眠 1=淺眠 2=REM 3=清醒（Garmin activityLevel）
+--   stress／body_battery／heart_rate：[[當日第幾分鐘, 數值], ...]，當地時間；
+--                 Garmin 以負值表示「無資料／活動中」的點，存成 null
+-- 僅供顯示，規則引擎與 AI 教練不讀。
+CREATE TABLE IF NOT EXISTS wellness_intraday (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id          INTEGER NOT NULL REFERENCES athlete_profile(id),
+    date                TEXT NOT NULL,
+    kind                TEXT NOT NULL CHECK (kind IN ('sleep_levels', 'stress', 'body_battery', 'heart_rate')),
+    points_json         TEXT NOT NULL,
+    source               TEXT NOT NULL CHECK (source IN ('fit_manual', 'garmin_export', 'garmin_mcp', 'strava')),
+    source_version        TEXT,
+    fetched_at            TEXT NOT NULL,
+    UNIQUE (athlete_id, date, kind, source)
 );
 
 -- 每日訓練狀態與訓練負荷，來源為 Garmin 的 `get_training_status` 端點。
