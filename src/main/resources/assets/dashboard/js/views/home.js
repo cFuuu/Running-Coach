@@ -974,7 +974,6 @@ export function renderRecentSessions() {
   var prev = null;
   state.recentActivities.slice(0, 8).forEach(function (item) {
     var a = item.activity;
-    var sameDay = prev && prev.date === item.date;
     // 跑步才有單場分析可看（同行事曆）；健走、重訓等整列淡色、不可點
     var row = h(a.is_running ? 'button' : 'div', 'recent-row' + (a.is_running ? '' : ' is-other'));
     if (a.is_running) {
@@ -983,8 +982,7 @@ export function renderRecentSessions() {
       row.addEventListener('click', function () { navigate('sessions', a.id); });
     }
 
-    // 同一天的第二場起不重複日期
-    row.appendChild(h('span', 'rc-date', sameDay ? '' : C.shortDate(item.date) + ' (' + dowLabel(item.date) + ')'));
+    row.appendChild(h('span', 'rc-date', C.shortDate(item.date) + ' (' + dowLabel(item.date) + ')'));
 
     var act = h('span', 'rc-activity');
     act.appendChild(h('span', 'rc-main', a.is_running
@@ -1006,11 +1004,9 @@ export function renderRecentSessions() {
     if (sub.length) actual.appendChild(h('span', 'rc-sub', sub.join(' · ')));
     row.appendChild(actual);
 
-    // 課表：同一天多場對到同一份課表時，後面幾場留白（與日期欄一樣）；跑步沒對到課表寫「課表外」
-    var planText;
-    if (item.plan) planText = sameDay && prev.plan === item.plan ? '' : planSummary(item.plan);
-    else planText = a.is_running ? '課表外' : '—';
-    row.appendChild(h('span', 'rc-plan' + (item.plan ? '' : ' is-none'), planText));
+    // 課表：同一天多場對到同一份課表時只列在第一場，其餘與沒對到課表的一律「—」
+    var plan = item.plan && !(prev && prev.date === item.date && prev.plan === item.plan) ? item.plan : null;
+    row.appendChild(h('span', 'rc-plan' + (plan ? '' : ' is-none'), plan ? planSummary(plan) : '—'));
 
     list.appendChild(row);
     prev = item;
