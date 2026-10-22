@@ -187,7 +187,8 @@ function renderReadiness(c, body) {
   if (c.level) body.appendChild(h('div', 'gc-center-label', READINESS_LEVEL_LABEL[c.level] || c.level));
   var feedback = READINESS_FEEDBACK_LABEL[c.feedback_short];
   if (feedback) body.appendChild(h('div', 'gc-center-caption', feedback));
-  return sparkFrom(c.series, 'score');
+  // 序列的 key 是欄位名 training_readiness_score（見 garmin_cards._series），不是卡片上的 score
+  return sparkFrom(c.series, 'training_readiness_score');
 }
 
 function renderSleep(c, body) {
@@ -239,15 +240,14 @@ function renderTrainingStatus(c, body) {
   return null;
 }
 
+/** 排法照 Garmin 網頁：圓環置中，下方左右兩欄「已充電／已消耗」，最底下是當日走勢。 */
 function renderBodyBattery(c, body) {
   var value = c.latest !== null ? c.latest : c.high;
-  var top = h('div', 'gc-split');
-  top.appendChild(gaugeWithCenter(C.ringGauge(value / 100, { className: 'gc-tone-blue' }), num(value)));
-  var side = h('div', 'gc-side');
-  if (c.charged !== null) side.appendChild(labelled('+' + num(c.charged), '已充電'));
-  if (c.drained !== null) side.appendChild(labelled('−' + num(c.drained), '已消耗'));
-  top.appendChild(side);
-  body.appendChild(top);
+  body.appendChild(gaugeWithCenter(C.ringGauge(value / 100, { className: 'gc-tone-blue' }), num(value)));
+  var stats = h('div', 'gc-stats gc-stats-ends');
+  if (c.charged !== null) stats.appendChild(labelled('+' + num(c.charged), '已充電'));
+  if (c.drained !== null) stats.appendChild(labelled('−' + num(c.drained), '已消耗'));
+  if (stats.childNodes.length) body.appendChild(stats);
   var chart = intraday(c.intraday, { mode: 'area', min: 0, max: 100 });
   if (chart) body.appendChild(chart);
   return null;

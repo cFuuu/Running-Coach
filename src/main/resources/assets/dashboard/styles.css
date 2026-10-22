@@ -2223,6 +2223,10 @@ body.coach-open .coach-fab {
   justify-content: space-between;
 }
 
+.gc-stats-ends > :last-child {
+  text-align: right;
+}
+
 .gc-stack {
   display: flex;
   flex-direction: column;
