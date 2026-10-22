@@ -3,18 +3,14 @@
  *
  * 四區共用一個速度（tools.secPerKm）：改任何一格都先換算成每公里秒數，再回填
  * 其他所有欄位——正在打字的那格不回填，免得游標被打斷，離開欄位時才整理格式。
- * 等速換算全在前端（core/pace.js）；完成時間的「跑力推估」欄走
- * /api/tools/race-predict（Daniels 公式，與課表、戰力綜覽同一套）。
  *
- * 不吃頂列的時間範圍，也不讀任何訓練資料；只有「帶入目前跑力」會用到首頁
- * 已載入的 VDOT。
+ * 全是純算術、不打 API、不讀訓練資料，所以這支檔案同時是 dashboard 的一頁，
+ * 也是離線單檔 pace-calculator.html 的主體（scripts/build_pace_calculator.py 打包）。
+ * 因此這裡**不可** import state／api／facts 這類 dashboard 專屬模組。
  */
 
 import * as C from '../charts.js';
-import { state } from '../core/state.js';
-import { api } from '../core/api.js';
-import { $, clear, h } from '../core/dom.js';
-import { confBadge, infoTip } from '../core/facts.js';
+import { $, h } from '../core/dom.js';
 import { KM_PER_MILE, laneLengthM, parseClock, formatSplit, paceToKmh, kmhToPace } from '../core/pace.js';
 
 var RACE_DISTANCES = [
@@ -35,21 +31,12 @@ var TRACK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8].map(function (lane) {
 // 田徑場表格的列：一圈的幾分之幾（1 圈以下是 100／200／300m 分段）
 var LAP_FRACTIONS = [0.25, 0.5, 0.75, 1, 2, 3, 4, 5];
 
-var ZONE_LABEL = { easy: '輕鬆 E', marathon: '馬拉松 M', tempo: '閾值 T', interval: '間歇 I' };
-
-var PREDICT_DEBOUNCE_MS = 300;
-
 var tools = {
   built: false,
   secPerKm: null,
   trackM: TRACK_OPTIONS[0].meters,
-  // 跑力推估以哪一列的等速成績為基準；預設全馬（同原網站的預設距離）
-  refIndex: RACE_DISTANCES.length - 1,
-  fields: [],   // 可輸入的欄位：{ input, toText(secPerKm), fromText(text) → secPerKm|null, onEdit? }
-  outputs: [],  // 唯讀的換算結果：{ node, toText(secPerKm) }
-  rows: [],     // 完成時間每列的節點：{ tr, refBtn, pred }
-  predictTimer: null,
-  predictSeq: 0
+  fields: [],   // 可輸入的欄位：{ input, toText(secPerKm), fromText(text) → secPerKm|null }
+  outputs: []   // 唯讀的換算結果：{ node, toText(secPerKm) }
 };
 
 // ------------------------------------------------------------ 換算主流程
@@ -57,7 +44,6 @@ var tools = {
 function setSpeed(secPerKm, editing) {
   tools.secPerKm = secPerKm;
   syncFields(editing);
-  schedulePredict();
 }
 
 /** 依目前速度回填所有欄位；editing 是使用者正在打字的那格，跳過不動。 */
@@ -77,7 +63,7 @@ function syncFields(editing) {
  * 把一個 input 接進連動：打字即換算，離開欄位時把自己整理成標準格式。
  * 空白＝清空所有欄位；格式錯誤只標紅框，不動其他欄位。
  */
-function bindField(input, toText, fromText, onEdit) {
+function bindField(input, toText, fromText) {
   var field = { input: input, toText: toText, fromText: fromText };
   tools.fields.push(field);
   input.addEventListener('input', function () {
@@ -90,7 +76,6 @@ function bindField(input, toText, fromText, onEdit) {
     var ok = s !== null && isFinite(s) && s > 0;
     input.classList.toggle('is-invalid', !ok);
     if (!ok) return;
-    if (onEdit) onEdit();
     setSpeed(s, input);
   });
   input.addEventListener('change', function () {
@@ -177,7 +162,7 @@ function buildTrackPanel() {
   var select = h('select', 'tools-input tools-select');
   select.setAttribute('aria-label', '道次');
   TRACK_OPTIONS.forEach(function (opt, i) {
-    var o = h('option', null, opt.label + '（' + opt.meters.toFixed(opt.meters % 1 ? 1 : 0) + 'm）');
+    var o = h('option', null, opt.label + '（' + Number(opt.meters.toFixed(1)) + 'm）');
     o.value = String(i);
     select.appendChild(o);
   });
@@ -226,169 +211,26 @@ function buildTrackPanel() {
 }
 
 function buildFinishPanel() {
-  var sec = panel('完成時間', '左欄等速換算；右欄依標示列的成績用 Daniels 公式推估');
-
-  var head = h('div', 'tools-predict-head');
-  var basis = h('p', 'tools-predict-basis', '輸入任一欄後顯示跑力推估');
-  basis.id = 'tools-predict-basis';
-  head.appendChild(basis);
-  var useVdot = h('button', 'range-btn', '帶入目前跑力');
-  useVdot.type = 'button';
-  useVdot.addEventListener('click', applyCurrentVdot);
-  head.appendChild(useVdot);
-  head.appendChild(infoTip('跑力推估', [
-    '把標示列（◉）的等速完成時間當作一場全力成績，代入 Daniels & Gilbert 公式反推 VDOT，'
-      + '再反解其他距離的等效成績。點距離名稱可換基準列。',
-    '與課表、首頁戰力綜覽用同一套公式（後端 vdot_engine）。',
-    '由短距離推估半馬／全馬時，前提是已有足夠的長距離訓練量；週跑量少的話實際完賽會明顯慢於推估（標「低信心度」）。'
-      + '1500m 以下屬公式外推。',
-    '「帶入目前跑力」用首頁戰力綜覽的 VDOT（只採比賽成績）。'
-  ]));
-  sec.appendChild(head);
-
-  var table = h('table', 'tools-table tools-finish-table');
-  var thead = h('thead');
-  var hr = h('tr');
-  ['距離', '等速完成', '跑力推估'].forEach(function (t) {
-    var th = h('th', null, t);
-    th.scope = 'col';
-    hr.appendChild(th);
-  });
-  thead.appendChild(hr);
-  table.appendChild(thead);
-
+  var sec = panel('完成時間', '照目前配速等速跑完各距離');
+  var table = h('table', 'tools-table');
   var tbody = h('tbody');
-  RACE_DISTANCES.forEach(function (d, i) {
+  RACE_DISTANCES.forEach(function (d) {
     var tr = h('tr');
-    var th = h('th');
+    var th = h('th', null, d.label);
     th.scope = 'row';
-    var refBtn = h('button', 'tools-ref-btn', d.label);
-    refBtn.type = 'button';
-    refBtn.addEventListener('click', function () { setRef(i); schedulePredict(true); });
-    th.appendChild(refBtn);
     tr.appendChild(th);
-
     var td = h('td');
     td.appendChild(bindField(
       textInput('h:m:s', d.label + '完成時間'),
       function (s) { return C.formatDuration(s * d.km); },
-      function (t) { var v = parseClock(t, 60); return v === null ? null : v / d.km; },
-      function () { setRef(i); }
+      function (t) { var v = parseClock(t, 60); return v === null ? null : v / d.km; }
     ));
     tr.appendChild(td);
-
-    var pred = h('td', 'tools-num tools-pred', '—');
-    tr.appendChild(pred);
     tbody.appendChild(tr);
-    tools.rows.push({ tr: tr, refBtn: refBtn, pred: pred });
   });
   table.appendChild(tbody);
   sec.appendChild(table);
-
-  var zones = h('div', 'tools-zones');
-  zones.id = 'tools-zones';
-  sec.appendChild(zones);
-  setRef(tools.refIndex);
   return sec;
-}
-
-// ------------------------------------------------------------ 跑力推估
-
-function setRef(index) {
-  tools.refIndex = index;
-  tools.rows.forEach(function (r, i) {
-    r.tr.classList.toggle('is-ref', i === index);
-    r.refBtn.setAttribute('aria-pressed', i === index ? 'true' : 'false');
-  });
-}
-
-function schedulePredict(immediate) {
-  clearTimeout(tools.predictTimer);
-  if (tools.secPerKm === null) {
-    tools.predictSeq += 1; // 作廢還在路上的請求
-    renderPrediction(null);
-    return;
-  }
-  var ref = RACE_DISTANCES[tools.refIndex];
-  var params = 'distance_km=' + ref.km + '&time_sec=' + Math.round(tools.secPerKm * ref.km);
-  tools.predictTimer = setTimeout(function () {
-    requestPredict(params, ref.label + ' ' + C.formatDuration(tools.secPerKm * ref.km));
-  }, immediate ? 0 : PREDICT_DEBOUNCE_MS);
-}
-
-/** @returns {Promise<?Object>} 回傳 API 結果；被較新的請求取代或失敗時為 null */
-function requestPredict(params, basisText) {
-  var seq = ++tools.predictSeq;
-  var targets = RACE_DISTANCES.map(function (d) { return d.km; }).join(',');
-  return api('/api/tools/race-predict?targets=' + targets + '&' + params)
-    .then(function (res) {
-      if (seq !== tools.predictSeq) return null;
-      renderPrediction(res, basisText);
-      return res;
-    })
-    .catch(function (err) {
-      if (seq !== tools.predictSeq) return null;
-      renderPrediction(null, null, err.message);
-      return null;
-    });
-}
-
-function renderPrediction(res, basisText, error) {
-  var basis = $('tools-predict-basis');
-  var zones = $('tools-zones');
-  clear(basis);
-  clear(zones);
-  tools.rows.forEach(function (r) { clear(r.pred); r.pred.textContent = '—'; });
-  if (!res) {
-    basis.textContent = error ? '無法推估：' + error : '輸入任一欄後顯示跑力推估';
-    basis.classList.toggle('is-error', !!error);
-    return;
-  }
-  basis.classList.remove('is-error');
-  basis.appendChild(document.createTextNode('基準 ' + basisText + ' → VDOT '
-    + C.formatNumber(res.vdot.value, 1)));
-
-  res.predictions.forEach(function (p, i) {
-    var cell = tools.rows[i].pred;
-    clear(cell);
-    var fact = p.time_sec;
-    if (!fact) { cell.textContent = '未評'; return; }
-    cell.appendChild(h('span', null, C.formatDuration(fact.value)));
-    cell.appendChild(h('span', 'tools-pred-pace', C.formatPace(fact.value / p.distance_km) + '/km'));
-    if (fact.confidence.level !== 'high') cell.appendChild(confBadge(fact));
-  });
-
-  zones.appendChild(h('span', 'tools-zones-title', '訓練配速'));
-  Object.keys(ZONE_LABEL).forEach(function (key) {
-    var z = res.pace_zones[key];
-    if (!z) return;
-    var chip = h('span', 'tools-zone');
-    chip.appendChild(h('span', 'tools-zone-name', ZONE_LABEL[key]));
-    chip.appendChild(h('span', 'tools-num',
-      C.formatPace(z.fast_sec_per_km) + '–' + C.formatPace(z.slow_sec_per_km)));
-    zones.appendChild(chip);
-  });
-}
-
-/** 用首頁戰力綜覽的 VDOT 推估，並把速度設成「基準列的推估成績」。 */
-function applyCurrentVdot() {
-  var ov = state.homeOverview;
-  var fact = ov && ov.vdot && ov.vdot.race && ov.vdot.race.value;
-  if (!fact) {
-    renderPrediction(null, null, ov
-      ? ((ov.vdot && ov.vdot.race && ov.vdot.race.reason) || '尚無跑力資料')
-      : '首頁資料還在載入，請稍後再試');
-    return;
-  }
-  clearTimeout(tools.predictTimer);
-  requestPredict('vdot=' + fact.value, '目前跑力').then(function (res) {
-    if (!res) return;
-    var ref = RACE_DISTANCES[tools.refIndex];
-    var refFact = res.predictions[tools.refIndex].time_sec;
-    if (!refFact) return;
-    tools.secPerKm = refFact.value / ref.km;
-    syncFields(null); // 只回填欄位，不重新推估——推估結果就是這次的回應
-  });
 }
 
 // ------------------------------------------------------------ 入口
