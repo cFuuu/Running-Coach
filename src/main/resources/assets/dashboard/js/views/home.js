@@ -1006,9 +1006,9 @@ export function renderRecentSessions() {
     if (sub.length) actual.appendChild(h('span', 'rc-sub', sub.join(' · ')));
     row.appendChild(actual);
 
-    // 課表：同一天多場對到同一份課表時，後面寫「（同上）」；跑步沒對到課表寫「課表外」
+    // 課表：同一天多場對到同一份課表時，後面幾場留白（與日期欄一樣）；跑步沒對到課表寫「課表外」
     var planText;
-    if (item.plan) planText = sameDay && prev.plan === item.plan ? '（同上）' : planSummary(item.plan);
+    if (item.plan) planText = sameDay && prev.plan === item.plan ? '' : planSummary(item.plan);
     else planText = a.is_running ? '課表外' : '—';
     row.appendChild(h('span', 'rc-plan' + (item.plan ? '' : ' is-none'), planText));
 
