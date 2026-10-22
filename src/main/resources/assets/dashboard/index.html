@@ -109,6 +109,12 @@
         </span>
         <span class="nav-text">訓練紀錄</span>
       </a>
+      <a class="nav-link" href="#/tools" data-view="tools">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="7"></circle><path d="M12 10v4l2 2M10 3h4M12 3v4"></path></svg>
+        </span>
+        <span class="nav-text">配速計算機</span>
+      </a>
       <!--
         系統設定刻意不放在這裡，也不放進手機底部分頁列——唯一入口是右上角
         工具列的齒輪（#settings-btn）。同一個功能出現在兩處會讓人不確定
@@ -339,6 +345,15 @@
       <div class="trends-body" id="trends-body"></div>
     </section>
 
+    <!--
+      ================================================= view：配速計算機
+      配速／跑步機／田徑場／完成時間四區同頁連動（js/views/tools.js），第一次進來才建 DOM。
+      不吃時間範圍、不讀訓練資料。
+    -->
+    <section class="view" id="view-tools" hidden aria-labelledby="content-title">
+      <div id="tools-body"></div>
+    </section>
+
     <!-- ================================================== view：系統設定 -->
     <!--
       設定一律走 theme.js 的 getSettings()/saveSettings()——它是 localStorage
@@ -490,7 +505,7 @@
 </div>
 
 <!-- ------------------------------------------------------------ 手機 -->
-<!-- 底部分頁列（<768px 顯示）：4 格等寬、56px 高、圖示＋文字 -->
+<!-- 底部分頁列（<768px 顯示）：5 格等寬、56px 高、圖示＋文字 -->
 <nav class="tabbar" id="tabbar" aria-label="主導覽（手機）">
   <a class="tab-link" href="#/home" data-view="home">
     <span class="tab-icon" aria-hidden="true">
@@ -515,6 +530,12 @@
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9M10 18V5M16 18v-6M22 18H2"></path></svg>
     </span>
     <span class="tab-text">紀錄</span>
+  </a>
+  <a class="tab-link" href="#/tools" data-view="tools">
+    <span class="tab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="7"></circle><path d="M12 10v4l2 2M10 3h4M12 3v4"></path></svg>
+    </span>
+    <span class="tab-text">配速</span>
   </a>
 </nav>
 

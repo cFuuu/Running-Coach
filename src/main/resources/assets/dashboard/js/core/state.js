@@ -30,7 +30,7 @@ export var state = {
   homeOverview: null,    // 首頁用的 /api/overview（固定 30d，只取 VDOT、最佳成績、本週 Zone 2 等不受範圍影響的欄位）
   recentPlans: null,     // 活動 id → 當天對應的課表（最近訓練的「對應課表」欄）
 
-  view: 'home',          // 目前 view：home|calendar|trends|sessions|settings
+  view: 'home',          // 目前 view：home|calendar|trends|sessions|tools|settings
 
   // render-on-activate 的髒標記。widthOf() 對 display:none 的容器回 0，
   // 在隱藏的 view 裡畫圖會得到寬度 0 的空 SVG，所以資料回來時若該 view
@@ -49,6 +49,7 @@ export var VIEWS = {
   calendar: { title: '行事曆',       hasRange: false },
   trends:   { title: '趨勢',         hasRange: true },
   sessions: { title: '訓練紀錄',     hasRange: true },
+  tools:    { title: '配速計算機',   hasRange: false },
   settings: { title: '系統設定',     hasRange: false }
 };
 export var DEFAULT_VIEW = 'home';

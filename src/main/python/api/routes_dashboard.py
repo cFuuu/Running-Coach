@@ -253,6 +253,9 @@ def read_race_predict(
     """配速計算機的完成時間推估（Daniels 公式），不讀資料庫。"""
     try:
         targets_km = [float(t) for t in targets.split(",") if t.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"targets 格式錯誤：{targets}") from exc
+    try:
         return queries.get_race_prediction(
             targets_km, distance_km=distance_km, time_sec=time_sec, vdot=vdot
         )

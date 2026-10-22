@@ -9,10 +9,11 @@ import { renderSessionPicker, renderRecoveryImpact, renderSessionDetail, renderS
 import { renderCalendarBody, loadCalendarBody } from '../views/calendar.js';
 import { loadSessionDetail } from './loader.js';
 import { renderTrendsPage } from '../views/trends.js';
+import { renderToolsPage } from '../views/tools.js';
 
 // hash 路由 `#/view[/arg]`：
 //   #/home  #/calendar  #/calendar/2026-09  #/trends
-//   #/sessions  #/sessions/1083  #/settings
+//   #/sessions  #/sessions/1083  #/tools  #/settings
 // 每個 view 是 <section class="view" hidden>，切換只動 hidden——不重建 DOM，
 // 圖表與既有容器 id 都原地保留。
 //
@@ -147,6 +148,8 @@ export function renderDirtyView(view) {
     state.dirty.calendar = false;
     if (!state.calendarMonth) state.calendarMonth = todayISO().slice(0, 7);
     if (!state.calendarData) loadCalendarBody(); else renderCalendarBody();
+  } else if (view === 'tools') {
+    renderToolsPage(); // 只在第一次進來時建 DOM，之後原地保留輸入值
   }
 }
 

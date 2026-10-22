@@ -1112,8 +1112,8 @@ body.coach-open .coach-panel {
   z-index: 100;
   height: 56px;
   display: grid;
-  /* 4 格（首頁／行事曆／趨勢／紀錄）：390px 寬每格約 97px */
-  grid-template-columns: repeat(4, 1fr);
+  /* 5 格（首頁／行事曆／趨勢／紀錄／配速）：390px 寬每格約 78px */
+  grid-template-columns: repeat(5, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
@@ -5239,6 +5239,215 @@ body.coach-open .coach-fab {
   .setting-control {
     align-self: flex-start;
   }
+}
+
+/* ------------------------------------------------------------ 配速計算機（#/tools）
+ * 四區同頁：寬螢幕兩欄（配速｜跑步機、田徑場｜完成時間），窄螢幕單欄。
+ * 數字一律 tabular-nums，連動換算時欄寬不會跳動。
+ */
+.tools-intro {
+  margin: 0 0 12px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .tools-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tools-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tools-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tools-field-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.tools-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tools-unit {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tools-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: var(--fs-xl);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tools-input:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.tools-input.is-invalid {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.tools-select {
+  font-size: var(--fs-md);
+}
+
+.tools-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: var(--fs-md);
+}
+
+.tools-table th,
+.tools-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.tools-table thead th {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.tools-table tbody th {
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tools-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.tools-finish-table .tools-input {
+  font-size: var(--fs-md);
+  min-height: 40px;
+}
+
+.tools-ref-btn {
+  min-height: 40px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tools-ref-btn::before {
+  content: '○ ';
+  color: var(--text-muted);
+}
+
+.tools-finish-table tr.is-ref {
+  background: var(--accent-soft);
+}
+
+.tools-finish-table tr.is-ref .tools-ref-btn {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.tools-finish-table tr.is-ref .tools-ref-btn::before {
+  content: '◉ ';
+  color: var(--accent-text);
+}
+
+.tools-pred {
+  white-space: nowrap;
+}
+
+.tools-pred-pace {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.tools-pred .conf-badge {
+  margin-left: 4px;
+}
+
+.tools-predict-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tools-predict-basis {
+  flex: 1 1 200px;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tools-predict-basis.is-error {
+  color: var(--error-text);
+}
+
+.tools-zones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: var(--fs-sm);
+}
+
+.tools-zones:empty {
+  display: none;
+}
+
+.tools-zones-title {
+  color: var(--text-muted);
+}
+
+.tools-zone {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+}
+
+.tools-zone-name {
+  color: var(--text-muted);
 }
 
 /* ------------------------------------------------------------ 深色模式
