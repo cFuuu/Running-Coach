@@ -389,11 +389,18 @@ function renderTrainingLoad(c, body) {
   return sparkFrom(c.series, 'acute_load');
 }
 
-// 負荷焦點三類，由上而下的順序與配色對照 Garmin 網頁（無氧紫、高強度有氧橘、低強度有氧藍）
+// 負荷焦點三類，由上而下的順序與配色對照 Garmin 網頁（2026-10-22 Fu 截圖）：
+// 高強度有氧亮橘、低強度有氧青藍；無氧在截圖中太短看不出顏色，暫用紫色
 var LOAD_FOCUS_LABEL = { anaerobic: '無氧', aerobic_high: '高強度有氧', aerobic_low: '低強度有氧' };
-var LOAD_FOCUS_TONE = { anaerobic: 'gc-tone-purple', aerobic_high: 'gc-tone-orange', aerobic_low: 'gc-tone-blue' };
+var LOAD_FOCUS_TONE = { anaerobic: 'gc-focus-anaerobic', aerobic_high: 'gc-focus-high', aerobic_low: 'gc-focus-low' };
+// 回饋代碼的中文只收錄對照過 Garmin 網頁的，沒收錄的不顯示
+var LOAD_FOCUS_FEEDBACK_LABEL = { LOW_AEROBIC_OVERAGE: '低強度有氧過量' };
+// 負荷焦點涵蓋的天數（Garmin 網頁顯示「9月24日 - 10月22日」，即含當天往回 4 週）
+var LOAD_FOCUS_DAYS = 28;
 
 function renderLoadFocus(c, body) {
+  var feedback = LOAD_FOCUS_FEEDBACK_LABEL[c.feedback];
+  if (feedback) body.appendChild(h('div', 'gc-status-text', feedback));
   var cats = (c.categories || []).filter(function (x) { return x.value !== null; });
   // 三條共用同一個刻度，才看得出彼此的比例；刻度上限留一點空間給超出目標的長條
   var scale = Math.max.apply(null, cats.map(function (x) { return Math.max(x.value, x.target_max || 0); })) * 1.1 || 1;
@@ -417,6 +424,17 @@ function renderLoadFocus(c, body) {
     row.appendChild(track);
     body.appendChild(row);
   });
+  var legend = h('div', 'gc-focus-legend');
+  legend.appendChild(h('span', 'gc-focus-legend-box'));
+  legend.appendChild(h('span', null, '最佳範圍'));
+  body.appendChild(legend);
+  if (c.date) {
+    var end = new Date(c.date + 'T00:00:00');
+    var start = new Date(end);
+    start.setDate(end.getDate() - LOAD_FOCUS_DAYS);
+    var iso = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    body.appendChild(h('div', 'gc-caption', monthDay(iso(start)) + ' - ' + monthDay(c.date)));
+  }
   return null;
 }
 

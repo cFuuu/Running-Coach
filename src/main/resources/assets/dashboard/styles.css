@@ -167,6 +167,10 @@
   --gc-sleep-light: #4a90e2;
   --gc-sleep-rem: #b13bc4;
   --gc-sleep-awake: #e889c9;
+  /* 負荷焦點：取自 Garmin 網頁截圖（高強度有氧亮橘、低強度有氧青藍） */
+  --gc-focus-anaerobic: #a64fd6;
+  --gc-focus-high: #ff9f40;
+  --gc-focus-low: #3fc7dc;
 
   /* 完備程度狀態色：綠＝正常、紅＝偏低；無法評估沿用中性灰 */
   --ready-ok-bg: #dff3e4;
@@ -2496,6 +2500,26 @@ body.coach-open .coach-fab {
   bottom: 0;
   left: 0;
   border-radius: 5px;
+}
+
+.gc-focus-anaerobic { background: var(--gc-focus-anaerobic); }
+.gc-focus-high { background: var(--gc-focus-high); }
+.gc-focus-low { background: var(--gc-focus-low); }
+
+.gc-focus-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.gc-focus-legend-box {
+  width: 24px;
+  height: 10px;
+  border: 1.5px dashed var(--text-muted);
+  border-radius: 4px;
 }
 
 .gc-spark .sparkline {
@@ -6092,6 +6116,9 @@ body.coach-open .coach-fab {
   --gc-sleep-light: #8bbcf0;
   --gc-sleep-rem: #d07ae0;
   --gc-sleep-awake: #f2acd9;
+  --gc-focus-anaerobic: #c48ae8;
+  --gc-focus-high: #ffb066;
+  --gc-focus-low: #5fd3e4;
 
   --ready-ok-bg: #1f3526;
   --ready-ok-border: #2f5a3b;
