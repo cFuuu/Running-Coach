@@ -98,6 +98,10 @@ _DISTANCE_KM: dict[str, float] = {
 
 _MARATHON_KM = _DISTANCE_KM["marathon"]
 
+# vdot_to_race_time_sec() 二分搜尋的配速範圍（秒/公里，2:00～20:00）。
+# 反解結果落在範圍外會被夾在邊界上，呼叫端要先確保輸入在此範圍內。
+SEARCH_PACE_BOUNDS_SEC_PER_KM = (120.0, 1200.0)
+
 # 課種配速區間相對 VDOT 對應全馬配速（Marathon Pace）的比例係數，取自
 # Daniels 訓練配速表的常見經驗區間（非逐一查表，屬簡化線性近似）：
 # 數值代表「該課種配速 = marathon_pace_sec_per_km * 係數」，係數 < 1 代表更快。
@@ -205,7 +209,7 @@ def estimate_max_effort_pace(
         return None
     vo2max = _RESTING_VO2 + (running_vo2(pace_sec_per_km) - _RESTING_VO2) / hrr_pct
     distance_km = _DISTANCE_KM[distance_category]
-    return _vdot_to_race_time_sec(vo2max, distance_km) / distance_km
+    return vdot_to_race_time_sec(vo2max, distance_km) / distance_km
 
 
 def _resolve_effort(
@@ -313,10 +317,10 @@ def compute_pace_zones(vdot: float) -> dict[str, dict[str, float]]:
 
 
 def _vdot_to_marathon_time_sec(vdot: float) -> float:
-    return _vdot_to_race_time_sec(vdot, _MARATHON_KM)
+    return vdot_to_race_time_sec(vdot, _MARATHON_KM)
 
 
-def _vdot_to_race_time_sec(
+def vdot_to_race_time_sec(
     vdot: float, distance_km: float, _tolerance_sec: float = 0.5
 ) -> float:
     """vdot_from_race() 的反函式：給定 VDOT 與距離，二分搜尋對應的完賽時間。
@@ -324,7 +328,7 @@ def _vdot_to_race_time_sec(
     Daniels 公式沒有 VDOT → 時間的封閉解析解，用二分搜尋在合理配速範圍
     （2:00～20:00/km）內反解，因為 vdot_from_race() 對時間是嚴格遞減函式。
     """
-    low_sec, high_sec = distance_km * 120.0, distance_km * 1200.0
+    low_sec, high_sec = (distance_km * p for p in SEARCH_PACE_BOUNDS_SEC_PER_KM)
     while high_sec - low_sec > _tolerance_sec:
         mid_sec = (low_sec + high_sec) / 2
         mid_vdot = vdot_from_race(distance_km, mid_sec)
