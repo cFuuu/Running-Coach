@@ -2712,9 +2712,88 @@ body.coach-open .coach-fab {
   min-width: 0;
 }
 
+/* 目標賽事用中性色強調（左側粗邊＋較深的標籤字），不佔用藍色，
+   避免與距離分級色（short 為藍）及介面主色混在一起 */
 .race-card.is-target {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-left: 4px solid var(--text);
+  background: var(--surface);
+}
+
+.race-card.is-target .race-card-label {
+  color: var(--text);
+}
+
+.race-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.race-all-btn {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.race-all-btn:hover,
+.race-all-btn.is-open {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.race-list {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.race-list-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--surface);
+}
+
+.race-list-row + .race-list-row {
+  border-top: 1px solid var(--border);
+}
+
+.race-list-row.is-target {
+  box-shadow: inset 4px 0 0 var(--text);
+}
+
+.race-list-date,
+.race-list-days {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.race-list-name {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.race-target-tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--text);
+  color: var(--surface);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .race-card-label {

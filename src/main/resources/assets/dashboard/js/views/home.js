@@ -315,15 +315,34 @@ function raceCard(iconKind, label, race, extraClass) {
     days.appendChild(h('span', 'race-weeks', '/ ' + raceWeeksText(race.days_left)));
   }
   card.appendChild(days);
-  var nameRow = h('div', 'race-card-name', race.name);
+  card.appendChild(raceNameRow(race, 'race-card-name'));
+  card.appendChild(h('div', 'today-note', race.date));
+  return card;
+}
+
+/** 賽事名稱＋距離標籤。距離接在名稱後面、字級相同，只靠顏色分級。 */
+function raceNameRow(race, className) {
+  var nameRow = h('div', className, race.name);
   if (race.distance) {
-    // 距離接在名稱後面、字級相同，只靠顏色分級
     nameRow.appendChild(document.createTextNode(' '));
     nameRow.appendChild(h('span', 'race-distance race-dist-' + raceDistanceTier(race.distance_km), race.distance));
   }
-  card.appendChild(nameRow);
-  card.appendChild(h('div', 'today-note', race.date));
-  return card;
+  return nameRow;
+}
+
+/** 「全部賽事」清單：所有未過期賽事依日期排列，目標賽事以中性的「目標」標記。 */
+function raceListPanel(all) {
+  var list = h('div', 'race-list');
+  all.forEach(function (race) {
+    var row = h('div', 'race-list-row' + (race.is_target ? ' is-target' : ''));
+    row.appendChild(h('span', 'race-list-date', race.date));
+    var name = raceNameRow(race, 'race-list-name');
+    if (race.is_target) name.appendChild(h('span', 'race-target-tag', '目標'));
+    row.appendChild(name);
+    row.appendChild(h('span', 'race-list-days', race.days_left === 0 ? '比賽日' : race.days_left + ' 天'));
+    list.appendChild(row);
+  });
+  return list;
 }
 
 /**
@@ -333,7 +352,9 @@ function raceCard(iconKind, label, race, extraClass) {
  */
 export function renderRaceCountdownBlock(races) {
   var block = h('div', 'today-block');
-  block.appendChild(h('div', 'today-block-title', '賽事倒數'));
+  var title = h('div', 'today-block-title race-title');
+  title.appendChild(h('span', null, '賽事倒數'));
+  block.appendChild(title);
   var grid = h('div', 'race-grid');
   var next = races && races.next;
   var target = races && races.target;
@@ -345,6 +366,24 @@ export function renderRaceCountdownBlock(races) {
     grid.appendChild(raceCard('target', '目標賽事', target, 'is-target'));
   }
   block.appendChild(grid);
+
+  // 卡片已顯示的場次（合併時 1 場、否則最多 2 場）以外還有別場，才需要「全部賽事」
+  var all = (races && races.all) || [];
+  var shownCount = grid.classList.contains('is-merged') ? 1 : (next ? 1 : 0) + (target ? 1 : 0);
+  if (all.length > shownCount) {
+    var panel = raceListPanel(all);
+    panel.hidden = true;
+    var toggle = h('button', 'race-all-btn', '全部賽事（' + all.length + '）');
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.addEventListener('click', function () {
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute('aria-expanded', String(!panel.hidden));
+      toggle.classList.toggle('is-open', !panel.hidden);
+    });
+    title.appendChild(toggle);
+    block.appendChild(panel);
+  }
   return block;
 }
 

@@ -180,8 +180,21 @@ class RaceCountdownTest(unittest.TestCase):
     def test_empty_schedule(self):
         self.assertEqual(
             race_countdown({"target": None, "upcoming": []}, self.TODAY),
-            {"next": None, "target": None},
+            {"next": None, "target": None, "all": []},
         )
+
+    def test_all_lists_every_upcoming_race_by_date_and_skips_past(self):
+        schedule = {
+            "target": self.TARGET,
+            "upcoming": [
+                {"name": "較晚賽", "date": "2026-12-01"},
+                {"name": "已過", "date": "2026-10-01"},
+                {"name": "暖身賽", "date": "2026-11-15"},
+            ],
+        }
+        result = race_countdown(schedule, self.TODAY)
+        self.assertEqual([r["name"] for r in result["all"]], ["暖身賽", "較晚賽", "目標馬"])
+        self.assertEqual([r["is_target"] for r in result["all"]], [False, False, True])
 
 
 class LoadEasyPaceRangeTest(unittest.TestCase):

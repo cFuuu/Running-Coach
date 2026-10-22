@@ -195,6 +195,7 @@ def race_countdown(schedule: dict[str, Any], today: datetime.date) -> dict[str, 
 
     下場賽事＝目標賽事與賽程裡、日期不早於 today 的最近一場；已過期的場次不顯示。
     兩者皆為 {"name", "distance", "distance_km", "date", "days_left", "is_target"} 或 None。
+    另附 "all"：所有未過期賽事（含目標），依日期由近到遠，供前端「全部賽事」清單用。
     """
     target = schedule.get("target")
     candidates = [
@@ -219,4 +220,5 @@ def race_countdown(schedule: dict[str, Any], today: datetime.date) -> dict[str, 
     return {
         "next": min(upcoming, key=lambda r: r["date"], default=None),
         "target": next((r for r in upcoming if r["is_target"]), None),
+        "all": sorted(upcoming, key=lambda r: r["date"]),
     }

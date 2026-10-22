@@ -410,7 +410,12 @@
       freshness: { wellness_latest: BASE_DATE, activity_latest: lastActivity ? lastActivity.date : null, days_behind: 0 },
       races: {
         next: { name: '範例路跑（假資料）', distance: '10K', distance_km: 10, date: dateMinus(-25), days_left: 25, is_target: false },
-        target: { name: '範例馬拉松（假資料）', distance: '42K', distance_km: 42, date: dateMinus(-60), days_left: 60, is_target: true }
+        target: { name: '範例馬拉松（假資料）', distance: '42K', distance_km: 42, date: dateMinus(-60), days_left: 60, is_target: true },
+        all: [
+          { name: '範例路跑（假資料）', distance: '10K', distance_km: 10, date: dateMinus(-25), days_left: 25, is_target: false },
+          { name: '範例半馬（假資料）', distance: '21K', distance_km: 21, date: dateMinus(-42), days_left: 42, is_target: false },
+          { name: '範例馬拉松（假資料）', distance: '42K', distance_km: 42, date: dateMinus(-60), days_left: 60, is_target: true }
+        ]
       },
       planned: {
         today: { workout_type: 'easy', planned_distance_km: 6.0, planned_pace_sec_per_km: 340, notes: null, plan_source: 'generated', created_at: dateMinus(20) + 'T00:00:00' },
