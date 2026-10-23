@@ -518,6 +518,58 @@
     }
   })();
 
+  // N-29 W3：行事曆專用的示範資料（只出現在 /api/calendar，不進 /api/sessions 的跑步清單）。
+  //   - 一天超過 3 筆（跑步以外的健身／健走／自行車）→ 收合成「還有 N 筆」
+  //   - 暖身＋主課（warmup_for_activity_id）→ 膠囊合併
+  //   - 課表是跑步、當天只做健身 → 健身膠囊無外框＋紅色虛線「未執行」
+  //   - 未來賽事（課表 race 課種，賽事名稱在 notes）→ 紫色虛線膠囊
+  // 每筆自帶 plan_match（不跑 mockPlanMatch，因為那個只懂跑步）。
+  var CALENDAR_EXTRA_ACTIVITIES = {};
+  var CALENDAR_EXTRA_PLANS = {};
+  var WARMUP_MATCH = { state: 'none', method: null, reason: 'warmup_of_main' };
+  var NO_PLAN_MATCH = { state: 'none', method: null, reason: 'no_compatible_plan' };
+  function addCalendarExtra(dateStr, extra) {
+    (CALENDAR_EXTRA_ACTIVITIES[dateStr] = CALENDAR_EXTRA_ACTIVITIES[dateStr] || []).push(extra);
+  }
+  (function addCalendarDemoDays() {
+    var sessionsOn = function (d) { return ALL_SESSIONS.filter(function (s) { return s.date === d; }); };
+    var busy = dateMinus(2);
+    [[960, '12:30:00', 'strength_training', '上肢', null, 2710],
+     [961, '18:05:00', 'walking', '通勤', 3.1, 2300],
+     [962, '19:20:00', 'road_biking', '河濱', 12.4, 2600],
+     [963, '21:00:00', 'walking', '晚餐後', 2.0, 1500]].forEach(function (x) {
+      addCalendarExtra(busy, {
+        id: x[0], started_at: busy + 'T' + x[1], activity_type: x[2], title: x[3],
+        distance_km: x[4], duration_sec: x[5], plan_match: NO_PLAN_MATCH
+      });
+    });
+    var warmupDone = false;
+    var strengthDone = false;
+    for (var off = 3; off < 28 && !(warmupDone && strengthDone); off += 1) {
+      var d = dateMinus(off);
+      if (plannedWorkoutTypeFor(d) === 'rest') continue;
+      var runs = sessionsOn(d);
+      if (!warmupDone && runs.length === 1) {
+        var main = runs[0];
+        addCalendarExtra(d, {
+          id: 964, started_at: d + 'T' + main.started_at.slice(11, 13) + ':00:00', activity_type: 'running',
+          title: '暖身', distance_km: 1.3, duration_sec: 540, warmup_for_activity_id: main.id,
+          plan_match: WARMUP_MATCH
+        });
+        warmupDone = true;
+      } else if (!strengthDone && runs.length === 0) {
+        addCalendarExtra(d, {
+          id: 965, started_at: d + 'T19:00:00', activity_type: 'strength_training', title: '核心',
+          distance_km: null, duration_sec: 3150, plan_match: NO_PLAN_MATCH
+        });
+        strengthDone = true;
+      }
+    }
+    CALENDAR_EXTRA_PLANS[dateMinus(-13)] = {
+      workout_type: 'race', planned_distance_km: 10, notes: 'D6：範例夏季路跑 10K（假資料）'
+    };
+  })();
+
   // PUT /api/plan/{id}/link 的假狀態：plan id（mock 用日期字串）→ 已確認的 activity id
   var MOCK_PLAN_LINKS = {};
 
@@ -535,19 +587,33 @@
 
   function buildCalendarDay(dateStr) {
     var sessionsThatDay = ALL_SESSIONS.filter(function (s) { return s.date === dateStr; });
-    var workoutType = plannedWorkoutTypeFor(dateStr);
+    var extraPlan = CALENDAR_EXTRA_PLANS[dateStr];
+    var workoutType = extraPlan ? extraPlan.workout_type : plannedWorkoutTypeFor(dateStr);
     var planned = workoutType === 'rest' ? [] : [{
-      id: dateStr, workout_type: workoutType, planned_distance_km: workoutType === 'lsd' ? 12 : 6,
-      planned_pace_sec_per_km: 340, plan_source: 'generated'
+      id: dateStr, workout_type: workoutType,
+      planned_distance_km: extraPlan ? extraPlan.planned_distance_km : (workoutType === 'lsd' ? 12 : 6),
+      planned_pace_sec_per_km: extraPlan ? null : 340, plan_source: 'generated',
+      notes: extraPlan ? extraPlan.notes : null
     }];
     var activities = sessionsThatDay.map(function (s) {
       return {
         id: s.id, activity_type: s.activity_type, is_running: true,
         workout_type: s.workout_type, distance_km: s.distance_km, duration_sec: s.duration_sec,
-        title: s.title,
+        avg_hr_bpm: s.avg_hr_bpm, title: s.title, warmup_for_activity_id: null, started_at: s.started_at,
         plan_match: mockPlanMatch(planned, s, sessionsThatDay.length)
       };
     });
+    (CALENDAR_EXTRA_ACTIVITIES[dateStr] || []).forEach(function (x) {
+      activities.push({
+        id: x.id, activity_type: x.activity_type, is_running: x.activity_type === 'running',
+        workout_type: null, distance_km: x.distance_km, duration_sec: x.duration_sec, avg_hr_bpm: null,
+        title: x.title, warmup_for_activity_id: x.warmup_for_activity_id || null, started_at: x.started_at,
+        plan_match: x.plan_match
+      });
+    });
+    // 與後端相同依開始時間排序；started_at 只是排序用，回傳前拿掉（契約沒有這個欄位）
+    activities.sort(function (a, b) { return a.started_at < b.started_at ? -1 : 1; });
+    activities.forEach(function (a) { delete a.started_at; });
     var hasRunningPlan = workoutType !== 'rest';
     // 與後端相同：同日多場搶同一份課表（ambiguous）仍算當天有執行
     var anyMatched = activities.some(function (a) { return a.plan_match.state !== 'none'; });
