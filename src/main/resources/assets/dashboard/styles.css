@@ -1835,11 +1835,11 @@ body.coach-open .coach-fab {
 /* 訓練負荷區六張卡：上列本專案 TSB／ATL／CTL，下列 Garmin 訓練負荷／訓練狀態／負荷焦點。
    區塊夠寬時一列三張，讓兩種來源各佔一列；窄時退回兩欄。 */
 /* 訓練負荷與戰力綜覽並排時，兩邊的兩排卡片要上下緣對齊：兩個區塊的兩排用同一組最小高度
-   （上排 290px 容得下兩邊最高的一張，下排 325px 同理）。數字取自實測內容高度，內容更高時仍會撐開 */
+   （上排 232px 容得下兩邊最高的一張，下排 262px 同理；CSS 像素，非截圖像素）。數字取自實測內容高度，內容更高時仍會撐開 */
 @container block (min-width: 540px) {
   .home-load-cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: minmax(290px, auto) minmax(325px, auto);
+    grid-template-rows: minmax(232px, auto) minmax(262px, auto);
   }
 }
 
@@ -1855,7 +1855,7 @@ body.coach-open .coach-fab {
 @container block (min-width: 540px) {
   .ability-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: minmax(290px, auto) minmax(325px, auto);
+    grid-template-rows: minmax(232px, auto) minmax(262px, auto);
   }
 }
 
