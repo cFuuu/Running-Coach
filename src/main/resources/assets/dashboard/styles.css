@@ -2058,7 +2058,7 @@ body.coach-open .coach-fab {
    不做三段式配色——狀態本身只是對照參考（garmin_blackbox 偏誤），
    顏色講太細會讓它看起來比實際更權威。 */
 .hrv-status-balanced {
-  color: var(--c-good, var(--accent));
+  color: var(--pct-green);
   font-weight: 600;
 }
 
@@ -2088,7 +2088,7 @@ body.coach-open .coach-fab {
   top: 0;
   bottom: 0;
   border-radius: 4px;
-  background: var(--c-good, var(--accent));
+  background: var(--pct-green);
   opacity: 0.55;
 }
 

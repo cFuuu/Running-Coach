@@ -157,10 +157,10 @@ var READINESS_TIPS = [
     + '另有「連續訓練」規則（連續訓練達 6 天，預設值可個人化），平常不顯示，觸發時才會多一列。',
   '各觸發項旁的標籤是信賴度：TSB 取決於最大心率是否實測；HRV 的百分比門檻尚未經文獻驗證，標為低。',
   '資料不足的維度會跳過（例如 HRV 近 7 天少於 3 筆、當天尚未同步）。',
-  'HRV 列尾的橘色「趨勢偏低」是另一條規則，只是提醒，不計入判定：HRV 7 日平均低於你前 4 週基線'
+  'HRV 變化列尾的橘色「趨勢偏低」是另一條規則，只是提醒，不計入判定：HRV 7 日平均低於你前 4 週基線'
     + '（ln 尺度 mean − 0.5×SD）時出現。它補的是 15% 規則抓不到的慢性下滑，'
     + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。'
-    + '滑鼠移到 HRV 列上可看趨勢的數字。',
+    + '滑鼠移到 HRV 變化列上可看趨勢的數字。',
   '「HRV 狀態」是 Garmin 手錶（Firstbeat）給的 HRV 分類（平衡／不平衡／偏低／不佳）：'
     + '把你的 HRV 7 日均值，對照手錶自己算出的個人平衡區間所得到的結果。'
     + '演算法未公開，只是參考資訊，不計入上面的判定，也不會變紅。滑鼠移上去可看 7 日均值與平衡區間。',
@@ -190,7 +190,7 @@ var CONSECUTIVE_ROW = {
 var READINESS_ROWS = [
   { dim: 'tsb', key: 'tsb', label: 'TSB',
     fmt: function (v) { return signedNumber(v, 1); }, unit: '' },
-  { dim: 'hrv', key: 'hrv_change_pct', label: 'HRV',
+  { dim: 'hrv', key: 'hrv_change_pct', label: 'HRV 變化',
     fmt: function (v) { return signedNumber(v, 1) + '%'; }, unit: '' }
 ];
 
