@@ -6825,13 +6825,9 @@ button.recent-row .rc-dist {
 /* 月曆格＋運動膠囊（.sport-chip，W0）、外框表示課表狀態、ⓘ 圖例、頂部三數字、
    底部各運動合計、當日明細（含「這場是課表」確認）。只用既有 token，不新增色票。 */
 :root {
-  /* 待確認（ambiguous）虛線色 */
-  --cal-pending-line: var(--notice-text);
-}
-
-:root[data-theme="dark"] {
-  /* 深色底上 notice 字色太暗，改用飽和黃（W0 自行車色 token） */
-  --cal-pending-line: var(--sport-bike-bg);
+  /* 待確認（ambiguous）虛線色：淺色、深色用同一個琥珀色（2026-10-24 Fu：顏色要一致）。
+     對白底 3.35、淺灰底 3.13、深色底 4.83，都達非文字元素 3:1 */
+  --cal-pending-line: #bb810f;
 }
 
 .cal-head {
