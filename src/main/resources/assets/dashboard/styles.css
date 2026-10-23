@@ -2054,22 +2054,26 @@ body.coach-open .coach-fab {
   color: var(--text-muted);
 }
 
-/* Garmin HRV 狀態文字色。只區分「平衡」與「其餘」兩種語氣，
-   不做三段式配色——狀態本身只是對照參考（garmin_blackbox 偏誤），
-   顏色講太細會讓它看起來比實際更權威。 */
-.hrv-status-balanced {
-  color: var(--pct-green);
-  font-weight: 600;
+/* Garmin HRV 狀態圖示（仿 Garmin Connect）：文字維持一般色，只用形狀＋顏色區分
+   （綠圓＝平衡、橘方＝不平衡、紅三角＝偏低／不佳、空心灰圓＝資料不足），色盲也分得出來。 */
+.hrv-mark {
+  display: inline-flex;
+  align-self: center;
+  flex-shrink: 0;
 }
 
-.hrv-status-alert {
-  color: var(--badge-clipped-text);
-  font-weight: 600;
+.hrv-mark svg {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linejoin: round;
 }
 
-.hrv-status-muted {
-  color: var(--text-muted);
-}
+.hrv-mark-good { color: var(--pct-green); }
+.hrv-mark-warn { color: var(--pct-orange); }
+.hrv-mark-bad { color: var(--pct-red); }
+.hrv-mark-muted { color: var(--text-muted); }
+.hrv-mark-muted svg { fill: none; stroke-width: 1.6; }
 
 /* HRV 平衡區間量表：綠帶＝Garmin 平衡區間，圓點＝7 日均值（只標位置，不下判讀） */
 .hrv-gauge {
@@ -2327,16 +2331,6 @@ body.coach-open .coach-fab {
   font-size: var(--fs-lg);
   font-weight: 600;
 }
-
-.gc-status-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-
-.gc-status-dot.hrv-status-balanced { background: var(--pct-green); }
-.gc-status-dot.hrv-status-alert { background: var(--pct-orange); }
 
 .gc-status-badge {
   display: flex;

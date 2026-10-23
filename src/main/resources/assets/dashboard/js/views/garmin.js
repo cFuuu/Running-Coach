@@ -13,8 +13,8 @@
 
 import * as C from '../charts.js';
 import { h, clear, showLoading, showUnavailable } from '../core/dom.js';
-import { infoTip } from '../core/facts.js';
-import { HRV_STATUS_LABEL, HRV_STATUS_CLASS, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
+import { infoTip, hrvStatusMark } from '../core/facts.js';
+import { HRV_STATUS_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 
 // Training Readiness 等級。MODERATE「中」對照 Garmin 網頁；其餘依 Garmin 的五級
 // （差／低／中／高／最佳）。分數區間是 Garmin 公布的：1–24／25–49／50–74／75–94／95–100。
@@ -154,8 +154,9 @@ function intraday(points, opts, date) {
 
 function renderHrv(c, body) {
   var status = h('div', 'gc-status');
-  status.appendChild(h('span', 'gc-status-dot ' + (HRV_STATUS_CLASS[c.status] || '')));
-  status.appendChild(h('span', HRV_STATUS_CLASS[c.status] || '', HRV_STATUS_LABEL[c.status] || c.status || '—'));
+  var mark = hrvStatusMark(c.status);
+  if (mark) status.appendChild(mark);
+  status.appendChild(h('span', null, HRV_STATUS_LABEL[c.status] || c.status || '—'));
   body.appendChild(status);
   body.appendChild(bigValue(num(c.weekly_avg_ms), '毫秒'));
   body.appendChild(h('div', 'gc-caption', '7 天平均'));

@@ -3,7 +3,7 @@
  */
 
 import * as C from '../charts.js';
-import { CONFIDENCE_LABEL } from './state.js';
+import { CONFIDENCE_LABEL, HRV_STATUS_MARK } from './state.js';
 import { $, clear, h } from './dom.js';
 
 /**
@@ -135,6 +135,23 @@ export function bindInfoTipDismiss() {
   if (content) content.addEventListener('scroll', function () { closeInfoPopover(false); }, { passive: true });
   window.addEventListener('scroll', function () { closeInfoPopover(false); }, { passive: true });
   window.addEventListener('resize', function () { closeInfoPopover(false); });
+}
+
+// 內容是固定字面值，不含外部資料
+var HRV_MARK_SHAPE = {
+  circle: '<circle cx="7" cy="7" r="5.5"/>',
+  square: '<rect x="1.8" y="1.8" width="10.4" height="10.4" rx="1.5"/>',
+  triangle: '<path d="M7 1.6 12.8 12H1.2z"/>'
+};
+
+/** Garmin HRV 狀態的形狀＋顏色圖示（綠圓／橘方／紅三角）。未知狀態回傳 null。 */
+export function hrvStatusMark(status) {
+  var def = HRV_STATUS_MARK[status];
+  if (!def) return null;
+  var mark = h('span', 'hrv-mark hrv-mark-' + def.tone);
+  mark.innerHTML = '<svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">'
+    + HRV_MARK_SHAPE[def.shape] + '</svg>';
+  return mark;
 }
 
 /** 信賴度 badge（fact 的三欄位契約），hover 顯示依據來源與已知偏誤。 */

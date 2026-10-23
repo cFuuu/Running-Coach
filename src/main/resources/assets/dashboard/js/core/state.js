@@ -169,14 +169,15 @@ export var HRV_STATUS_LABEL = {
   POOR: '不佳',
   NOT_ENOUGH_DATA: '資料不足'
 };
-// 只有「平衡」是預期狀態，其餘都值得注意——用 CSS class 區分顏色，
-// 但不在這裡寫任何建議文字（判讀屬 AI 教練，見頁尾聲明）。
-export var HRV_STATUS_CLASS = {
-  BALANCED: 'hrv-status-balanced',
-  UNBALANCED: 'hrv-status-alert',
-  LOW: 'hrv-status-alert',
-  POOR: 'hrv-status-alert',
-  NOT_ENOUGH_DATA: 'hrv-status-muted'
+// 狀態圖示（仿 Garmin Connect 的 HRV 圖）：文字維持一般色，用形狀＋顏色區分，
+// 色盲也分得出來——綠圓＝平衡、橘方＝不平衡、紅三角＝偏低／不佳、空心灰圓＝資料不足。
+// 不在這裡寫任何建議文字（判讀屬 AI 教練，見頁尾聲明）。
+export var HRV_STATUS_MARK = {
+  BALANCED: { shape: 'circle', tone: 'good' },
+  UNBALANCED: { shape: 'square', tone: 'warn' },
+  LOW: { shape: 'triangle', tone: 'bad' },
+  POOR: { shape: 'triangle', tone: 'bad' },
+  NOT_ENOUGH_DATA: { shape: 'circle', tone: 'muted' }
 };
 
 /**

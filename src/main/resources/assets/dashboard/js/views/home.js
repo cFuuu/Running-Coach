@@ -13,10 +13,10 @@
  */
 
 import * as C from '../charts.js';
-import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL, HRV_STATUS_CLASS } from '../core/state.js';
+import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL } from '../core/state.js';
 import { api, apiSend } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
-import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
+import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark } from '../core/facts.js';
 import { addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote, warmupsByMain, warmupLabel } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
@@ -241,8 +241,9 @@ function garminHrvRow() {
   var row = h('div', 'wt-row rd-row');
   row.appendChild(h('span', 'wt-row-label', 'HRV 狀態'));
   var val = h('span', 'wt-row-value');
-  val.appendChild(h('span', 'rd-value ' + (HRV_STATUS_CLASS[status] || ''),
-    status ? (HRV_STATUS_LABEL[status] || status) : '—'));
+  var mark = hrvStatusMark(status);
+  if (mark) val.appendChild(mark);
+  val.appendChild(h('span', 'rd-value', status ? (HRV_STATUS_LABEL[status] || status) : '—'));
   row.appendChild(val);
 
   var tips = ['Garmin（Firstbeat）判定的 HRV 狀態，演算法未公開，僅供參考，不計入判定'];
