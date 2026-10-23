@@ -17,7 +17,7 @@ import sqlite3
 from typing import Any
 
 # 由累到好排列；與 schema.sql 的 CHECK 約束一致。
-FEEL_LEVELS = ("very_tired", "tired", "normal", "good")
+FEEL_LEVELS = ("tired", "normal", "energetic")
 SOURCES = ("dashboard", "coach", "backfill")
 
 

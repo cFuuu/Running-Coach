@@ -3632,39 +3632,69 @@ button.recent-row .rc-actual .rc-main {
   color: var(--ready-low-text);
 }
 
-/* 今天體感：四顆按鈕，複用 .range-btn 的外觀，窄螢幕時自動換行 */
-.feel-row {
+/* 本週訓練狀況與自評體感狀況疊在右欄；多出的高度給本週訓練狀況，
+   體感區塊貼底，與左欄的訓練完備程度下緣對齊 */
+.today-stack {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
-.feel-label {
-  font-size: var(--fs-sm);
+.today-stack > .fig-block {
+  flex: 1 1 auto;
+}
+
+/* 疊放時日期接在標題後面（不獨佔第二行），省下一行高度；放不下才自然換行 */
+.today-stack .fig-block .fig-title-date {
+  flex-basis: auto;
+  margin-top: 0;
+}
+
+/* 自評體感狀況：三段等寬選擇，選中的段落填色（疲憊橘、普通灰、充沛藍） */
+.feel-block .today-block-title {
+  display: flex;
+  align-items: center;
+  gap: 0 6px;
+  margin-bottom: 8px;
+}
+
+.feel-status {
+  margin-left: auto;
+  font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
+.feel-block .info-tip-btn {
+  flex-shrink: 0;
+}
+
 .feel-options {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
 .feel-btn {
-  min-height: 36px;
-  min-width: 0;
-  padding: 0 12px;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
   font-size: var(--fs-sm);
+  cursor: pointer;
 }
 
-.feel-status {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+.feel-btn.is-active {
+  color: #fff;
+  font-weight: 700;
 }
+
+.feel-btn.feel-tired.is-active { background: var(--pct-orange); border-color: var(--pct-orange); }
+.feel-btn.feel-normal.is-active { background: var(--text-muted); border-color: var(--text-muted); }
+.feel-btn.feel-energetic.is-active { background: var(--pct-blue); border-color: var(--pct-blue); }
 
 /* HRV 趨勢偏離：只是提醒、不計入判定，用信賴度「低」的橘色而非偏低的紅色 */
 .rd-row.is-hint .rd-value,

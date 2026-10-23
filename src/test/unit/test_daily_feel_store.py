@@ -38,11 +38,11 @@ class TestDailyFeelStore(unittest.TestCase):
     def test_same_day_overwrites_instead_of_accumulating(self):
         """一天只留一筆：點錯改選時直接覆寫，分析時不必挑哪一筆。"""
         set_feel(self.conn, self.athlete_id, "2026-10-22", "tired", "dashboard")
-        set_feel(self.conn, self.athlete_id, "2026-10-22", "good", "coach", note="睡飽了")
+        set_feel(self.conn, self.athlete_id, "2026-10-22", "energetic", "coach", note="睡飽了")
         feels = get_feels_in_range(self.conn, self.athlete_id, "2026-10-22", "2026-10-22")
         self.assertEqual(len(feels), 1)
         self.assertEqual((feels[0]["feel"], feels[0]["source"], feels[0]["note"]),
-                         ("good", "coach", "睡飽了"))
+                         ("energetic", "coach", "睡飽了"))
 
     def test_blank_note_stored_as_none(self):
         row = set_feel(self.conn, self.athlete_id, "2026-10-22", "normal", "dashboard", note="  ")
@@ -51,6 +51,8 @@ class TestDailyFeelStore(unittest.TestCase):
     def test_rejects_unknown_feel_and_source(self):
         with self.assertRaises(ValueError):
             set_feel(self.conn, self.athlete_id, "2026-10-22", "exhausted", "dashboard")
+        with self.assertRaises(ValueError):  # 舊 4 級的值已不合法
+            set_feel(self.conn, self.athlete_id, "2026-10-22", "very_tired", "dashboard")
         with self.assertRaises(ValueError):
             set_feel(self.conn, self.athlete_id, "2026-10-22", "tired", "garmin")
 
@@ -64,6 +66,49 @@ class TestDailyFeelStore(unittest.TestCase):
         self.assertTrue(delete_feel(self.conn, self.athlete_id, "2026-10-22"))
         self.assertFalse(delete_feel(self.conn, self.athlete_id, "2026-10-22"))
         self.assertEqual(get_feels_in_range(self.conn, self.athlete_id, "2026-10-22", "2026-10-22"), [])
+
+
+class TestFourToThreeLevelMigration(unittest.TestCase):
+    """舊資料庫（4 級 CHECK）開啟時自動合併成 3 級；合併後再開不重複處理。"""
+
+    def test_legacy_rows_are_merged(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        db_path = Path(tmp.name) / "legacy.db"
+        conn = get_connection(db_path)
+        athlete_id = _build_athlete(conn)
+        # 還原成舊表結構，模擬 2026-10-22 版本的資料庫
+        conn.execute("DROP TABLE daily_feel")
+        conn.execute(
+            """
+            CREATE TABLE daily_feel (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL REFERENCES athlete_profile(id),
+                date TEXT NOT NULL,
+                feel TEXT NOT NULL CHECK (feel IN ('very_tired', 'tired', 'normal', 'good')),
+                note TEXT,
+                source TEXT NOT NULL CHECK (source IN ('dashboard', 'coach', 'backfill')),
+                updated_at TEXT NOT NULL,
+                UNIQUE (athlete_id, date)
+            )
+            """
+        )
+        for day, feel in [("2026-10-01", "very_tired"), ("2026-10-02", "tired"),
+                          ("2026-10-03", "normal"), ("2026-10-04", "good")]:
+            conn.execute(
+                "INSERT INTO daily_feel (athlete_id, date, feel, source, updated_at) "
+                "VALUES (?, ?, ?, 'backfill', '2026-10-22T00:00:00')",
+                (athlete_id, day, feel),
+            )
+        conn.commit()
+        conn.close()
+
+        for _ in range(2):  # 第二次開啟必須是 no-op
+            conn = get_connection(db_path)
+            feels = get_feels_in_range(conn, athlete_id, "2026-10-01", "2026-10-31")
+            self.assertEqual([f["feel"] for f in feels], ["tired", "tired", "normal", "energetic"])
+            self.assertEqual({f["source"] for f in feels}, {"backfill"})
+            conn.close()
 
 
 class TestRulesDoNotReadDailyFeel(unittest.TestCase):
@@ -95,12 +140,12 @@ class TestDailyFeelRoutes(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_put_get_delete_roundtrip(self):
-        r = self.client.put("/api/daily-feel/2026-10-22", json={"feel": "very_tired"})
+        r = self.client.put("/api/daily-feel/2026-10-22", json={"feel": "energetic"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["source"], "dashboard")
 
         r = self.client.get("/api/daily-feel", params={"start": "2026-10-22", "end": "2026-10-22"})
-        self.assertEqual([f["feel"] for f in r.json()["feels"]], ["very_tired"])
+        self.assertEqual([f["feel"] for f in r.json()["feels"]], ["energetic"])
 
         r = self.client.delete("/api/daily-feel/2026-10-22")
         self.assertEqual(r.json(), {"deleted": True})

@@ -113,6 +113,7 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
     _backfill_training_plan_is_active(conn)
     _migrate_training_plan_check_constraint(conn)
     _fix_lactate_pace_unit(conn)
+    _migrate_daily_feel_three_levels(conn)
 
 
 # PRAGMA user_version 記錄已套用的一次性資料修正。欄位 migration 可以靠
@@ -201,6 +202,50 @@ def _migrate_training_plan_check_constraint(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_training_plan_athlete_date ON training_plan (athlete_id, planned_date)"
     )
+
+
+def _migrate_daily_feel_three_levels(conn: sqlite3.Connection) -> None:
+    """2026-10-23：daily_feel 由 4 級（very_tired/tired/normal/good）合併為
+    3 級（tired/normal/energetic）。
+
+    SQLite 不能改既有欄位的 CHECK，只能重建表：舊表改名 → 建新表（與 schema.sql
+    一致）→ 複製並對應舊值（very_tired、tired→tired；good→energetic）→ 刪舊表。
+    只在舊 CHECK 仍含 'very_tired' 時執行，可重複執行；合併後「很累／有點累」
+    的區別不可回復，這是使用者 2026-10-23 拍板的取捨。
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'daily_feel'"
+    ).fetchone()
+    if row is None or row["sql"] is None or "very_tired" not in row["sql"]:
+        return  # 表不存在，或已是 3 級
+
+    conn.execute("ALTER TABLE daily_feel RENAME TO daily_feel_legacy_four_levels")
+    conn.execute(
+        """
+        CREATE TABLE daily_feel (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            athlete_id      INTEGER NOT NULL REFERENCES athlete_profile(id),
+            date            TEXT NOT NULL,
+            feel            TEXT NOT NULL CHECK (feel IN ('tired', 'normal', 'energetic')),
+            note            TEXT,
+            source          TEXT NOT NULL CHECK (source IN ('dashboard', 'coach', 'backfill')),
+            updated_at      TEXT NOT NULL,
+            UNIQUE (athlete_id, date)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO daily_feel (id, athlete_id, date, feel, note, source, updated_at)
+        SELECT id, athlete_id, date,
+               CASE feel WHEN 'good' THEN 'energetic'
+                         WHEN 'normal' THEN 'normal'
+                         ELSE 'tired' END,
+               note, source, updated_at
+        FROM daily_feel_legacy_four_levels
+        """
+    )
+    conn.execute("DROP TABLE daily_feel_legacy_four_levels")
 
 
 def _backfill_training_plan_is_active(conn: sqlite3.Connection) -> None:

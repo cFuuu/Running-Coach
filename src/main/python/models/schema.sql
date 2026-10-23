@@ -565,14 +565,15 @@ CREATE TABLE IF NOT EXISTS context_notes (
 -- ⚠️ 硬邊界同 context_notes：**永不進事實層**，readiness.py 等規則模組不得讀取。
 -- 它是驗證規則的對照組，若反過來餵進規則，就再也無法拿它來驗證規則。
 --
--- 與 context_notes 刻意自由文字不同，這裡**設固定 4 級**：要統計「規則觸發日
--- 有幾成真的累」就必須可比較；4 級沿用對照報告已用過的分級。
+-- 與 context_notes 刻意自由文字不同，這裡**設固定 3 級**（疲憊／普通／充沛）：
+-- 要統計「規則觸發日有幾成真的累」就必須可比較。2026-10-23 由 4 級合併為 3 級
+-- （很累＋有點累→tired、很好→energetic），遷移見 db._migrate_daily_feel_three_levels。
 -- source 區分即時記錄與事後回填——後者是回想，分析時應分開看。
 CREATE TABLE IF NOT EXISTS daily_feel (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     athlete_id      INTEGER NOT NULL REFERENCES athlete_profile(id),
     date            TEXT NOT NULL,
-    feel            TEXT NOT NULL CHECK (feel IN ('very_tired', 'tired', 'normal', 'good')),
+    feel            TEXT NOT NULL CHECK (feel IN ('tired', 'normal', 'energetic')),
     note            TEXT,
     source          TEXT NOT NULL CHECK (source IN ('dashboard', 'coach', 'backfill')),
     updated_at      TEXT NOT NULL,

@@ -599,7 +599,7 @@ def get_daily_feel(
     end_date: str,
     athlete_id: int | None = None,
 ) -> list[dict]:
-    """取得學員每日自評的體感（very_tired／tired／normal／good），沒記的日子不出現。
+    """取得學員每日自評的體感（tired 疲憊／normal 普通／energetic 充沛），沒記的日子不出現。
 
     用途是對照規則判讀：readiness 說偏低、HRV 趨勢說偏離時，學員當天是否真的累。
     source 為 backfill 的是事後回想補填，可信度低於當天記錄（dashboard／coach）。
@@ -625,8 +625,8 @@ def record_daily_feel(
 ) -> dict:
     """⚠️ 會寫入資料庫：記錄學員某天的體感，同一天再記會覆寫。
 
-    feel 只能是 very_tired（很累）／tired（有點累）／normal（普通）／good（很好）。
-    學員說「今天有點累」「今天精神很好」時使用；說法對不上四級時先問學員選哪一級，
+    feel 只能是 tired（疲憊）／normal（普通）／energetic（充沛）。
+    學員說「今天有點累」「今天精神很好」時使用；說法對不上三級時先問學員選哪一級，
     **不要代為判斷**。具體原因（睡不好、腳緊）放 note，記原話。
     跨多天的情境（出差、生病）仍用 add_context_note。
 

@@ -290,7 +290,7 @@ def write_daily_feel(
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict:
-    """寫入（覆寫）某天體感。body：{"feel": "very_tired|tired|normal|good", "note"?: str}"""
+    """寫入（覆寫）某天體感。body：{"feel": "tired|normal|energetic", "note"?: str}"""
     day = _parse_date_param(date, "date")
     resolved = _resolve_athlete_id(conn, athlete_id)
     try:
