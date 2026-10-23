@@ -336,8 +336,9 @@ function lapPaceChart(laps, opts) {
       class: 'bar bar-pace'
     });
     svg.appendChild(bar);
-    // 每圈的距離不足 1km 時（最後一圈）用不同樣式標示
-    if (typeof lap.distance_km === 'number' && lap.distance_km < 0.95) {
+    // 只有「最後一圈」不足 1km 才用不同樣式標示。間歇跑每一圈本來就短於 1km，
+    // 若不限定最後一圈，整張圖的長條都會被蓋上半透明白色遮罩而顯得偏淡
+    if (i === valid.length - 1 && typeof lap.distance_km === 'number' && lap.distance_km < 0.95) {
       svg.appendChild(el('rect', {
         x: cx - barWidth / 2,
         y: barY,

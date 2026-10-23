@@ -4691,7 +4691,8 @@ button.recent-row .rc-dist {
   fill: var(--accent);
 }
 
-.bar-pace { fill: var(--c-pace); }
+/* 分圈配速長條用主題色（強調色），不另用綠色；折線與圖例的配速色 --c-pace 不變 */
+.bar-pace { fill: var(--accent); }
 .bar-volume { fill: var(--c-volume); }
 
 /* 不足 1km 的最後一圈：用半透明條紋區隔，避免誤讀為完整一圈 */
