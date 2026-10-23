@@ -3676,13 +3676,15 @@ button.recent-row .rc-actual .rc-main {
   color: var(--text-muted);
 }
 
+/* ⓘ 靠標題列最右邊（與其他卡片同位置） */
 .feel-block .info-tip-btn {
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .feel-options {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 /* 只放表情圖示，格子縮成固定小方塊（文字在滑鼠提示） */
@@ -3690,7 +3692,7 @@ button.recent-row .rc-actual .rc-main {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
+  width: 44px;
   height: 38px;
   padding: 0;
   border: 1px solid var(--border);

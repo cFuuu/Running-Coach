@@ -161,8 +161,9 @@ var READINESS_TIPS = [
     + '（ln 尺度 mean − 0.5×SD）時出現。它補的是 15% 規則抓不到的慢性下滑，'
     + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。'
     + '滑鼠移到 HRV 列上可看趨勢的數字。',
-  '「Garmin HRV」列是手錶（Firstbeat）給的 HRV 狀態，演算法未公開，只供對照，'
-    + '不計入判定，也不會變紅。滑鼠移上去可看 7 日均值與平衡區間。',
+  '「HRV 狀態」是 Garmin 手錶（Firstbeat）給的 HRV 分類（平衡／不平衡／偏低／不佳）：'
+    + '把你的 HRV 7 日均值，對照手錶自己算出的個人平衡區間所得到的結果。'
+    + '演算法未公開，只是參考資訊，不計入上面的判定，也不會變紅。滑鼠移上去可看 7 日均值與平衡區間。',
   '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
     + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
 ];
@@ -238,14 +239,13 @@ function garminHrvRow() {
   var ref = hrv && hrv.garmin_reference;
   var status = ref && ref.status;
   var row = h('div', 'wt-row rd-row');
-  row.appendChild(h('span', 'wt-row-label', 'Garmin HRV'));
+  row.appendChild(h('span', 'wt-row-label', 'HRV 狀態'));
   var val = h('span', 'wt-row-value');
   val.appendChild(h('span', 'rd-value ' + (HRV_STATUS_CLASS[status] || ''),
     status ? (HRV_STATUS_LABEL[status] || status) : '—'));
   row.appendChild(val);
-  row.appendChild(h('span', 'conf-badge conf-reference', '參考'));
 
-  var tips = ['Garmin（Firstbeat）判定，演算法未公開，僅供對照，不計入判定'];
+  var tips = ['Garmin（Firstbeat）判定的 HRV 狀態，演算法未公開，僅供參考，不計入判定'];
   var avg = hrv && hrv.weekly_avg_ms && hrv.weekly_avg_ms.value;
   if (avg !== null && avg !== undefined) tips.push('7 日均值 ' + C.formatNumber(avg, 1) + ' ms');
   if (ref && ref.baseline_balanced_low && ref.baseline_balanced_upper) {
