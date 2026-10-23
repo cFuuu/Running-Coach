@@ -58,7 +58,7 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 - **接縫**：載入程式把自己掛成 `window.MOCK_API`（`isMock: true`、`isOffline: true`、`snapshotAt`），走 `core/api.js` 的 `useMock` 與 `coach.js` 的 `chatRequest`，前端程式碼不用改。寫入請求、同步狀態、AI 教練一律回錯誤或停用狀態。
 - **不寫入資料庫**：`create_app()` 啟動時會套 schema 遷移並改寫分析紀錄狀態，所以來源資料庫以 sqlite `mode=ro` 開啟、用 backup API 複製到暫存目錄，API 只打在暫存副本上。學員檔（賽事名稱）預設取來源資料庫同資料夾的 `athlete_profile.md`，可用 `--profile-path` 指定。
 - **資安掃描**：快照掃欄位名稱（`userProfileId`、`displayName`、token／cookie／authorization、email 等）、40 字以上的不透明 token 字串，以及資料庫 `athlete_source_identity.external_ref` 的帳號識別值；快照與頁面程式碼都掃 email、JWT、Bearer、Garmin／Cloudflare cookie 名稱。命中就以 exit code 2 中止、不寫檔，訊息只列規則名稱與次數，不回顯內容。
-- **實測大小**（2026-10-24 真實資料庫，559 場明細）：gzip＋全部歷史 **2.05 MB**；gzip＋`--detail-months 12` **1.25 MB**；`--no-gzip` 7.31 MB。全部歷史比 §1 試算的 1.3 MB 大，主要是資料本身變多：快照原文 7.0 MB（明細 3.9 MB，`wellness-trend`／`training-load`／`garmin-cards` 的 1 年與全部區間合計約 1.7 MB，行事曆 0.35 MB），gzip 後 1.11 MB，base64 後 1.48 MB；JS 0.48 MB、CSS 0.13 MB。只留跑步明細也只能降到約 1.98 MB，差別不大。
+- **實測大小**（2026-10-24 真實資料庫，559 場明細）：gzip＋全部歷史 **2.05 MB**；gzip＋`--detail-months 12` **1.25 MB**；`--no-gzip` 7.31 MB。Task E 總核對（2026-10-24，W4b 與後續微調合併後）重建一次：全部歷史 **2.31 MB**（2,419,771 bytes）。全部歷史比 §1 試算的 1.3 MB 大，主要是資料本身變多：快照原文 7.0 MB（明細 3.9 MB，`wellness-trend`／`training-load`／`garmin-cards` 的 1 年與全部區間合計約 1.7 MB，行事曆 0.35 MB），gzip 後 1.11 MB，base64 後 1.48 MB；JS 0.48 MB、CSS 0.13 MB。只留跑步明細也只能降到約 1.98 MB，差別不大。
 
 **W4b 離線模式（2026-10-24）**
 - **唯一判斷**：`core/api.js` 的 `isOfflineSnapshot()`（＝`window.MOCK_API.isOffline`）與 `offlineSnapshotInfo()`（`{at, today}`），其他地方不直接讀 `window.MOCK_API`。
@@ -157,5 +157,5 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 
 - [x] 匯出腳本有單元測試：用 fixture DB 產生輸出、gzip 能還原、資安掃描能擋下假 token、`--detail-months` 生效（`src/test/unit/test_build_dashboard_offline.py`）。
 - [x] 用 Playwright 以 `file://` 開啟產出的 HTML：五個 view 都能顯示，console 沒有錯誤；390px 寬度沒有橫向捲動（W4a 以 fixture 與真實資料各驗一次；W4b 改完前端後以真實資料在 390 與 1280 再驗，見 §2「W4b 離線模式」）。
-- [ ] 檔案大小約 1.3 MB（全部歷史＋gzip）。實測 2.05 MB，`--detail-months 12` 為 1.25 MB，見 §2「實測大小」，預設值待 Fu 決定。
+- [x] 檔案大小：目標原為約 1.3 MB，實測全部歷史＋gzip 為 2.31 MB（`--detail-months 12` 約 1.25 MB），見 §2「實測大小」。Fu 決定預設保留全部歷史（`--detail-months 0`）。
 - [ ] 真機測試：Fu 用 iPhone 經 iCloud 加捷徑開啟成功。這項只能由 Fu 本人確認。

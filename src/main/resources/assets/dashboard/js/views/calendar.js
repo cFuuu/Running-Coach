@@ -343,7 +343,9 @@ function legendContent() {
   var states = h('div', 'cal-legend-states');
   states.appendChild(legendRow(sportChip('run', '8.2', 'is-done'), '有課表，已執行（只框配到課表的那一筆）'));
   states.appendChild(legendRow(sportChip('run', '5.0'), '沒排課的額外活動'));
-  states.appendChild(legendRow(sportChip('run', '6.2', 'cal-pending'), '待確認：同一天有多筆都可能是課表，點日期後選「這場是課表」'));
+  // 離線快照沒有「這場是課表」按鈕（不能寫入），說明只到「待確認」為止
+  states.appendChild(legendRow(sportChip('run', '6.2', 'cal-pending'), '待確認：同一天有多筆都可能是課表'
+    + (isOfflineSnapshot() ? '，需連線開啟 Dashboard 才能確認' : '，點日期後選「這場是課表」')));
   states.appendChild(legendRow(ghostChip({ kind: 'planned', sport: 'run', label: '課表' }), '有課表，日期還沒到'));
   states.appendChild(legendRow(ghostChip({ kind: 'missed', sport: 'run', label: '未執行' }), '有課表，沒有執行（例：課表是跑步、當天只做了健身）'));
   states.appendChild(legendRow(ghostChip({ kind: 'race', sport: 'race', label: '賽事名稱' }), '賽事，日期還沒到'));
