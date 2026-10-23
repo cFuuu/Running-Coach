@@ -3618,6 +3618,7 @@ button.recent-row .rc-actual .rc-main {
 
 .rd-row .wt-row-label {
   min-width: 4.2em;
+  white-space: nowrap;
 }
 
 .rd-row .conf-badge {
@@ -3676,17 +3677,18 @@ button.recent-row .rc-actual .rc-main {
   margin-left: auto;
 }
 
+/* 三格均分整個卡片寬度（卡片寬度由標題列決定），右邊不留白 */
 .feel-options {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(38px, 1fr));
   gap: 6px;
 }
 
-/* 只放表情圖示，格子縮成固定小方塊（文字在滑鼠提示） */
+/* 只放表情圖示，高度固定（文字在滑鼠提示） */
 .feel-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
   height: 38px;
   padding: 0;
   border: 1px solid var(--border);
