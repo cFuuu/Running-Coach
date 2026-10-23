@@ -2605,17 +2605,29 @@ body.coach-open .coach-fab {
 }
 
 /* 首頁訓練負荷區的 Garmin 卡片：高度由格線的兩排決定（兩排同高 230px），不另設 236px 下限；
-   訓練負荷與負荷焦點的列距收緊（3px／1px），才壓得進 230px */
+   訓練負荷與負荷焦點的列距統一為 2px，才壓得進 230px */
 .home-load-cards .gc-card {
   min-height: 0;
 }
 
+.gc-status-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 首頁訓練狀態：圖示＋狀態＋起始日在色條上方的空間裡垂直置中 */
+.home-load-cards .gc-status-main {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
 .home-load-cards .gc-card-training_load .gc-body {
-  gap: 3px;
+  gap: 2px;
 }
 
 .home-load-cards .gc-card-load_focus .gc-body {
-  gap: 1px;
+  gap: 2px;
 }
 
 .gc-focus-legend {
@@ -2744,8 +2756,30 @@ body.coach-open .coach-fab {
 
 /* 訓練負荷區上列的 TSB／ATL／CTL：趨勢線是卡片的主角，拉高到 64px（其他指標卡維持 28px）。
    線稿用 preserveAspectRatio:none，只拉高度不會變形 */
+/* 上排三張卡：卡片內容由上而下＝數字｜趨勢線（吃掉剩餘高度，最少 64px）｜註記（貼底），
+   不再在註記下方留一塊空白。只動卡片內部，卡片外框與兩排高度不變 */
+.home-load-cards .kpi-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.home-load-cards .kpi-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.home-load-cards .kpi-spark {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 64px;
+}
+
 .home-load-cards .kpi-spark .sparkline {
-  height: 64px;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .sparkline-path {

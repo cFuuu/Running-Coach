@@ -242,9 +242,12 @@ function renderTrainingStatus(c, body) {
   var label = GARMIN_TRAINING_STATUS_LABEL[c.status] || c.status;
   var badge = h('div', 'gc-status-badge ' + (TRAINING_STATUS_TONE[c.status] || 'gc-tone-gray'), '▲');
   badge.setAttribute('aria-hidden', 'true');
-  body.appendChild(badge);
-  body.appendChild(h('div', 'gc-status-text', label));
-  if (c.since) body.appendChild(h('div', 'gc-caption', '自 ' + monthDay(c.since)));
+  // 圖示、狀態、起始日包成一組：首頁在色條上方的空間裡垂直置中（見 .gc-status-main）
+  var main = h('div', 'gc-status-main');
+  main.appendChild(badge);
+  main.appendChild(h('div', 'gc-status-text', label));
+  if (c.since) main.appendChild(h('div', 'gc-caption', '自 ' + monthDay(c.since)));
+  body.appendChild(main);
   // 近 4 週色條：一天一格
   var strip = h('div', 'gc-strip');
   (c.series || []).slice(-28).forEach(function (p) {
