@@ -13,7 +13,7 @@
  */
 
 import * as C from '../charts.js';
-import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL } from '../core/state.js';
+import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL, HRV_STATUS_CLASS } from '../core/state.js';
 import { api, apiSend } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
@@ -151,15 +151,18 @@ var READINESS_TIPS = [
   '綜合訓練完備程度是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
     + '對「今天身體恢復得夠不夠完備」的判定。顏色一看就懂：'
     + '綠色 ✓ 正常（查過了，沒有異常訊號）；紅色 ▼ 偏低（至少一個維度觸發）；'
-    + '灰色 – 未評（三個維度都缺資料、無法評估，不等於正常）。',
-  '三個維度，任一觸發就判為「偏低」：①連續訓練天數達閾值（預設 6 天，可個人化）；'
-    + '②TSB 低於你自己歷史分布的第 10 百分位；③當日 HRV 較 7 日均值下降 15% 以上。',
-  '各觸發項旁的標籤是信賴度：連續天數只是數活動日，可信；TSB 取決於最大心率是否實測；'
-    + 'HRV 的百分比門檻尚未經文獻驗證，標為低。',
+    + '灰色 – 未評（維度都缺資料、無法評估，不等於正常）。',
+  '兩個維度，任一觸發就判為「偏低」：①TSB 低於你自己歷史分布的第 10 百分位；'
+    + '②當日 HRV 較 7 日均值下降 15% 以上（這個 7 日均值是 Garmin 提供的，不是本專案算的）。'
+    + '另有「連續訓練」規則（連續訓練達 6 天，預設值可個人化），平常不顯示，觸發時才會多一列。',
+  '各觸發項旁的標籤是信賴度：TSB 取決於最大心率是否實測；HRV 的百分比門檻尚未經文獻驗證，標為低。',
   '資料不足的維度會跳過（例如 HRV 近 7 天少於 3 筆、當天尚未同步）。',
-  '「HRV 趨勢」是另一條規則，只是提醒，不計入判定：HRV 7 日平均低於你前 4 週基線'
-    + '（ln 尺度 mean − 0.5×SD）時以橘字標示。它補的是上面 15% 規則抓不到的慢性下滑，'
-    + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。',
+  'HRV 列尾的橘色「趨勢偏低」是另一條規則，只是提醒，不計入判定：HRV 7 日平均低於你前 4 週基線'
+    + '（ln 尺度 mean − 0.5×SD）時出現。它補的是 15% 規則抓不到的慢性下滑，'
+    + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。'
+    + '滑鼠移到 HRV 列上可看趨勢的數字。',
+  '「Garmin HRV」列是手錶（Firstbeat）給的 HRV 狀態，演算法未公開，只供對照，'
+    + '不計入判定，也不會變紅。滑鼠移上去可看 7 日均值與平衡區間。',
   '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
     + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
 ];
@@ -174,11 +177,16 @@ function signedNumber(v, decimals) {
   return (v > 0 ? '+' : '') + C.formatNumber(v, decimals);
 }
 
-// 三個判斷維度，依「數值 / 觸發門檻」並列（與本週訓練狀況的「實際 / 課表」同一種讀法）。
+// 判斷維度，依「數值 / 觸發門檻」並列（與本週訓練狀況的「實際 / 課表」同一種讀法）。
 // key 對應後端 readiness 的 measurements，dim 對應 triggers／not_assessed 的 dimension。
+// 連續訓練規則仍計入判定，但以學員的訓練頻率幾乎不會觸發，平常不佔一列，
+// 觸發時才補上（否則會出現「偏低」卻看不到原因）。
+var CONSECUTIVE_ROW = {
+  dim: 'consecutive_training_days', key: 'consecutive_training_days', label: '連續訓練',
+  fmt: function (v) { return String(v); }, unit: ' 天'
+};
+
 var READINESS_ROWS = [
-  { dim: 'consecutive_training_days', key: 'consecutive_training_days', label: '連續訓練',
-    fmt: function (v) { return String(v); }, unit: ' 天' },
   { dim: 'tsb', key: 'tsb', label: 'TSB',
     fmt: function (v) { return signedNumber(v, 1); }, unit: '' },
   { dim: 'hrv', key: 'hrv_change_pct', label: 'HRV',
@@ -202,29 +210,51 @@ function readinessRow(def, entry) {
     val.appendChild(h('span', 'wt-planned', def.unit.trim()));
   }
   row.appendChild(val);
+  var tips = [];
   if (trigger) {
     var level = (trigger.confidence && trigger.confidence.level) || 'high';
     row.appendChild(h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level));
-    row.title = trigger.detail;
+    tips.push(trigger.detail);
   } else if (skipped) {
-    row.title = skipped.reason;
+    tips.push(skipped.reason);
   }
+  // HRV 列另帶「趨勢（SWC）」提醒：只是提醒，與判定無關，偏低時才在列尾出現標籤，數字放滑鼠提示
+  var trend = def.dim === 'hrv' && entry && entry.hrv_trend;
+  if (trend) {
+    if (trend.status === 'below') row.appendChild(h('span', 'conf-badge conf-reference', '趨勢偏低'));
+    tips.push('HRV 趨勢：' + (trend.detail || trend.reason || '')
+      + (trend.detail ? '（僅提醒，不計入判定）' : ''));
+  }
+  if (tips.length) row.title = tips.join('\n');
   return row;
 }
 
-/** HRV 趨勢（SWC）列：只是提醒，與上面三個維度不同，不影響右側判定。 */
-function hrvTrendRow(entry) {
-  var trend = entry && entry.hrv_trend;
-  var below = trend && trend.status === 'below';
-  var hasValue = trend && trend.status;
-  var row = h('div', 'wt-row rd-row' + (below ? ' is-hint' : ''));
-  row.appendChild(h('span', 'wt-row-label', 'HRV 趨勢'));
+/**
+ * Garmin（Firstbeat）的 HRV 狀態列：手錶給的結果，只供對照，不計入判定、也不會標紅。
+ * 資料來自今日 API 的 hrv.garmin_reference（for_display_only），分類文字與配色沿用 HRV 卡片。
+ */
+function garminHrvRow() {
+  var hrv = state.today && state.today.hrv;
+  var ref = hrv && hrv.garmin_reference;
+  var status = ref && ref.status;
+  var row = h('div', 'wt-row rd-row');
+  row.appendChild(h('span', 'wt-row-label', 'Garmin HRV'));
   var val = h('span', 'wt-row-value');
-  val.appendChild(h('span', 'rd-value', hasValue ? C.formatNumber(trend.value_ms, 1) : '—'));
-  if (hasValue) val.appendChild(h('span', 'wt-planned', '/ ' + C.formatNumber(trend.line_ms, 1) + ' ms'));
+  val.appendChild(h('span', 'rd-value ' + (HRV_STATUS_CLASS[status] || ''),
+    status ? (HRV_STATUS_LABEL[status] || status) : '—'));
   row.appendChild(val);
-  if (below) row.appendChild(h('span', 'conf-badge conf-reference', '提醒'));
-  if (trend) row.title = trend.detail || trend.reason || '';
+  row.appendChild(h('span', 'conf-badge conf-reference', '參考'));
+
+  var tips = ['Garmin（Firstbeat）判定，演算法未公開，僅供對照，不計入判定'];
+  var avg = hrv && hrv.weekly_avg_ms && hrv.weekly_avg_ms.value;
+  if (avg !== null && avg !== undefined) tips.push('7 日均值 ' + C.formatNumber(avg, 1) + ' ms');
+  if (ref && ref.baseline_balanced_low && ref.baseline_balanced_upper) {
+    tips.push('平衡區間 ' + C.formatNumber(ref.baseline_balanced_low, 0) + '–'
+      + C.formatNumber(ref.baseline_balanced_upper, 0) + ' ms');
+  }
+  if (!status) tips.push('尚無 Garmin HRV 狀態');
+  if (hrv && hrv.as_of) tips.push('資料日期 ' + hrv.as_of);
+  row.title = tips.join('\n');
   return row;
 }
 
@@ -339,8 +369,13 @@ export function renderTodayReadinessBlock(readiness) {
   // 左側三個維度的數值 / 門檻、右側判定圖示
   var card = h('div', 'wt-card');
   var rows = h('div', 'wt-figs');
-  READINESS_ROWS.forEach(function (def) { rows.appendChild(readinessRow(def, todayMissing ? null : entry)); });
-  rows.appendChild(hrvTrendRow(todayMissing ? null : entry));
+  var shown = todayMissing ? null : entry;
+  var consecutiveTriggered = shown && (shown.triggers || []).some(function (t) {
+    return t.dimension === CONSECUTIVE_ROW.dim;
+  });
+  if (consecutiveTriggered) rows.appendChild(readinessRow(CONSECUTIVE_ROW, shown));
+  READINESS_ROWS.forEach(function (def) { rows.appendChild(readinessRow(def, shown)); });
+  rows.appendChild(garminHrvRow());
   card.appendChild(rows);
   card.appendChild(readinessStatus(todayMissing ? null : entry.readiness));
   block.appendChild(card);
