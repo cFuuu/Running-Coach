@@ -143,6 +143,68 @@ def _has_interval_structure(laps: list[dict], recent_avg_pace_sec_per_km: int | 
     )
 
 
+# --- 節奏跑主段（N-27）：慢速暖身 → 穩定快段 → 慢速收操 ---
+# 🔴 以下皆為工程決策、無文獻出處，依 2026-10-23 對真實資料的試算訂定。
+# 整場平均配速會被暖身與收操拉慢（2026-10-20：4km @ 5:24 的節奏主段前後各 2km
+# 約 6:10，整場 5:48 只比近期平均快 6 秒，落到 easy），要先把主段切出來再比。
+
+# 主段至少持續這麼久／這麼長才算節奏跑
+TEMPO_BLOCK_MIN_SEC = 15 * 60
+TEMPO_BLOCK_MIN_KM = 2.5
+
+# 主段內各圈配速的最大落差（秒/km）；超過代表不是穩定配速
+TEMPO_BLOCK_MAX_SPREAD_SEC = 30
+
+# 主段前一圈與後一圈都要比主段中位配速慢這麼多，才算有暖身與收操。
+# 兩側都要有：只有一側的「前快後慢」可能是起跑過快的輕鬆跑（試算中
+# 單側條件會多抓到約 20 場這類課），無從和節奏跑區分，寧可不判。
+TEMPO_BLOCK_NEIGHBOUR_SLOWER_SEC = 20
+
+
+def _has_tempo_block(laps: list[dict], recent_avg_pace_sec_per_km: int | None) -> bool:
+    """是否有「慢速暖身 → 穩定快段（≥15 分鐘）→ 慢速收操」的結構。
+
+    快 = 比近期平均配速快 TEMPO_FASTER_THAN_AVG_SEC 以上。沒有近期平均時不判。
+    """
+    if not recent_avg_pace_sec_per_km:
+        return False
+    valid = [
+        lap for lap in laps
+        if lap.get("pace_sec_per_km")
+        and (lap.get("duration_sec") or 0) >= MIN_LAP_DURATION_SEC
+        and (lap.get("distance_km") or 0) > 0
+    ]
+    fast_limit = recent_avg_pace_sec_per_km - TEMPO_FASTER_THAN_AVG_SEC
+    i = 0
+    while i < len(valid):
+        if valid[i]["pace_sec_per_km"] > fast_limit:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(valid) and valid[j + 1]["pace_sec_per_km"] <= fast_limit:
+            j += 1
+        block = valid[i:j + 1]
+        paces = [lap["pace_sec_per_km"] for lap in block]
+        duration = sum(lap["duration_sec"] for lap in block)
+        distance = sum(lap["distance_km"] for lap in block)
+        if (
+            i > 0
+            and j + 1 < len(valid)
+            and duration >= TEMPO_BLOCK_MIN_SEC
+            and distance >= TEMPO_BLOCK_MIN_KM
+            and max(paces) - min(paces) <= TEMPO_BLOCK_MAX_SPREAD_SEC
+        ):
+            median = statistics.median(paces)
+            slower = median + TEMPO_BLOCK_NEIGHBOUR_SLOWER_SEC
+            if (
+                valid[i - 1]["pace_sec_per_km"] >= slower
+                and valid[j + 1]["pace_sec_per_km"] >= slower
+            ):
+                return True
+        i = j + 1
+    return False
+
+
 def classify_workout(
     laps: list[dict],
     total_distance_km: float | None = None,
@@ -171,6 +233,10 @@ def classify_workout(
     # 先看分段結構：快段與休息段交替即為間歇，不受 MIN_MEANINGFUL_LAP_KM 影響
     if _has_interval_structure(laps, recent_avg_pace_sec_per_km):
         return "interval"
+
+    # 慢速暖身＋穩定快段＋慢速收操：整場平均看不出來的節奏跑（N-27）
+    if _has_tempo_block(laps, recent_avg_pace_sec_per_km):
+        return "tempo"
 
     if len(meaningful) < MIN_LAPS_FOR_CLASSIFICATION:
         return "unknown"

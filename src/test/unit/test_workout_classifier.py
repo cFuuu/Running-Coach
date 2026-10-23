@@ -173,5 +173,33 @@ class TestIntervalSegments(unittest.TestCase):
         self.assertEqual([round(s["distance_km"], 2) for s in works], [1.0, 1.0])
 
 
+class TestTempoBlock(unittest.TestCase):
+    """N-27：慢速暖身 → 穩定快段 → 慢速收操，整場平均看不出來的節奏跑。"""
+
+    def _classify(self, paces):
+        laps = [_lap(i, p) for i, p in enumerate(paces, start=1)]
+        return classify_workout(laps, total_distance_km=float(len(paces)),
+                                recent_avg_distance_km=10.0, recent_avg_pace_sec_per_km=354)
+
+    def test_warmup_tempo_block_cooldown_is_tempo(self):
+        """★ 2026-10-20 的結構：2km 暖身、4km 約 5:24、2km 收操，整場平均只比平常快 6 秒。"""
+        self.assertEqual(self._classify([369, 369, 323, 322, 331, 325, 380, 366]), "tempo")
+
+    def test_without_cooldown_is_not_inferred(self):
+        """只有前慢後快（或前快後慢）可能是起跑過快的輕鬆跑，寧可不判。"""
+        self.assertEqual(self._classify([369, 369, 323, 322, 331, 325]), "easy")
+        self.assertEqual(self._classify([323, 322, 331, 325, 380, 366]), "easy")
+
+    def test_block_shorter_than_15_minutes_is_not_tempo(self):
+        self.assertEqual(self._classify([369, 369, 323, 322, 380, 366, 370, 368]), "easy")
+
+    def test_unsteady_block_is_not_tempo(self):
+        """快段內配速落差超過 30 秒，不是穩定配速。"""
+        self.assertEqual(self._classify([369, 369, 300, 330, 331, 333, 380, 366]), "easy")
+
+    def test_all_easy_run_is_still_easy(self):
+        self.assertEqual(self._classify([360] * 8), "easy")
+
+
 if __name__ == "__main__":
     unittest.main()
