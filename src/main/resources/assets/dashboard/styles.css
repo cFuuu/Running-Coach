@@ -3734,23 +3734,16 @@ button.recent-row .rc-dist {
 }
 
 /* 今日體感狀況：三格選擇，選中的填色（疲憊紅、普通黃、充沛綠）。
-   標題與副標在上；圖示以整張卡片的垂直中線定位（與同列的課表卡片中線對齊）；
-   狀態文字固定在最下面。圖示與狀態文字脫離版面流，所以用 min-width／min-height
-   保證卡片不會比它們小（與課表同列時高度由課表決定，這裡只是下限） */
+   三列：標題＋副標｜圖示｜狀態文字（固定在最下面）。與課表同列時卡片被拉高，
+   中間那列吃掉多出的高度，圖示在「副標」與「狀態文字」之間垂直置中——
+   這個中心約等於左邊課表卡片「今日／明日」分隔線的位置，不必用估算的偏移量 */
 .feel-block {
-  position: relative;
-  min-width: 170px;
-  min-height: 148px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
 }
 
-/* 圖示中心對到左邊課表卡片「今日／明日」之間的分隔線：那是課表標題以下那塊的中心，
-   比整張卡的幾何中線低「課表標題高度的一半」（約 8px，依截圖估算） */
 .feel-block .feel-options {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  top: calc(50% + 8px);
-  transform: translateY(-50%);
+  align-self: center;
 }
 
 .feel-block .today-block-title {
@@ -3767,9 +3760,7 @@ button.recent-row .rc-dist {
 }
 
 .feel-status {
-  position: absolute;
-  left: 12px;
-  bottom: 8px;
+  min-height: 1.4em;
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
