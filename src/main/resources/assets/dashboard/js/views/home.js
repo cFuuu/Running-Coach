@@ -899,6 +899,7 @@ export function renderWeekTraining() {
     C.formatNumber(s.doneKm, 1),
     s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—', 'km'));
   figs.appendChild(weekFigRow('時間', hoursText(s.doneSec), null, 'h'));
+  figs.appendChild(weekFigRow('堂數', String(s.doneSessions), String(s.plannedSessions), '堂'));
   card.appendChild(figs);
 
   if (s.plannedKm > 0) {

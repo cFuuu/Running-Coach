@@ -3508,14 +3508,12 @@ button.recent-row .rc-actual .rc-main {
   flex-direction: column;
 }
 
-/* 卡片與下方說明之間留空；說明列貼在區塊最底部（區塊被並排的鄰居撐高時也一樣） */
-.fig-block .wt-card {
-  margin-bottom: 12px;
-}
-
+/* 說明列貼在區塊最底部（區塊被並排的鄰居撐高時也一樣），與上方卡片之間留空；
+   沒有說明列時卡片下方不留白 */
 .fig-block .sync-fallback-note {
   margin-top: auto;
   margin-bottom: 0;
+  padding-top: 12px;
 }
 
 .fig-block .wt-row-value {
