@@ -7306,3 +7306,269 @@ button.recent-row .rc-dist {
     gap: 6px 14px;
   }
 }
+
+/* === E.2 趨勢 === */
+/* 趨勢頁五區（js/views/trends.js）：區塊標題左側色條＋數字卡標題列沿用首頁的類別色
+   （--cat-*：訓練負荷橘、恢復與身體紫、跑力表現青、訓練量與強度藍、Garmin 數據淺藍）。 */
+.trends-head {
+  align-items: center;
+  gap: 12px;
+}
+
+.trend-compare-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.trend-sec-load {
+  --hdr-bg: var(--cat-load-bg); --hdr-border: var(--cat-load-border);
+  --hdr-text: var(--cat-load-text); --hdr-strong: var(--cat-load-strong);
+}
+
+.trend-sec-body {
+  --hdr-bg: var(--cat-body-bg); --hdr-border: var(--cat-body-border);
+  --hdr-text: var(--cat-body-text); --hdr-strong: var(--cat-body-strong);
+}
+
+.trend-sec-ability {
+  --hdr-bg: var(--cat-ability-bg); --hdr-border: var(--cat-ability-border);
+  --hdr-text: var(--cat-ability-text); --hdr-strong: var(--cat-ability-strong);
+}
+
+.trend-sec-volume {
+  --hdr-bg: var(--cat-week-bg); --hdr-border: var(--cat-week-border);
+  --hdr-text: var(--cat-week-text); --hdr-strong: var(--cat-week-strong);
+}
+
+.trend-sec-garmin {
+  --hdr-bg: var(--cat-overview-bg); --hdr-border: var(--cat-overview-border);
+  --hdr-text: var(--cat-overview-text); --hdr-strong: var(--cat-overview-strong);
+}
+
+.trend-sec > .panel-title {
+  border-left: 4px solid var(--hdr-strong);
+  padding-left: 10px;
+}
+
+.trend-sec-inner {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ---- 數字卡：一列 4 張，內容欄窄（手機）時 2 張 */
+.trend-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@container page (max-width: 599px) {
+  .trend-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+.trend-kpis .kpi-card {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.trend-kpis .kpi-card > .kpi-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: -12px -14px 10px;
+  padding: 8px 14px;
+  background: var(--hdr-bg);
+  border-bottom: 1px solid var(--hdr-border);
+  color: var(--hdr-text);
+  font-weight: 700;
+}
+
+.trend-kpis .kpi-abbr {
+  margin-left: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.trend-kpis .kpi-value {
+  font-size: var(--fs-xl);
+}
+
+.trend-kpis .trend-delta {
+  margin-left: 4px;
+}
+
+/* ---- 開關列：chip 換行排列，右側是「標出訓練日」等選項 */
+.trend-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px 12px;
+  min-width: 0;
+}
+
+.trend-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.trend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.trend-chip:hover {
+  border-color: var(--accent-border);
+}
+
+.trend-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.trend-chip.is-on {
+  background: var(--surface-sunken);
+  border-color: var(--hdr-strong, var(--accent));
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* 色點：關閉時空心（只留外框），開啟時實心 */
+.trend-chip-swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c-axis);
+}
+
+.trend-chip:not(.is-on) .trend-chip-swatch {
+  opacity: 0.35;
+}
+
+/* TSB（以 0 為中線的柱）：上半綠、下半紅的小方塊，對應圖上的正負柱 */
+.trend-chip-swatch.is-bar-zero {
+  border-radius: 2px;
+  background: linear-gradient(var(--pct-green) 50%, var(--pct-red) 50%);
+}
+
+.trend-chip-check {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-size: var(--fs-xs);
+}
+
+.trend-chart {
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.trend-chart-block {
+  min-width: 0;
+}
+
+.trend-chart-block > .chart-note {
+  margin-top: 4px;
+}
+
+.trend-subchart + .trend-subchart {
+  margin-top: 16px;
+}
+
+/* ---- 訓練量與強度：左欄心率區間分佈＋近幾週跑量，右欄開關列與圖 */
+.trend-volume-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap) 24px;
+}
+
+@container page (min-width: 700px) {
+  .trend-volume-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  }
+}
+
+.trend-volume-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ---- Garmin 數據：分數一覽小格＋圖卡 */
+.gc-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+@container page (max-width: 599px) {
+  .gc-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.gc-tile {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.gc-tile.is-empty {
+  border-style: dashed;
+}
+
+.gc-tile-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gc-tile-value {
+  margin-top: 2px;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.trend-gc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.trend-gc-head .customize {
+  margin-bottom: 0;
+}

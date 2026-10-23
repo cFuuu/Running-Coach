@@ -82,6 +82,7 @@ class SnapshotContext:
     detail_ids: tuple[int, ...]      # 要附上單場明細的活動 id（受 --detail-months 限制）
     span_start: datetime.date        # 行事曆／體感資料涵蓋的起日
     span_end: datetime.date          # 行事曆／體感資料涵蓋的訖日
+    prev_ranges: tuple[str, ...] = ()  # 趨勢 KPI 前期比較的 custom:起:訖（每個有起日的 range 一個）
 
 
 # 首頁固定用 30d 的請求（views/home.js：loadHomeOverview、loadTodayKpi），與頂列 range 無關
@@ -97,6 +98,19 @@ RANGE_ENDPOINTS = (
     "/api/training-load",
     "/api/overview",
 )
+
+# 趨勢頁數字卡的前期比較（views/trends.js ensurePrevious）：只抓這四支
+PREV_ENDPOINTS = ("/api/training-load", "/api/wellness-trend", "/api/sessions", "/api/overview")
+
+
+def previous_range(start: str | None, end: str) -> str | None:
+    """前一段等長期間的 custom range（與 views/trends.js previousWindow 同規則）；沒有起日回 None。"""
+    if not start:
+        return None
+    s, e = datetime.date.fromisoformat(start), datetime.date.fromisoformat(end)
+    prev_end = s - datetime.timedelta(days=1)
+    prev_start = prev_end - (e - s)
+    return f"custom:{prev_start.isoformat()}:{prev_end.isoformat()}"
 
 
 def snapshot_requests(ctx: SnapshotContext) -> list[str]:
@@ -116,6 +130,8 @@ def snapshot_requests(ctx: SnapshotContext) -> list[str]:
     ]
     for range_key in ctx.ranges:
         urls += [f"{endpoint}?range={range_key}" for endpoint in RANGE_ENDPOINTS]
+    for prev in ctx.prev_ranges:  # views/trends.js ensurePrevious
+        urls += [f"{endpoint}?range={prev}" for endpoint in PREV_ENDPOINTS]
     urls += [f"/api/sessions/{sid}" for sid in ctx.detail_ids]  # shell/loader.js loadSessionDetail
     return list(dict.fromkeys(urls))
 
@@ -309,7 +325,9 @@ def collect_snapshot(
                 sid for sid, day in sorted(ids.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
                 if cutoff is None or (day and day >= cutoff.isoformat())
             )
-            ctx = dataclasses.replace(ctx, detail_ids=detail_ids)
+            windows = [get(f"/api/wellness-trend?range={r}") for r in ranges]
+            prev_ranges = tuple(p for p in (previous_range(w.get("start_date"), w["end_date"]) for w in windows) if p)
+            ctx = dataclasses.replace(ctx, detail_ids=detail_ids, prev_ranges=prev_ranges)
 
             exact: dict[str, dict] = {}
             for url in snapshot_requests(ctx):

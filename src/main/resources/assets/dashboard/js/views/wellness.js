@@ -1,10 +1,8 @@
 /**
- * wellness.js — 趨勢頁的每日身體指標折線（歸類與排序見 views/trends.js）
+ * wellness.js — 趨勢頁每日身體指標的資料轉換（畫圖與歸類見 views/trends.js）
  */
 
 import * as C from '../charts.js';
-import { state } from '../core/state.js';
-import { h, widthOf, wrapChart } from '../core/dom.js';
 
 /** 依 def.format 選對應的格式化函式（'duration' 用時分秒，其餘用一般數字）。 */
 export function wellnessFormatter(def) {
@@ -13,61 +11,23 @@ export function wellnessFormatter(def) {
 }
 
 /**
- * 一個每日指標的折線圖（標題＋圖＋最新值）畫進 node。版面與歸類由 views/trends.js 決定。
- * @param {Object} def /api/meta 的 wellness_metric_defs 其中一筆
+ * 某個每日指標在 /api/wellness-trend 回傳中的有值點（由舊到新）。
+ * 'duration' 格式（秒）換成小時，圖表的 Y 軸才不會和分數類共用一個 0–30000 的刻度。
+ * @returns {Array} [{date, value}]；指標不存在時為空陣列
  */
-export function renderWellnessMetric(def, node) {
-  var titleRow = h('div', 'chart-title-row');
-  titleRow.appendChild(h('h3', 'chart-title', def.label + (def.unit ? '（' + def.unit + '）' : '')));
-  node.appendChild(titleRow);
-  if (!state.wellness) {
-    node.appendChild(h('div', 'state-msg state-loading', '載入身體狀況…'));
-    return;
-  }
-  var m = (state.wellness.metrics || {})[def.key];
-  if (!m) {
-    node.appendChild(h('div', 'state-msg state-unavailable', '後端未提供此指標'));
-    return;
-  }
-  var startDate = state.wellness.start_date;
-  var endDate = state.wellness.end_date;
-  var formatter = wellnessFormatter(def);
-
-  // clipped:true → 明確提示，且絕不把缺的部分畫成 0 或平線
-  if (m.clipped) {
-    var cov = m.coverage && m.coverage.earliest_date ? m.coverage.earliest_date : null;
-    titleRow.appendChild(h('span', 'badge badge-clipped',
-      cov ? (cov + ' 前無資料') : '此日期前無資料'));
-  }
-
-  var points = (m.points || []).filter(function (p) {
+export function wellnessPoints(wellness, def) {
+  var m = wellness && wellness.metrics && wellness.metrics[def.key];
+  if (!m || m.available === false) return [];
+  var scale = def.format === 'duration' ? 1 / 3600 : 1;
+  return (m.points || []).filter(function (p) {
     return typeof p.value === 'number' && isFinite(p.value);
-  });
-  if (m.available === false || points.length === 0) {
-    node.appendChild(h('div', 'state-msg state-unavailable', m.reason || '此區間內無資料'));
-    return;
-  }
+  }).map(function (p) { return { date: p.date, value: p.value * scale }; });
+}
 
-  // 圖表 X 軸起點：clipped 時從實際有資料的第一天畫起，避免產生誤導的空白平線
-  var chartStart = startDate;
-  if (m.clipped && m.coverage && m.coverage.earliest_date && m.coverage.earliest_date > startDate) {
-    chartStart = m.coverage.earliest_date;
-  }
-  if (points[0].date > chartStart) chartStart = points[0].date;
-
-  node.appendChild(wrapChart(C.wellnessChart(points, {
-    label: def.label + '折線圖',
-    startDate: chartStart,
-    endDate: endDate,
-    trainingDays: state.trainingDays,
-    formatter: formatter,
-    lineClass: 'line-metric-' + def.key,
-    dotClass: 'dot-metric',
-    containerWidth: widthOf(node)
-  })));
-
-  var latest = points[points.length - 1];
-  node.appendChild(h('div', 'chart-note',
-    '最新（' + latest.date + '）：' + formatter(latest.value)
-    + (def.unit && def.format !== 'duration' ? ' ' + def.unit : '') + '，共 ' + points.length + ' 天有資料'));
+/** 指標被資料起日截斷（clipped）時的說明文字；沒截斷回 null。不把缺的部分畫成 0。 */
+export function wellnessClipNote(wellness, def) {
+  var m = wellness && wellness.metrics && wellness.metrics[def.key];
+  if (!m || !m.clipped) return null;
+  var cov = m.coverage && m.coverage.earliest_date;
+  return def.label + '：' + (cov ? cov + ' 前無資料' : '此日期前無資料');
 }

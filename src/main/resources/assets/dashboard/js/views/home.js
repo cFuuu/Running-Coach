@@ -647,7 +647,7 @@ export function renderToday() {
 
 // ------------------------------------------------------------ 訓練負荷卡片
 
-var LOAD_TIPS = {
+export var LOAD_TIPS = {
   tsb: [
     'TSB（訓練壓力平衡）＝ CTL − ATL：長期體能基礎減去近期疲勞。負值表示近期負荷高於長期基礎。',
     '負荷採 Banister TRIMP：分鐘 × 心率儲備百分比（%HRR）× 隨強度指數上升的權重，'
