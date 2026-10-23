@@ -301,6 +301,54 @@ class ChartPaletteCollisionTest(unittest.TestCase):
         self.assertEqual(self.light["--activity-running"], "var(--c-pace)")
 
 
+SPORT_ICONS_JS = STYLES_CSS.parent / "js" / "core" / "sport-icons.js"
+
+
+class SportChipContrastTest(unittest.TestCase):
+    """E.1 運動種類膠囊：每種運動的 --sport-<key>-fg 疊在 --sport-<key>-bg 上
+    必須 ≥ 4.5:1（膠囊裡是公里數／時間文字）。淺色 8 組＋深色 8 組共 16 組。
+
+    種類清單直接從 sport-icons.js 的 SPORT_KEYS 讀，不在這裡另抄一份——
+    之後新增種類卻忘了補 token，這裡會直接失敗。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        css = _strip_comments(STYLES_CSS.read_text(encoding="utf-8"))
+        cls.themes = {
+            "淺色": _parse_block(css, ":root"),
+            "深色": _parse_block(css, ':root[data-theme="dark"]'),
+        }
+        js = SPORT_ICONS_JS.read_text(encoding="utf-8")
+        match = re.search(r"SPORT_KEYS\s*=\s*\[([^\]]*)\]", js)
+        if match is None:
+            raise AssertionError("sport-icons.js 找不到 SPORT_KEYS")
+        cls.sport_keys = re.findall(r"'(\w+)'", match.group(1))
+
+    def test_sport_keys_are_the_eight_defined_in_spec(self):
+        self.assertEqual(
+            self.sport_keys,
+            ["run", "strength", "walk", "hike", "bike", "swim", "race", "other"],
+        )
+
+    def test_every_sport_text_is_readable_on_its_chip(self):
+        checked = 0
+        for label, tokens in self.themes.items():
+            for key in self.sport_keys:
+                with self.subTest(theme=label, sport=key):
+                    fg_name, bg_name = f"--sport-{key}-fg", f"--sport-{key}-bg"
+                    self.assertIn(fg_name, tokens, f"{label} 缺少 {fg_name}")
+                    self.assertIn(bg_name, tokens, f"{label} 缺少 {bg_name}")
+                    ratio = contrast_ratio(tokens[fg_name], tokens[bg_name])
+                    self.assertGreaterEqual(
+                        ratio, TEXT_CONTRAST,
+                        f"{label} {fg_name} ({tokens[fg_name]}) vs {bg_name} "
+                        f"({tokens[bg_name]}) 對比只有 {ratio:.2f}:1，需 ≥ {TEXT_CONTRAST}:1",
+                    )
+                    checked += 1
+        self.assertEqual(checked, 16)
+
+
 class NeutralTokenTest(unittest.TestCase):
     """N19 spec §1.4 的兩條底線：正文不染藍、大面積背景維持中性。
 

@@ -234,6 +234,27 @@
   --activity-walking: var(--c-distance);
   --activity-cycling: var(--c-volume);
   --activity-other: var(--text-muted);
+
+  /* 運動種類色（E.1，2026-10-24 定案）：顏色只代表運動種類，不代表課種。
+     key 與 js/core/sport-icons.js 的 SPORT_KEYS 一致；.sport-chip 使用。
+     淺色＝淡底＋深字；fg/bg 對比 ≥4.5:1 由 test_dashboard_theme_contrast 把關。
+     strength fg 原定 #a85a10 只有 4.21:1，壓深為 #9f550f（4.60:1）。 */
+  --sport-run-bg: #dce8fb;
+  --sport-run-fg: #1d4fa3;
+  --sport-strength-bg: #fde6cf;
+  --sport-strength-fg: #9f550f;
+  --sport-walk-bg: #fbdce9;
+  --sport-walk-fg: #a8306a;
+  --sport-hike-bg: #dbefe1;
+  --sport-hike-fg: #256b3a;
+  --sport-bike-bg: #f8edc4;
+  --sport-bike-fg: #7d6100;
+  --sport-swim-bg: #d6f0fa;
+  --sport-swim-fg: #16708f;
+  --sport-race-bg: #8a3fb8;
+  --sport-race-fg: #ffffff;
+  --sport-other-bg: #e9ecef;
+  --sport-other-fg: #4a5560;
 }
 
 * {
@@ -6499,6 +6520,122 @@ button.recent-row .rc-dist {
   font-variant-numeric: tabular-nums;
 }
 
+/* === W0 sport chip === */
+/* 運動種類膠囊（圖示＋數值）。顏色來自 --sport-<key>-bg/fg token，
+   圖示來自 js/core/sport-icons.js（sportIconNode）。用法：
+     <span class="sport-chip sport-chip--run [is-done|is-planned|is-missed|is-race-planned]">
+       <span class="sport-icon"><svg…/></span>8.2</span>
+   --sport-chip-gap：已執行外框與膠囊之間那一圈的顏色，預設頁面底色；
+   放在卡片（--surface）上時由呼叫端覆寫成卡片底色。 */
+.sport-chip {
+  --sport-chip-bg: var(--sport-other-bg);
+  --sport-chip-fg: var(--sport-other-fg);
+  /* 虛線（未執行／未到）膠囊的線與字色：淺色用深字色，深色改用飽和底色（見下方深色規則） */
+  --sport-chip-line: var(--sport-chip-fg);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 22px;
+  min-height: 20px;
+  padding: 1px 7px 1px 4px;
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  background: var(--sport-chip-bg);
+  color: var(--sport-chip-fg);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sport-icon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.sport-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.sport-chip--run { --sport-chip-bg: var(--sport-run-bg); --sport-chip-fg: var(--sport-run-fg); }
+.sport-chip--strength { --sport-chip-bg: var(--sport-strength-bg); --sport-chip-fg: var(--sport-strength-fg); }
+.sport-chip--walk { --sport-chip-bg: var(--sport-walk-bg); --sport-chip-fg: var(--sport-walk-fg); }
+.sport-chip--hike { --sport-chip-bg: var(--sport-hike-bg); --sport-chip-fg: var(--sport-hike-fg); }
+.sport-chip--bike { --sport-chip-bg: var(--sport-bike-bg); --sport-chip-fg: var(--sport-bike-fg); }
+.sport-chip--swim { --sport-chip-bg: var(--sport-swim-bg); --sport-chip-fg: var(--sport-swim-fg); }
+.sport-chip--race { --sport-chip-bg: var(--sport-race-bg); --sport-chip-fg: var(--sport-race-fg); }
+.sport-chip--other { --sport-chip-bg: var(--sport-other-bg); --sport-chip-fg: var(--sport-other-fg); }
+
+/* 賽事的淺色 fg 是白字（實心紫底），虛線改用紫色底色本身 */
+.sport-chip--race { --sport-chip-line: var(--sport-race-bg); }
+
+/* 深色：fg 可能是黑字（深底上看不見），虛線改用底色並提亮一些，讓細線與字在深底上讀得到 */
+:root[data-theme="dark"] .sport-chip {
+  --sport-chip-line: color-mix(in srgb, var(--sport-chip-bg) 72%, #ffffff);
+}
+
+/* 有課表且已執行：外圍 2px 背景色間隔＋1.5px 實線框（淺色用字色，深色為白框） */
+.sport-chip.is-done {
+  box-shadow:
+    0 0 0 2px var(--sport-chip-gap, var(--bg)),
+    0 0 0 3.5px var(--sport-done-ring, var(--sport-chip-fg));
+  margin: 3.5px;
+}
+
+/* 空的虛線膠囊：有課表、日期還沒到 */
+.sport-chip.is-planned,
+.sport-chip.is-missed,
+.sport-chip.is-race-planned {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--sport-chip-line);
+  color: var(--sport-chip-line);
+  font-weight: 500;
+}
+
+/* 有課表但沒有執行：紅色虛線（直接寫色，不經 --sport-chip-line，
+   否則會被上方深色規則較高的權重蓋回該運動的底色） */
+.sport-chip.is-missed {
+  border-color: var(--error-text);
+  color: var(--error-text);
+}
+
+/* 賽事、日期還沒到：紫色虛線＋賽事名稱 */
+.sport-chip.is-race-planned {
+  border-color: var(--sport-race-bg);
+  color: var(--sport-race-bg);
+}
+
+:root[data-theme="dark"] .sport-chip.is-race-planned {
+  border-color: color-mix(in srgb, var(--sport-race-bg) 72%, #ffffff);
+  color: color-mix(in srgb, var(--sport-race-bg) 72%, #ffffff);
+}
+
+/* === W0 charts === */
+/* charts.multiLineChart：TSB 等 bar-zero 系列的正負柱（綠＝正、紅＝負，只標方向不判讀）。 */
+.mlc-bar-pos { fill: var(--pct-green); opacity: 0.8; }
+.mlc-bar-neg { fill: var(--pct-red); opacity: 0.8; }
+.mlc-zero-line { stroke: var(--c-axis); stroke-width: 1; }
+.mlc-line { stroke-width: 2; }
+
+/* 多列游標標籤（multiLineChart 的 tip.rows）：每列前面一個系列色小方塊 */
+.sync-cursor-label .sync-cursor-swatch { opacity: 1; }
+
+/* charts.lapStrip：每圈一根柱，高度＝速度，顏色＝心率區間 */
+.chart-svg.lap-strip {
+  display: block;
+  width: 100%;
+}
+
+.lap-strip-bar-none { fill: var(--c-axis); }
+
 /* ------------------------------------------------------------ 深色模式
  *
  * 只有一份深色定義（[data-theme="dark"]），不额外寫 @media (prefers-color-scheme)。
@@ -6659,4 +6796,27 @@ button.recent-row .rc-dist {
   --tag-planned-text: #8fbde0;
 
   --panel-shadow: rgba(0, 0, 0, 0.5);
+
+  /* 運動種類色：方案 ①「飽和實心」，黃／淺藍／粉／橘配黑字，其餘配白字。
+     原定值有四個白字對比不足 4.5:1，沿同色相壓暗：run #3b7ee8→#2670e6（3.94→4.62）、
+     hike #43a865→#34844f（2.99→4.61）、race #a35ee0→#9a4fdd（4.01→4.63）、
+     other #7d8894→#6b7682（3.61→4.63）。 */
+  --sport-run-bg: #2670e6;
+  --sport-run-fg: #ffffff;
+  --sport-strength-bg: #f08a2c;
+  --sport-strength-fg: #1b1b1b;
+  --sport-walk-bg: #ee6aa6;
+  --sport-walk-fg: #1b1b1b;
+  --sport-hike-bg: #34844f;
+  --sport-hike-fg: #ffffff;
+  --sport-bike-bg: #f0c330;
+  --sport-bike-fg: #1b1b1b;
+  --sport-swim-bg: #55c8f0;
+  --sport-swim-fg: #1b1b1b;
+  --sport-race-bg: #9a4fdd;
+  --sport-race-fg: #ffffff;
+  --sport-other-bg: #6b7682;
+  --sport-other-fg: #ffffff;
+  /* 已執行外框：深色模式一律白框（E.1 配色定案），不用各色的 fg（黑字色在深底看不見） */
+  --sport-done-ring: #ffffff;
 }
