@@ -210,5 +210,66 @@ class TestImportFitFilesSportFiltering(unittest.TestCase):
 _current_name = [None]  # 供 mock 的 parse_fit 得知目前正在處理哪個檔名
 
 
+class TestReclassifyStoredActivities(unittest.TestCase):
+    """N-24：分類器改版後，用已存分圈重跑分類；manual 不動、預設不寫入。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.conn.execute(
+            "INSERT INTO athlete_profile (name, updated_at) VALUES ('Test', '2026-01-01T00:00:00')"
+        )
+        # 近期平均：3 場 6km、6:00/km 的輕鬆跑
+        for day in (1, 3, 5):
+            self._activity(f"2026-10-0{day}T19:00:00", 6.0, "easy", "auto", pace=360)
+        self.auto_id = self._activity("2026-10-08T19:00:00", 4.9, "tempo", "auto")
+        self.manual_id = self._activity("2026-10-09T19:00:00", 4.9, "tempo", "manual")
+        for aid in (self.auto_id, self.manual_id):
+            self._interval_laps(aid)
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _activity(self, started_at, km, wtype, source, pace=330):
+        cur = self.conn.execute(
+            """
+            INSERT INTO activities (athlete_id, activity_type, started_at, distance_km,
+                avg_pace_sec_per_km, workout_type, workout_type_source, source, fetched_at)
+            VALUES (1, 'running', ?, ?, ?, ?, ?, 'garmin_export', '2026-01-01T00:00:00')
+            """,
+            (started_at, km, pace, wtype, source),
+        )
+        return cur.lastrowid
+
+    def _interval_laps(self, activity_id):
+        """400m 自動分圈的 1000m × 4，組間 220m 慢跑。"""
+        index = 0
+        for _ in range(4):
+            for km, pace in ((0.4, 285), (0.4, 285), (0.2, 285), (0.22, 540)):
+                index += 1
+                self.conn.execute(
+                    "INSERT INTO activity_laps (activity_id, lap_index, distance_km, duration_sec, "
+                    "pace_sec_per_km) VALUES (?, ?, ?, ?, ?)",
+                    (activity_id, index, km, km * pace, pace),
+                )
+
+    def _type(self, aid):
+        return self.conn.execute(
+            "SELECT workout_type FROM activities WHERE id = ?", (aid,)).fetchone()[0]
+
+    def test_dry_run_lists_change_without_writing(self):
+        changes = runner.reclassify_stored_activities(self.conn)
+        self.assertEqual(
+            [(c["activity_id"], c["old"], c["new"]) for c in changes],
+            [(self.auto_id, "tempo", "interval")],
+        )
+        self.assertEqual(self._type(self.auto_id), "tempo")
+
+    def test_apply_writes_and_keeps_manual(self):
+        runner.reclassify_stored_activities(self.conn, apply=True)
+        self.assertEqual(self._type(self.auto_id), "interval")
+        self.assertEqual(self._type(self.manual_id), "tempo")
+
+
 if __name__ == "__main__":
     unittest.main()

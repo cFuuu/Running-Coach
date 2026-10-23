@@ -192,18 +192,79 @@ def update_workout_type(conn: sqlite3.Connection, activity_id: int, laps: list[d
     if current and current["workout_type_source"] == "manual":
         return "manual-kept"
 
-    avg_km, avg_pace = _recent_averages(conn, activity_id)
-    workout_type = classify_workout(
-        laps,
-        total_distance_km=current["distance_km"] if current else None,
-        recent_avg_distance_km=avg_km,
-        recent_avg_pace_sec_per_km=avg_pace,
-    )
+    workout_type = _classify_activity(conn, activity_id, laps, current)
     conn.execute(
         "UPDATE activities SET workout_type = ?, workout_type_source = 'auto' WHERE id = ?",
         (workout_type, activity_id),
     )
     return workout_type
+
+
+def _classify_activity(
+    conn: sqlite3.Connection, activity_id: int, laps: list[dict], current: sqlite3.Row | None
+) -> str:
+    """以近期平均為基準跑分類器，不寫入。"""
+    avg_km, avg_pace = _recent_averages(conn, activity_id)
+    return classify_workout(
+        laps,
+        total_distance_km=current["distance_km"] if current else None,
+        recent_avg_distance_km=avg_km,
+        recent_avg_pace_sec_per_km=avg_pace,
+    )
+
+
+def reclassify_stored_activities(
+    conn: sqlite3.Connection,
+    apply: bool = False,
+    comparison_activity_types: frozenset[str] = DEFAULT_COMPARISON_ACTIVITY_TYPES,
+) -> list[dict]:
+    """用資料庫已存的分圈重跑自動分類，回傳課種有變動的場次（N-24）。
+
+    分類器規則改版後用這支補正歷史資料，不需重新解析 FIT 或重打 API。
+    `workout_type_source='manual'` 一律不動。`apply=False`（預設）只回傳
+    差異清單、不寫入——改版後應先把清單給使用者確認再寫入。
+    """
+    placeholders = ",".join("?" for _ in comparison_activity_types)
+    activities = conn.execute(
+        f"""
+        SELECT id, date(started_at) AS date, distance_km, workout_type, workout_type_source
+        FROM activities
+        WHERE activity_type IN ({placeholders})
+          AND COALESCE(workout_type_source, 'auto') != 'manual'
+          AND id IN (SELECT activity_id FROM activity_laps)
+        ORDER BY started_at
+        """,
+        tuple(comparison_activity_types),
+    ).fetchall()
+
+    changes = []
+    for activity in activities:
+        laps = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT lap_index, distance_km, duration_sec, pace_sec_per_km, avg_hr_bpm, max_hr_bpm "
+                "FROM activity_laps WHERE activity_id = ? ORDER BY lap_index",
+                (activity["id"],),
+            )
+        ]
+        new_type = _classify_activity(conn, activity["id"], laps, activity)
+        if new_type == activity["workout_type"]:
+            continue
+        changes.append({
+            "activity_id": activity["id"],
+            "date": activity["date"],
+            "distance_km": round(activity["distance_km"], 2),
+            "old": activity["workout_type"],
+            "new": new_type,
+        })
+        if apply:
+            conn.execute(
+                "UPDATE activities SET workout_type = ?, workout_type_source = 'auto' WHERE id = ?",
+                (new_type, activity["id"]),
+            )
+    if apply:
+        conn.commit()
+    return changes
 
 
 def import_fit_files(
@@ -307,8 +368,18 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description="解析 Garmin 匯出包中的 FIT 檔，寫入分圈與逐秒降頻資料。"
     )
-    ap.add_argument("--input-dir", required=True, help="解壓後的 Garmin 匯出目錄（會遞迴尋找 FIT zip）")
+    ap.add_argument("--input-dir", help="解壓後的 Garmin 匯出目錄（會遞迴尋找 FIT zip）")
     ap.add_argument("--db-path", required=True, help="SQLite 資料庫路徑")
+    ap.add_argument(
+        "--reclassify",
+        action="store_true",
+        help="不匯入 FIT，改用資料庫已存的分圈重跑自動分類，列出課種有變動的場次（manual 不動）",
+    )
+    ap.add_argument(
+        "--apply",
+        action="store_true",
+        help="搭配 --reclassify：實際寫入。未加時只列出差異、不寫入資料庫",
+    )
     ap.add_argument(
         "--sample-every-sec",
         type=int,
@@ -335,6 +406,20 @@ def main() -> None:
         help="要套用配速結構分類（interval/lsd/tempo/easy）的運動類型，逗號分隔，應為 --sports 的子集",
     )
     args = ap.parse_args()
+
+    if args.reclassify:
+        conn = get_connection(args.db_path)
+        try:
+            changes = reclassify_stored_activities(conn, apply=args.apply)
+        finally:
+            conn.close()
+        for c in changes:
+            print(f"  {c['date']}  #{c['activity_id']}  {c['distance_km']:>5} km  {c['old']} → {c['new']}")
+        action = "已寫入" if args.apply else "未寫入（加 --apply 才會寫入）"
+        print(f"\n共 {len(changes)} 場課種變動，{action}")
+        return
+    if not args.input_dir:
+        ap.error("匯入 FIT 需要 --input-dir（或改用 --reclassify）")
 
     import_sports = frozenset(s.strip() for s in args.sports.split(",") if s.strip())
     classifiable_sports = frozenset(

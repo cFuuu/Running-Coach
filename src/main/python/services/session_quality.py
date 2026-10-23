@@ -9,7 +9,8 @@
 
 四個維度：
   1. 強度符合度（intensity_fit）：實際心率強度是否落在該課種應有的區間
-  2. 配速執行度（pace_execution）：整場平均配速對該課種的 VDOT 配速區間
+  2. 配速執行度（pace_execution）：整場平均配速對該課種的 VDOT 配速區間；
+     間歇課改為分段逐趟標示落在哪一區（N-24）
   3. 配速穩定度（pace_consistency）：前後半配速差異，反映節奏控制
   4. 心率漂移（hr_drift）：透傳 fit_parser 的計算結果
 
@@ -27,6 +28,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import data_confidence
+from .workout_classifier import segment_laps, work_segments
 
 # --- 可調閾值（集中管理）---
 
@@ -51,7 +53,7 @@ INTENSITY_RANGES_HRR: dict[str, tuple[float, float]] = {
     "easy": (0.59, 0.74),
     "lsd": (0.59, 0.74),
     "tempo": (0.75, 0.88),
-    "interval": (0.85, 0.95),
+    "interval": (0.85, 0.95),  # assess_session 對間歇已改看逐趟配速、不用此區間（N-24）
     "race": (0.85, 1.00),
 }
 
@@ -59,13 +61,27 @@ INTENSITY_RANGES_HRR: dict[str, tuple[float, float]] = {
 # 🔴 工程實務決策，無文獻依據——文獻不存在「配速偏差多少算沒執行」的定義。
 PACE_FADE_PCT_THRESHOLD = 0.05
 
-# 配速執行度只評這兩種課種。
+# 以「整場平均配速」評配速執行度的課種。
 # ⚠️ 這是**資料模型限制，不是遺漏**：easy/lsd 全程都在同一個強度帶，整場平均
 # 配速就代表該課的目標配速；tempo/interval 的整場平均含暖身、緩和與間歇之間的
-# 休息段，會系統性地看起來「偏慢」——那是課的結構，不是沒執行。要評這兩者
-# 得先能標出「主段」是哪幾圈，本專案目前沒有這個概念（見 TODO N-10）。
+# 休息段，會系統性地看起來「偏慢」——那是課的結構，不是沒執行。
+# interval 自 2026-10-23（N-24）起改由分段逐趟評（assess_interval_pace）；
+# tempo 仍缺「主段」概念（見 TODO N-10／N-14），維持不評。
 # 缺前提時不評，與 workout_type 為 unknown 時不評是同一條原則。
 PACE_EXECUTION_ASSESSABLE_TYPES = frozenset({"easy", "lsd"})
+
+# 由快到慢的 VDOT 區間，供間歇逐趟標示落在哪一區
+_INTERVAL_ZONE_ORDER = ("interval", "tempo", "marathon", "easy")
+_ZONE_SHORT_NAMES = {"interval": "I", "tempo": "T", "marathon": "M", "easy": "E"}
+
+# 間歇課的強度不看心率（N-24，2026-10-23 Fu 決定）：Daniels 的間歇以配速處方，
+# 而 1–5 分鐘的反覆心率還在爬升，整場或各趟平均心率都會低估強度——
+# 2026-10-22 那場 4 趟 1000m 配速落在 T～I 之間，各趟平均心率卻只有 66–77% HRR。
+_INTERVAL_INTENSITY_NOT_ASSESSED_REASON = (
+    "間歇課的強度改看各趟配速（見 pace_execution）：短反覆時心率還在爬升，"
+    "整場或各趟平均心率都會低估實際強度，故不以心率判定；各趟心率只在 "
+    "pace_execution 中列出數值"
+)
 
 # 配速穩定度與心率漂移都需要足夠長度才有意義（指標假設已進入穩態）。
 MIN_DURATION_SEC_FOR_PACING = 20 * 60
@@ -201,6 +217,127 @@ def assess_pace_execution(
     }
 
 
+def _pace_zone_label(pace: float, pace_zones: dict[str, Any]) -> str | None:
+    """標示配速落在哪個 VDOT 區間，或落在哪兩區之間（Daniels 區間之間有空隙）。"""
+    faster_neighbour = None
+    for name in _INTERVAL_ZONE_ORDER:
+        zone = pace_zones.get(name)
+        if not zone:
+            continue
+        if pace < zone["fast_sec_per_km"]:
+            if faster_neighbour is None:
+                return f"faster_than_{name}"
+            return f"between_{faster_neighbour}_and_{name}"
+        if pace <= zone["slow_sec_per_km"]:
+            return name
+        faster_neighbour = name
+    return f"slower_than_{faster_neighbour}" if faster_neighbour else None
+
+
+def _describe_zone_label(label: str) -> str:
+    """把區間標籤轉成給判斷層讀的短說明，例如 between_interval_and_tempo → T 與 I 之間。"""
+    names = _ZONE_SHORT_NAMES
+    if label.startswith("faster_than_"):
+        return f"快於 {names[label.removeprefix('faster_than_')]} 區"
+    if label.startswith("slower_than_"):
+        return f"慢於 {names[label.removeprefix('slower_than_')]} 區"
+    if label.startswith("between_"):
+        faster, slower = label.removeprefix("between_").split("_and_")
+        return f"{names[slower]} 與 {names[faster]} 之間"
+    return f"{names[label]} 區"
+
+
+def assess_interval_pace(
+    laps: list[dict[str, Any]],
+    pace_zones: dict[str, Any] | None,
+    max_hr_bpm: float | None = None,
+    resting_hr_bpm: float | None = None,
+) -> dict[str, Any] | None:
+    """間歇課逐趟評配速：每一趟 work 落在哪個 VDOT 區間（N-24）。
+
+    分圈先合併成段（`workout_classifier.segment_laps`），所以錶設 400m 自動分圈
+    時，一趟 1000m 會被算成一趟而不是三圈。**不下「達標／未達標」判定**——
+    課表要的是 T 還是 I 只有教練知道（本模組不比對課表，2026-09-01 決定），
+    只回報各趟落在哪一區，由判斷層對照。各趟心率只列數值不判讀。
+
+    切不出 ≥2 趟 work 段、或沒有 VDOT 區間時回傳 None。
+    """
+    zones = {
+        name: pace_zones[name]
+        for name in _INTERVAL_ZONE_ORDER
+        if (pace_zones or {}).get(name)
+    }
+    if not zones:
+        return None
+    segments = segment_laps(laps)
+    works = work_segments(segments)
+    if len(works) < 2:
+        return None
+
+    first_work = segments.index(works[0])
+    last_work = segments.index(works[-1])
+    recoveries = [
+        s for s in segments[first_work:last_work + 1] if s["role"] == "recovery"
+    ]
+
+    reps = []
+    for number, seg in enumerate(works, start=1):
+        hr = seg["avg_hr_bpm"]
+        hrr = (
+            _hrr_pct(hr, max_hr_bpm, resting_hr_bpm)
+            if hr and max_hr_bpm and resting_hr_bpm else None
+        )
+        reps.append({
+            "rep": number,
+            "distance_m": round(seg["distance_km"] * 1000),
+            "duration_sec": round(seg["duration_sec"]),
+            "pace_sec_per_km": round(seg["pace_sec_per_km"]),
+            "zone": _pace_zone_label(seg["pace_sec_per_km"], zones),
+            "avg_hr_bpm": round(hr) if hr else None,
+            "hrr_pct": round(hrr * 100, 1) if hrr is not None else None,
+        })
+
+    zone_counts: dict[str, int] = {}
+    for rep in reps:
+        zone_counts[rep["zone"]] = zone_counts.get(rep["zone"], 0) + 1
+    rep_text = "、".join(
+        f"{rep['distance_m']}m {_format_pace(rep['pace_sec_per_km'])}"
+        f"（{_describe_zone_label(rep['zone'])}）"
+        for rep in reps
+    )
+    recovery_text = (
+        f"；組間休息 {min(round(r['duration_sec']) for r in recoveries)}–"
+        f"{max(round(r['duration_sec']) for r in recoveries)} 秒"
+        if recoveries else ""
+    )
+    zone_range_text = "、".join(
+        f"{_ZONE_SHORT_NAMES[name]} {_format_pace(z['fast_sec_per_km'])}–"
+        f"{_format_pace(z['slow_sec_per_km'])}"
+        for name, z in zones.items()
+    )
+
+    bias_codes = ["pace_execution_zone_estimated", "interval_segments_from_laps"]
+    return {
+        "dimension": "pace_execution",
+        "workout_structure": "interval",
+        "reps": reps,
+        "zone_counts": zone_counts,
+        "recoveries_sec": [round(r["duration_sec"]) for r in recoveries],
+        "zone_ranges_sec_per_km": {
+            name: [round(z["fast_sec_per_km"]), round(z["slow_sec_per_km"])]
+            for name, z in zones.items()
+        },
+        "detail": (
+            f"{len(reps)} 趟：{rep_text}{recovery_text}。當日 VDOT 區間：{zone_range_text}。"
+            "只標示各趟落在哪一區，不判定達標與否"
+        ),
+        "confidence": {
+            "level": data_confidence.combine_level(bias_codes),
+            "biases": [data_confidence.describe_bias(c) for c in bias_codes],
+        },
+    }
+
+
 def _pace_execution_reason(
     activity: dict[str, Any], pace_zones: dict[str, Any] | None
 ) -> str:
@@ -209,6 +346,13 @@ def _pace_execution_reason(
     codes = data_confidence.workout_type_bias_codes(workout_type)
     if codes:
         return data_confidence.describe_bias(codes[0])["detail"]
+    if workout_type == "interval":
+        if not pace_zones:
+            return "無 VDOT 推算的配速區間可作比較基準（需有可推算 VDOT 的歷史成績）"
+        return (
+            "分圈切不出 2 趟以上的快段（缺分圈資料，或分圈看不出快慢交替），"
+            "無法逐趟評配速"
+        )
     if workout_type not in PACE_EXECUTION_ASSESSABLE_TYPES:
         return (
             f"{workout_type} 不在可評的課種內（本維度僅評 easy／lsd）："
@@ -283,11 +427,14 @@ def assess_session(
     resting_hr_bpm: float | None,
     max_hr_source: str | None = None,
     pace_zones: dict[str, Any] | None = None,
+    laps: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """評估單場訓練，回傳各維度的判讀結果。
 
     pace_zones：vdot_engine.compute_pace_zones() 的輸出，供配速執行度維度
         作為比較基準。未提供時該維度列為不可評（不猜、不用預設區間）。
+    laps：該場分圈（`activity_laps` 列）。間歇課逐趟評配速時需要；
+        間歇課的強度符合度不以心率判定（見 _INTERVAL_INTENSITY_NOT_ASSESSED_REASON）。
 
     回傳：
         {
@@ -300,9 +447,17 @@ def assess_session(
     dimensions: list[dict[str, Any]] = []
     not_assessed: list[dict[str, Any]] = []
 
-    intensity = assess_intensity_fit(activity, max_hr_bpm, resting_hr_bpm, max_hr_source)
+    is_interval = activity.get("workout_type") == "interval"
+    intensity = (
+        None if is_interval
+        else assess_intensity_fit(activity, max_hr_bpm, resting_hr_bpm, max_hr_source)
+    )
     if intensity is not None:
         dimensions.append(intensity)
+    elif is_interval:
+        not_assessed.append(
+            {"dimension": "intensity_fit", "reason": _INTERVAL_INTENSITY_NOT_ASSESSED_REASON}
+        )
     else:
         codes = data_confidence.workout_type_bias_codes(activity.get("workout_type"))
         reason = (
@@ -312,7 +467,11 @@ def assess_session(
         )
         not_assessed.append({"dimension": "intensity_fit", "reason": reason})
 
-    pace_execution = assess_pace_execution(activity, pace_zones)
+    pace_execution = (
+        assess_interval_pace(laps or [], pace_zones, max_hr_bpm, resting_hr_bpm)
+        if is_interval
+        else assess_pace_execution(activity, pace_zones)
+    )
     if pace_execution is not None:
         dimensions.append(pace_execution)
     else:

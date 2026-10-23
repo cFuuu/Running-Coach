@@ -237,11 +237,19 @@ def assess_session_quality(
     （最常見是課種為 unknown——那是分類器失敗，該場可能是任何課種）。
     此時應明說「這項無法評估」，而非自行猜測後照評。
 
-    ⚠️ **配速執行度只評 easy/lsd**。tempo/interval 的整場平均配速含暖身、
-    緩和與間歇之間的休息段，會系統性地看起來「偏慢」——那是課的結構，
-    不是沒執行；本專案尚未建模「主段」，故這兩種課直接列為不可評。
-    另外此維度**只有偏快才算需要提示**：低強度日跑太快會讓這天既無恢復效果、
+    ⚠️ **配速執行度：easy/lsd 看整場平均，interval 逐趟看，tempo 不評**。
+    tempo 的整場平均配速含暖身與緩和，會系統性地看起來「偏慢」——那是課的
+    結構，不是沒執行；本專案尚未建模 tempo 的「主段」，故列為不可評。
+    easy/lsd **只有偏快才算需要提示**：低強度日跑太快會讓這天既無恢復效果、
     也構不成刺激；跑得比區間慢不視為未執行，回報數值即可。
+
+    ⚠️ **間歇課（interval）**：分圈先合併成「趟」（錶的自動分圈會把一趟 1000m
+    切成好幾圈），`reps` 列出每趟的距離、配速、落在哪個 VDOT 區間（`zone`，
+    可能是 `between_interval_and_tempo` 這種區間之間的空隙）。**不判定達標與否**
+    ——課表要的是 T 還是 I 配速只有學員的教練知道，請對照課表原文
+    （`get_active_training_plan` 的 notes）再下結論。間歇課的強度符合度
+    **刻意不以心率判定**（短反覆心率還在爬升，平均心率會低估強度），
+    各趟心率只當數值參考。
 
     本工具只分析實際練的內容，**不與計畫課表對照、不計算遵從度**——
     配速執行度比的是 VDOT 推算的該課種配速區間，不是 `training_plan` 的課表，
@@ -268,6 +276,14 @@ def assess_session_quality(
             (session_id,),
         )
     ]
+    laps = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT lap_index, distance_km, duration_sec, pace_sec_per_km, avg_hr_bpm "
+            "FROM activity_laps WHERE activity_id = ? ORDER BY lap_index",
+            (session_id,),
+        )
+    ]
     max_hr_bpm, resting_hr_bpm = training_load_queries.get_hr_params(conn, resolved)
     source_row = conn.execute(
         "SELECT max_hr_source FROM athlete_profile WHERE id = ?", (resolved,)
@@ -289,6 +305,7 @@ def assess_session_quality(
         resting_hr_bpm,
         source_row["max_hr_source"] if source_row else None,
         pace_zones=pace_zones,
+        laps=laps,
     )
     result["session"] = {
         "id": detail["id"],

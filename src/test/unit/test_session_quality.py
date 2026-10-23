@@ -181,6 +181,55 @@ class AssessSessionTest(unittest.TestCase):
         self.assertIn("pace_execution", blocked)
 
 
+def _interval_laps(rep_paces, hr=170):
+    """每趟 1000m 被 400m 自動分圈切成 400＋400＋200，之後接 220m 慢跑休息。"""
+    laps = []
+    for pace in rep_paces:
+        for km, p in ((0.4, pace), (0.4, pace), (0.2, pace), (0.22, 500)):
+            laps.append({
+                "lap_index": len(laps) + 1, "distance_km": km, "duration_sec": p * km,
+                "pace_sec_per_km": p, "avg_hr_bpm": hr,
+            })
+    return laps
+
+
+class IntervalAssessmentTest(unittest.TestCase):
+    """N-24：間歇課逐趟看配速落在哪一區，強度不以心率判定。"""
+
+    def _assess(self, laps, zones=FAKE_PACE_ZONES):
+        return assess_session(_act("interval", 150.0, avg_pace=330.0), [], None,
+                              MAX_HR, RHR, pace_zones=zones, laps=laps)
+
+    def test_reps_are_labelled_by_zone(self):
+        got = self._assess(_interval_laps([255, 270, 285]))
+        pace = next(d for d in got["dimensions"] if d["dimension"] == "pace_execution")
+        self.assertEqual(
+            [r["zone"] for r in pace["reps"]],
+            ["interval", "between_interval_and_tempo", "tempo"],
+        )
+        self.assertEqual([r["distance_m"] for r in pace["reps"]], [1000, 1000, 1000])
+        self.assertEqual(pace["reps"][0]["hrr_pct"], 80.0)
+        self.assertNotIn("verdict", pace)  # 課表要 T 還是 I 只有教練知道，不判定達標
+        codes = {b["code"] for b in pace["confidence"]["biases"]}
+        self.assertIn("interval_segments_from_laps", codes)
+
+    def test_intensity_is_not_judged_by_heart_rate(self):
+        """★ 短反覆心率還在爬升，拿整場平均心率比 85–95% 會誤判「強度不足」。"""
+        got = self._assess(_interval_laps([255, 255, 255]))
+        self.assertNotIn("intensity_fit", {d["dimension"] for d in got["dimensions"]})
+        reason = next(d for d in got["not_assessed"] if d["dimension"] == "intensity_fit")
+        self.assertIn("配速", reason["reason"])
+
+    def test_without_laps_pace_is_not_assessed_with_reason(self):
+        got = self._assess([])
+        reason = next(d for d in got["not_assessed"] if d["dimension"] == "pace_execution")
+        self.assertIn("分圈", reason["reason"])
+
+    def test_without_zones_pace_is_not_assessed(self):
+        got = self._assess(_interval_laps([255, 270]), zones=None)
+        self.assertIn("pace_execution", {d["dimension"] for d in got["not_assessed"]})
+
+
 class PaceExecutionTest(unittest.TestCase):
     def test_within_zone(self):
         got = assess_pace_execution(_act("easy", avg_pace=365.0), FAKE_PACE_ZONES)
