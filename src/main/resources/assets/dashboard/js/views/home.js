@@ -17,7 +17,7 @@ import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFID
 import { api, apiSend } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark } from '../core/facts.js';
-import { addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote, warmupsByMain, warmupLabel } from '../core/format.js';
+import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
 import { activityDots, firstRunningActivity } from './calendar.js';
@@ -1176,13 +1176,12 @@ export function renderRecentSessions() {
 
   var list = h('div', 'recent-list');
   var head = h('div', 'recent-row recent-head');
-  ['日期', '活動', '實際', '課表'].forEach(function (t) { head.appendChild(h('span', null, t)); });
+  ['日期', '活動', '實際'].forEach(function (t) { head.appendChild(h('span', null, t)); });
   list.appendChild(head);
 
   // 暖身是另存的獨立活動：不單獨成列，折進主課（主課的「活動」欄標「含暖身 x km」）
   var items = state.recentActivities.filter(function (item) { return !item.activity.warmup_for_activity_id; });
 
-  var prev = null;
   items.slice(0, 8).forEach(function (item) {
     var a = item.activity;
     // 跑步才有單場分析可看（同行事曆）；健走、重訓等整列淡色、不可點
@@ -1224,31 +1223,23 @@ export function renderRecentSessions() {
     actual.appendChild(sub);
     row.appendChild(actual);
 
-    // 課表：同一天多場對到同一份課表時只列在第一場，其餘與沒對到課表的一律「—」
-    var plan = item.plan && !(prev && prev.date === item.date && prev.plan === item.plan) ? item.plan : null;
-    row.appendChild(h('span', 'rc-plan' + (plan ? '' : ' is-none'), plan ? planSummary(plan) : '—'));
-
     list.appendChild(row);
-    prev = item;
   });
   node.appendChild(list);
 }
 
 /**
- * 近 30 天的所有活動（含健走、重訓等），連同各場對應的課表，由新到舊。
- * /api/calendar 的每一天同時帶有活動與課表，以活動的 plan_match 判斷有沒有對應
- * （none 不算）；同一天的活動 API 依開始時間由早到晚，這裡反過來。
+ * 近 30 天的所有活動（含健走、重訓等），由新到舊。
+ * 資料取自 /api/calendar；同一天的活動 API 依開始時間由早到晚，這裡反過來。
  */
 export function loadRecentSessions() {
   var today = todayISO();
   api('/api/calendar?start=' + addDaysISO(today, -29) + '&end=' + today).then(function (data) {
     var items = [];
     ((data && data.days) || []).slice().reverse().forEach(function (d) {
-      var p = (d.planned || [])[0] || null;
       var warmups = warmupsByMain(d.activities);
       (d.activities || []).slice().reverse().forEach(function (a) {
-        var matched = p && a.plan_match && a.plan_match.state !== 'none';
-        items.push({ date: d.date, activity: a, plan: matched ? p : null, warmup: warmups[a.id] || null });
+        items.push({ date: d.date, activity: a, warmup: warmups[a.id] || null });
       });
     });
     state.recentActivities = items;

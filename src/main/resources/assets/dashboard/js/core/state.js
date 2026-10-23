@@ -25,7 +25,7 @@ export var state = {
   // 今日頁的身體狀況趨勢與最近訓練清單。兩者都取固定區間（近 30 天），
   // 與頂列的 range 切換無關——今日頁不吃 range（見 VIEWS.today.hasRange）。
   todayKpi: null,        // { loadSeries, garminCards }（首頁固定近 30 天）
-  recentActivities: null, // 近 30 天所有活動 { date, activity, plan }，由新到舊（取前 8 筆顯示）
+  recentActivities: null, // 近 30 天所有活動 { date, activity, warmup }，由新到舊（取前 8 筆顯示）
   overview: null,        // 趨勢頁區間摘要用的 /api/overview（吃 range）
 
   homeOverview: null,    // 首頁用的 /api/overview（固定 30d，只取 VDOT、最佳成績、本週 Zone 2 等不受範圍影響的欄位）

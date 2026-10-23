@@ -2043,8 +2043,7 @@ body.coach-open .coach-fab {
 #view-home .wp-date,
 #view-home .wp-actual,
 #view-home .rc-date,
-#view-home .rc-actual,
-#view-home .rc-plan {
+#view-home .rc-actual {
   font-weight: 600;
 }
 
@@ -3073,7 +3072,7 @@ body.coach-open .coach-fab {
 
 .recent-row {
   display: grid;
-  grid-template-columns: 5rem 6rem 7.6rem minmax(0, 1fr);
+  grid-template-columns: 5rem minmax(0, 1fr) 4.4rem 4.2rem 4rem;
   align-items: center; /* 活動／實際有兩行，日期與課表單行，垂直置中才不會偏上 */
   gap: 8px;
   width: 100%;
@@ -3116,11 +3115,9 @@ button.recent-row:focus-visible {
   color: var(--text-muted);
 }
 
-/* 日期、實際欄（含表頭）置中 */
+/* 日期欄（含表頭）置中 */
 .recent-head > :nth-child(1),
-.recent-head > :nth-child(3),
-.rc-date,
-.rc-actual {
+.rc-date {
   text-align: center;
 }
 
@@ -3130,15 +3127,20 @@ button.recent-row:focus-visible {
   font-weight: 600;
 }
 
-.rc-activity,
-.rc-actual {
+.rc-activity {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 
+/* 實際：距離｜配速｜心率三個對齊的欄。.rc-actual／.rc-sub 用 display:contents，
+   讓裡面的節點直接成為格線的欄（每一列都是同樣的欄寬，數字上下對齊） */
+.rc-actual,
+.rc-sub {
+  display: contents;
+}
+
 .rc-actual {
-  align-items: center;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3150,81 +3152,64 @@ button.recent-row .rc-actual .rc-main {
   color: var(--accent-text);
 }
 
-.rc-sub {
+.rc-actual .rc-main,
+.rc-pace,
+.rc-hr {
+  text-align: right;
   white-space: nowrap;
+}
+
+.rc-pace,
+.rc-hr {
   color: var(--text-muted);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-weight: 400;
 }
 
-/* 課表：課表週的同一套文字（planSummary）；課表外／非跑步的「—」淡色 */
-.rc-plan {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.rc-sep {
+  display: none;
 }
 
-.rc-plan.is-none {
-  color: var(--text-muted);
+/* 表頭「實際」橫跨三欄，靠左放在實際資料的最左邊 */
+.recent-head > :nth-child(3) {
+  grid-column: 3 / span 3;
+  text-align: left;
 }
-/* 區塊窄（手機，或首頁排成半欄）時兩行：第一行 日期｜活動｜實際，第二行課表。
-   依區塊寬度而非螢幕寬度判斷 */
-@container block (max-width: 600px) {
-  /* 每一列是獨立的格線，「實際」欄若用 auto，各列寬度不同、數字就對不齊（健走那列會偏右），
-     所以用固定欄寬（與寬版同為 7.6rem），數字一律靠右 */
+
+/* 區塊窄（手機，或首頁排成半欄，約 480px 以下）時三欄放不下：改成兩行，
+   第一行 日期｜活動｜距離，第二行時長與「配速 · 心率」。依區塊寬度而非螢幕寬度判斷 */
+@container block (max-width: 480px) {
   .recent-row {
     grid-template-columns: 5rem minmax(0, 1fr) 7.6rem;
     row-gap: 2px;
   }
 
   .rc-actual {
+    display: flex;
+    flex-direction: column;
     align-items: flex-end;
-    text-align: right;
+    min-width: 0;
   }
 
-  /* 窄版只留日期｜活動｜實際：課表欄與其表頭都不顯示（課表看「當週課表」區塊或寬版） */
-  .recent-head > :nth-child(4),
-  .rc-plan {
-    display: none;
-  }
-
-  .recent-head > :nth-child(3) {
-    text-align: right;
-  }
-}
-
-/* 中寬度（約 480～600px）：「實際」拆成距離｜配速｜心率三個對齊的欄，填滿活動與實際之間的空白。
-   .rc-actual／.rc-sub 用 display:contents 讓裡面的節點直接成為格線的欄 */
-@container block (min-width: 481px) and (max-width: 600px) {
-  .recent-row {
-    grid-template-columns: 5rem minmax(0, 1fr) 4.4rem 4.2rem 4rem;
-  }
-
-  .rc-actual,
   .rc-sub {
-    display: contents;
+    display: block;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
   }
 
   .rc-sep {
-    display: none;
-  }
-
-  .rc-actual .rc-main,
-  .rc-pace,
-  .rc-hr {
-    text-align: right;
-    white-space: nowrap;
+    display: inline;
   }
 
   .rc-pace,
   .rc-hr {
-    color: var(--text-muted);
-    font-size: var(--fs-sm);
+    font-size: inherit;
   }
 
-  /* 表頭「實際」橫跨三欄 */
   .recent-head > :nth-child(3) {
-    grid-column: 3 / span 3;
+    grid-column: auto;
+    text-align: right;
   }
 }
 
