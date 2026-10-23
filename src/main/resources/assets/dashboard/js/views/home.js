@@ -3,7 +3,7 @@
  *
  * 固定看「現在」，不吃頂列的時間範圍——會隨範圍變動的走勢都在趨勢頁。
  * 6 個區塊，依「回答什麼問題」分（分類見 docs/dev/FRONTEND_REFACTOR.md 階段 6）：
- *   綜覽（今日課表＋訓練完備程度／本週訓練狀況＋賽事倒數）、訓練負荷、體能狀況、
+ *   綜覽（今日課表＋綜合整備狀態／本週訓練狀況＋賽事倒數）、訓練負荷、體能狀況、
  *   當週課表、戰力綜覽、近期活動
  * 區塊的順序與顯隱由使用者自訂（core/customize.js，偏好 key 'home'）。
  *
@@ -84,7 +84,7 @@ export function initHomeLayout() {
   mountHomeCustomizer();
 }
 
-// ------------------------------------------------------------ 今天：課表＋賽事倒數＋訓練完備程度
+// ------------------------------------------------------------ 今天：課表＋賽事倒數＋綜合整備狀態
 
 /**
  * 一天的課表：課別＋距離、配速（粗體），後面接教練原文的精簡版（淡色，完整原文在 title）。
@@ -130,8 +130,8 @@ function planBlockTitle(planned) {
 
 // 判定 → 顯示。顏色之外一律附圖示與文字，不單靠顏色（色盲、列印也看得懂）。
 var READINESS_STATE = {
-  normal: { cls: 'ok', icon: '✓', text: '正常' },
-  low: { cls: 'low', icon: '▼', text: '偏低' },
+  normal: { cls: 'ok', icon: '✓', text: '良好' },
+  low: { cls: 'low', icon: '▼', text: '低落' },
   none: { cls: 'none', icon: '–', text: '未評' }
 };
 
@@ -148,11 +148,11 @@ function readinessPill(value) {
 }
 
 var READINESS_TIPS = [
-  '綜合訓練完備程度是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
+  '綜合整備狀態是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
     + '對「今天身體恢復得夠不夠完備」的判定。顏色一看就懂：'
-    + '綠色 ✓ 正常（查過了，沒有異常訊號）；紅色 ▼ 偏低（至少一個維度觸發）；'
-    + '灰色 – 未評（維度都缺資料、無法評估，不等於正常）。',
-  '兩個維度，任一觸發就判為「偏低」：①TSB 低於你自己歷史分布的第 10 百分位；'
+    + '綠色 ✓ 良好（查過了，沒有異常訊號）；紅色 ▼ 低落（至少一個維度觸發）；'
+    + '灰色 – 未評（維度都缺資料、無法評估，不等於良好）。',
+  '兩個維度，任一觸發就判為「低落」：①TSB 低於你自己歷史分布的第 10 百分位；'
     + '②當日 HRV 較 7 日均值下降 15% 以上（這個 7 日均值是 Garmin 提供的，不是本專案算的）。'
     + '另有「連續訓練」規則（連續訓練達 6 天，預設值可個人化），平常不顯示，觸發時才會多一列。',
   '各觸發項旁的標籤是信賴度：TSB 取決於最大心率是否實測；HRV 的百分比門檻尚未經文獻驗證，標為低。',
@@ -181,7 +181,7 @@ function signedNumber(v, decimals) {
 // 判斷維度，依「數值 / 觸發門檻」並列（與本週訓練狀況的「實際 / 課表」同一種讀法）。
 // key 對應後端 readiness 的 measurements，dim 對應 triggers／not_assessed 的 dimension。
 // 連續訓練規則仍計入判定，但以學員的訓練頻率幾乎不會觸發，平常不佔一列，
-// 觸發時才補上（否則會出現「偏低」卻看不到原因）。
+// 觸發時才補上（否則會出現「低落」卻看不到原因）。
 var CONSECUTIVE_ROW = {
   dim: 'consecutive_training_days', key: 'consecutive_training_days', label: '連續訓練',
   fmt: function (v) { return String(v); }, unit: ' 天'
@@ -274,7 +274,7 @@ var FEEL_OPTIONS = [
 ];
 
 var FEEL_TIPS = [
-  '自評今日體感狀態只是記錄，不影響任何判定（綜合訓練完備程度、訓練負荷都不讀它）。'
+  '自評今日體感狀態只是記錄，不影響任何判定（綜合整備狀態、訓練負荷都不讀它）。'
     + '累積下來用來檢驗規則抓到的日子是不是真的累。',
   '點一下記錄，再點同一顆取消。記的是「今天」，即使上方因資料未同步而顯示較早一天的判定。'
 ];
@@ -346,14 +346,14 @@ function readinessStatus(value) {
   var s = readinessStateOf(value);
   // 狀態文字（兩個字）直接放在圓裡，圓下方不再多佔一行
   var badge = h('span', 'rd-status-icon readiness-' + s.cls, s.text);
-  badge.title = s.cls === 'none' ? '三個維度都缺資料，無法評估（不等於正常）' : '綜合訓練完備程度：' + s.text;
+  badge.title = s.cls === 'none' ? '各維度都缺資料，無法評估（不等於良好）' : '綜合整備狀態：' + s.text;
   return badge;
 }
 
 export function renderTodayReadinessBlock(readiness) {
   var block = h('div', 'today-block readiness-block fig-block');
   var title = h('div', 'today-block-title');
-  title.appendChild(h('span', null, '綜合訓練完備程度'));
+  title.appendChild(h('span', null, '綜合整備狀態'));
   block.appendChild(title);
 
   var entry = readiness && readiness.today;
@@ -369,7 +369,7 @@ export function renderTodayReadinessBlock(readiness) {
   var shownDate = entry && entry.date ? entry.date : (state.today && state.today.date);
   if (shownDate) title.appendChild(h('span', 'today-note fig-title-date', C.shortDate(shownDate) + ' (' + dowLabel(shownDate) + ')'));
   // ⓘ 靠標題列最右邊，所以要在日期之後才加
-  title.appendChild(infoTip('綜合訓練完備程度', READINESS_TIPS));
+  title.appendChild(infoTip('綜合整備狀態', READINESS_TIPS));
 
   // 左側三個維度的數值 / 門檻、右側判定圖示
   var card = h('div', 'wt-card');
@@ -572,7 +572,7 @@ export function renderToday() {
   top.appendChild(renderFeelBlock((data && data.date) || todayISO()));
   node.appendChild(top);
 
-  // 訓練完備程度與本週訓練狀況並排（區塊太窄時上下排）
+  // 綜合整備狀態與本週訓練狀況並排（區塊太窄時上下排）
   var pair = h('div', 'today-pair');
   pair.appendChild(renderTodayReadinessBlock(data.readiness));
   var weekTraining = h('div', 'today-block fig-block');
@@ -864,7 +864,7 @@ function hoursText(sec) {
  * 本週訓練狀況：本課表週（週一到週日）實際跑量對照課表、實際累計時間，環形圖顯示里程完成率。
  * 時間只列實際，不對照預計時間（分母不可靠，見 plan-week.js planWeekSummary）。
  *
- * 放在「今天」區塊內、訓練完備程度旁（#week-training 由 renderToday 建立）。
+ * 放在「今天」區塊內、綜合整備狀態旁（#week-training 由 renderToday 建立）。
  * 課表週與今日資料各自載入、先後不定，兩邊資料回來時都會呼叫本函式；
  * 容器還不存在（今日資料未到）時直接略過，等 renderToday 建好再畫。
  */

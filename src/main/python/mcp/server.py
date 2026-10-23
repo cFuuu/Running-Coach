@@ -601,7 +601,7 @@ def get_daily_feel(
 ) -> list[dict]:
     """取得學員每日自評的體感（tired 疲憊／normal 普通／energetic 充沛），沒記的日子不出現。
 
-    用途是對照規則判讀：readiness 說偏低、HRV 趨勢說偏離時，學員當天是否真的累。
+    用途是對照規則判讀：綜合整備狀態說低落、HRV 趨勢說偏離時，學員當天是否真的累。
     source 為 backfill 的是事後回想補填，可信度低於當天記錄（dashboard／coach）。
 
     ⚠️ 體感**不是事實層資料，永遠不進任何計算**，不可拿它調整判讀門檻。

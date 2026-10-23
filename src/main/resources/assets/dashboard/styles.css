@@ -172,7 +172,7 @@
   --gc-focus-high: #ff9f40;
   --gc-focus-low: #3fc7dc;
 
-  /* 完備程度狀態色：綠＝正常、紅＝偏低；無法評估沿用中性灰 */
+  /* 完備程度狀態色：綠＝良好、紅＝低落；無法評估沿用中性灰 */
   --ready-ok-bg: #dff3e4;
   --ready-ok-border: #9fd3ac;
   --ready-ok-text: #1d6b34;
@@ -3411,7 +3411,7 @@ button.recent-row .rc-actual .rc-main {
   color: var(--text-muted);
 }
 
-/* 完備程度判定膠囊：顏色＋圖示＋文字三重表達 */
+/* 整備狀態判定膠囊：顏色＋圖示＋文字三重表達 */
 .readiness-pill {
   display: inline-flex;
   align-items: center;
@@ -3458,7 +3458,7 @@ button.recent-row .rc-actual .rc-main {
   border-radius: 4px;
 }
 
-/* 訓練完備程度區塊收小：字級降一階、列距收緊，讓課表與賽事倒數是視覺主體 */
+/* 綜合整備狀態區塊收小：字級降一階、列距收緊，讓課表與賽事倒數是視覺主體 */
 .readiness-block {
   font-size: var(--fs-sm);
 }
@@ -3486,7 +3486,7 @@ button.recent-row .rc-actual .rc-main {
   font-size: var(--fs-xs);
 }
 
-/* 「今天」區塊內：訓練完備程度與本週訓練狀況並排；區塊窄時上下排 */
+/* 「今天」區塊內：綜合整備狀態與本週訓練狀況並排；區塊窄時上下排 */
 .today-pair {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -3500,7 +3500,7 @@ button.recent-row .rc-actual .rc-main {
   }
 }
 
-/* fig-block：訓練完備程度與本週訓練狀況共用的版面。圖示一律在數值右側，
+/* fig-block：綜合整備狀態與本週訓練狀況共用的版面。圖示一律在數值右側，
    空間窄時縮小圖示與間距 */
 .fig-block {
   container: wt / inline-size;
@@ -3594,7 +3594,7 @@ button.recent-row .rc-actual .rc-main {
   margin-bottom: 8px;
 }
 
-/* 標題第一行固定高度：有 ⓘ 按鈕的（訓練完備程度）與沒有的（本週訓練狀況）一樣高 */
+/* 標題第一行固定高度：有 ⓘ 按鈕的（綜合整備狀態）與沒有的（本週訓練狀況）一樣高 */
 .fig-block .today-block-title > :first-child {
   min-height: 24px;
   line-height: 24px;
@@ -3614,7 +3614,7 @@ button.recent-row .rc-actual .rc-main {
   line-height: 24px;
 }
 
-/* ---- 訓練完備程度：三個維度的數值 / 門檻＋右側判定圖示 ---- */
+/* ---- 綜合整備狀態：三個維度的數值 / 門檻＋右側判定圖示 ---- */
 .rd-value {
   font-size: var(--fs-lg);
   font-weight: 600;
