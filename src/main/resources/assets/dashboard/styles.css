@@ -3670,14 +3670,18 @@ button.recent-row .rc-actual .rc-main {
 }
 
 .feel-options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  display: flex;
+  gap: 8px;
 }
 
+/* 只放表情圖示，格子縮成固定小方塊（文字在滑鼠提示） */
 .feel-btn {
-  min-height: 40px;
-  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 48px;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -3687,14 +3691,17 @@ button.recent-row .rc-actual .rc-main {
   cursor: pointer;
 }
 
-.feel-btn.is-active {
-  color: #fff;
-  font-weight: 700;
-}
+/* 紅黃綠：圖示平時就是該色線條，選中時整格填色、圖示反白（黃色底對比不足，圖示改深色） */
+.feel-btn.feel-tired { color: var(--pct-red); }
+.feel-btn.feel-normal { color: var(--pct-yellow); }
+.feel-btn.feel-energetic { color: var(--pct-green); }
 
-.feel-btn.feel-tired.is-active { background: var(--pct-orange); border-color: var(--pct-orange); }
-.feel-btn.feel-normal.is-active { background: var(--text-muted); border-color: var(--text-muted); }
-.feel-btn.feel-energetic.is-active { background: var(--pct-blue); border-color: var(--pct-blue); }
+.feel-btn.is-active { color: #fff; }
+.feel-btn.feel-normal.is-active { color: #3a2f00; }
+
+.feel-btn.feel-tired.is-active { background: var(--pct-red); border-color: var(--pct-red); }
+.feel-btn.feel-normal.is-active { background: var(--pct-yellow); border-color: var(--pct-yellow); }
+.feel-btn.feel-energetic.is-active { background: var(--pct-green); border-color: var(--pct-green); }
 
 /* HRV 趨勢偏離：只是提醒、不計入判定，用信賴度「低」的橘色而非偏低的紅色 */
 .rd-row.is-hint .rd-value,
