@@ -2716,6 +2716,12 @@ body.coach-open .coach-fab {
   height: 28px;
 }
 
+/* 訓練負荷區上列的 TSB／ATL／CTL：趨勢線是卡片的主角，拉高到 64px（其他指標卡維持 28px）。
+   線稿用 preserveAspectRatio:none，只拉高度不會變形 */
+.home-load-cards .kpi-spark .sparkline {
+  height: 64px;
+}
+
 .sparkline-path {
   fill: none;
   stroke: var(--accent);
