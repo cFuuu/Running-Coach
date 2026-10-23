@@ -1899,12 +1899,16 @@ body.coach-open .coach-fab {
   font-weight: 600;
 }
 
-/* 主要數字用該區塊的強調色（2026-10-23 Fu：只加色字，不放大、不加底色或外框）。
-   訓練負荷用橘、戰力綜覽用綠，與卡片標題色帶、區塊標題左側短條同色 */
+/* 主要數字放大到 34px、用一般的黑色字（2026-10-23 Fu：先試過強調色，改回黑色）。
+   戰績卡的內部間距同步收緊，卡片高度不變 */
 #block-load .kpi-value,
 #block-ability .kpi-value,
 #block-ability .pb-time {
-  color: var(--hdr-strong);
+  font-size: 34px;
+}
+
+#block-ability .pb-card {
+  gap: 0;
 }
 
 /* 趨勢線上下各一條細虛線，把它與上方數字、下方灰字隔開 */
@@ -2804,8 +2808,15 @@ body.coach-open .coach-fab {
 .home-load-cards .kpi-spark,
 .ability-grid > .kpi-card .kpi-spark {
   position: relative;
+  flex: 0 0 52px; /* 趨勢線上下縮窄為固定 52px */
+}
+
+/* 數字吃掉剩餘高度，在標題列與趨勢線之間水平、垂直置中 */
+.home-load-cards .kpi-value-wrap,
+.ability-grid > .kpi-card .kpi-value-wrap {
   flex: 1 1 auto;
-  min-height: 40px;
+  align-items: center;
+  justify-content: center;
 }
 
 .home-load-cards .kpi-spark .sparkline,
