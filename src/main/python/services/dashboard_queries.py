@@ -1109,6 +1109,7 @@ def get_today(
             "readiness": None,
             "load": None,
             "hrv": None,
+            "garmin_reference": None,
             "consecutive_training_days": None,
             "last_activity": None,
         }
@@ -1280,7 +1281,8 @@ def get_today(
             # 【為什麼這幾個欄位不走 data_confidence.fact()】
             # fact() 對 unusable 級偏誤一律回 None，而 garmin_blackbox 正是
             # unusable——那條規則保護的是「判斷層不得使用無法評估可信度的數字」，
-            # 目的正確，這裡也完全遵守：規則引擎與 AI 教練都不讀這個欄位。
+            # 目的正確，這裡也完全遵守：規則引擎不讀這個欄位。2026-10-23 起 AI 教練可
+            # 在標明「Garmin 參考」的前提下引用（見行為約束第 8 條），但不得當判讀依據。
             #
             # 但「不給判斷層用」與「不讓使用者看見手錶顯示了什麼」是兩件事。
             # 使用者手錶上明明寫著「不平衡」，儀表板卻完全不提，反而會讓人
@@ -1292,7 +1294,7 @@ def get_today(
             # 均值（hrv_ms）：實測 39/39 天吻合，昨夜均值只有 29/39。見 TODO N-20。
             "garmin_reference": {
                 "for_display_only": True,
-                "note": "Garmin（Firstbeat）黑盒演算法輸出，公式未公開，僅供對照，不得作為判讀依據",
+                "note": "Garmin（Firstbeat）黑盒演算法輸出，公式未公開，僅供參考；引用須標明來源，不得單憑它下結論",
                 "status": wellness_today_row["hrv_status"],
                 "baseline_balanced_low": wellness_today_row["hrv_baseline_balanced_low"],
                 "baseline_balanced_upper": wellness_today_row["hrv_baseline_balanced_upper"],
@@ -1357,8 +1359,62 @@ def get_today(
         },
         "load": load_fact,
         "hrv": hrv_fact,
+        "garmin_reference": _garmin_health_reference(conn, resolved, today),
         "consecutive_training_days": consecutive_training_days,
         "last_activity": last_activity,
+    }
+
+
+def _garmin_health_reference(
+    conn: sqlite3.Connection, athlete_id: int, today: datetime.date
+) -> dict | None:
+    """Garmin 健康狀態卡（HR／HRV／呼吸／血氧）的參考摘要，供首頁「注意」旗標與 AI 教練引用。
+
+    範圍與判定（IN_RANGE／BELOW／ABOVE）都是 Garmin 依個人歷史推算的輸出，本專案
+    不重算。2026-10-23 起：**規則引擎（readiness.py）仍不讀**，但首頁與 AI 教練可在
+    標明「Garmin 參考」的前提下引用；不走 data_confidence.fact()，刻意與三欄位契約
+    長得不同（reference_only），下游若誤當 fact 用會立刻壞掉。
+    今天還沒同步時退回 _TODAY_FALLBACK_DAYS 內最近一天，並以 as_of 標明。
+    """
+    window_start = today - datetime.timedelta(days=_TODAY_FALLBACK_DAYS)
+    latest = conn.execute(
+        "SELECT MAX(date) AS d FROM health_status WHERE athlete_id = ? AND date <= ? AND date >= ?",
+        (athlete_id, today.isoformat(), window_start.isoformat()),
+    ).fetchone()["d"]
+    if latest is None:
+        return None
+    rows = conn.execute(
+        "SELECT metric, value, baseline_lower, baseline_upper, status "
+        "FROM health_status WHERE athlete_id = ? AND date = ?",
+        (athlete_id, latest),
+    ).fetchall()
+    # 狀態為 NULL 視為 Garmin 沒給判定，不算異常（與只看 IN_RANGE 以外的 BELOW／ABOVE 一致）
+    outliers = [
+        {
+            "metric": r["metric"],
+            "status": r["status"],
+            "value": r["value"],
+            "lower": r["baseline_lower"],
+            "upper": r["baseline_upper"],
+        }
+        for r in rows
+        if r["status"] is not None and r["status"] != "IN_RANGE"
+    ]
+    return {
+        "reference_only": True,
+        "note": (
+            "Garmin 手錶（Firstbeat）依個人歷史算出的健康狀態，演算法未公開，只供參考；"
+            "不是本專案的規則。引用時須標明來源，不可單憑它建議休息或調整課表"
+        ),
+        "health_status": {
+            "date": latest,
+            # 非 None 代表這不是今天的資料（今天尚未同步），前端與回述都必須標注
+            "as_of": None if latest == today.isoformat() else latest,
+            "metrics_total": len(rows),
+            "outliers": outliers,
+        },
+        # 首頁「綜合整備狀態」：本專案規則都沒觸發（readiness 為 normal）而此值為 True 時，改顯示「注意」
+        "caution": len(outliers) > 0,
     }
 
 

@@ -267,7 +267,9 @@ CREATE TABLE IF NOT EXISTS daily_wellness (
 -- /healthstatus-service/healthstatus/summary/{date}。一個指標一列：
 -- 睡眠期間數值、Garmin 依個人歷史推算的基準上下限、判定（IN_RANGE 等）、
 -- percentage（數值在範圍內的位置，0–100）。範圍與判定皆為 Garmin 的輸出，
--- 本專案不自行計算；僅供顯示，規則引擎與 AI 教練不讀。
+-- 本專案不自行計算；規則引擎（readiness.py 等）不讀。2026-10-23 起首頁「綜合整備狀態」
+-- 的「注意」旗標與 AI 教練可在標明「Garmin 參考」下引用（見 dashboard_queries 的
+-- _garmin_health_reference），但永遠不進規則引擎的判定。
 -- 手錶不支援的指標（如皮膚溫度）回傳 status=UNKNOWN 且無數值，不寫入。
 CREATE TABLE IF NOT EXISTS health_status (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,

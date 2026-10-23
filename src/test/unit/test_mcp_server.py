@@ -302,6 +302,14 @@ class CoachPromptTest(unittest.TestCase):
         self.assertIn("assessability.blocked", self.text)
         self.assertIn("workout_type", self.text)
 
+    def test_garmin_data_is_citable_only_as_labelled_reference(self):
+        """約束 8：AI 可引用 Garmin 健康狀態，但須標明參考、不可單憑它建議休息，
+        且不得拿它調整閾值——防止這條邊界被無聲刪掉或放寬。"""
+        self.assertIn("garmin_reference", self.text)
+        self.assertIn("必須標明", self.text)
+        self.assertIn("不可單憑它", self.text)
+        self.assertIn("不可拿它調整任何閾值", self.text)
+
     def test_forbids_inventing_thresholds(self):
         self.assertIn("不得自行發明閾值", self.text)
 

@@ -416,6 +416,10 @@ def get_today(ctx: Context[AppContext], athlete_id: int | None = None) -> dict:
     ⚠️ `freshness.days_behind` 大於 0 時，代表 Garmin 尚未同步到今天，
     以下所有判讀都建立在較舊的資料上，須主動告知使用者。
 
+    `garmin_reference` 是 Garmin 手錶的健康狀態（HR／HRV／呼吸／血氧是否在個人範圍內），
+    **僅供參考、不是本專案的規則**：可引用但須標明來源，不可單憑它建議休息或調課
+    （見行為約束第 8 條）。`caution` 為 true 且 readiness 為 normal 時，儀表板顯示「注意」。
+
     athlete_id 省略時預設取資料庫中第一位學員。
     """
     return _serialize(dashboard_queries.get_today(_conn(ctx), athlete_id))
@@ -769,8 +773,8 @@ _BEHAVIOR_CONSTRAINTS = """\
 - 這類情境可用 `add_context_note` 記下來（記原話、不要代為摘要或分級），
   日後用 `get_context_notes` 查回，用來解釋訓練偏差的原因。回述事實清單時
   須與量測數據**分開列出**，標明它來自學員自述。
-- 學員說今天累不累時，用 `record_daily_feel` 記成四級之一（對不上就問學員，
-  不要代為分級）；`get_daily_feel` 可查回，用來對照規則判讀是否貼近體感。
+- 學員說今天累不累時，用 `record_daily_feel` 記成三級之一（tired 疲憊／normal 普通／
+  energetic 充沛；對不上就問學員，不要代為分級）；`get_daily_feel` 可查回，用來對照規則判讀是否貼近體感。
   同樣不進事實層。
 
 ### 6. 不給醫療建議
@@ -787,6 +791,19 @@ _BEHAVIOR_CONSTRAINTS = """\
   明確指示，寫入前先複述你整理出的逐日內容。**一旦有外部課表，它就是唯一
   基準**——不要並列建議自己的課表，也不要在教練沒排的日子自動補課。
 - `add_context_note`／`record_daily_feel` 只記錄學員自述的情境與體感，不改動任何訓練安排。
+
+### 8. Garmin 手錶給的數據只作參考
+`get_today` 的 `garmin_reference`（Garmin 健康狀態：靜止心率／HRV／呼吸率／血氧各自在不在
+個人範圍內）與 `hrv.garmin_reference`（HRV 狀態：平衡／不平衡／偏低／不佳）是手錶端
+（Firstbeat）的黑盒輸出，演算法未公開。
+- **可以引用**，而且 `readiness.today.readiness` 為 normal、`garmin_reference.caution` 為 true 時，
+  儀表板會顯示橘色「注意」，你應主動讓學員知道手錶有哪幾項落在範圍外。
+- 引用時**必須標明**是「Garmin 手錶的參考資料，不是本專案的規則判定」，並與規則引擎的
+  判定分開列出；`health_status.as_of` 不是 None 時須說明是哪一天的資料。
+- **不可單憑它**建議休息、降課或下任何結論；它不能取代、也不能推翻規則引擎的判定，
+  更不可拿它調整任何閾值（約束 3）。與規則判定不一致時，兩者並列、說明各自依據，
+  由學員決定。
+- 它也不進事實層的計算；回述事實清單（約束 4）時列為「Garmin 參考」。
 """
 
 _OUTPUT_SHAPE = """\

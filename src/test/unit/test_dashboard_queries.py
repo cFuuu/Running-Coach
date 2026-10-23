@@ -715,6 +715,53 @@ class TestToday(DashboardQueryTestCase):
         # 不可有 fact() 的三欄位形狀，否則下游會誤用
         self.assertNotIn("confidence", gref)
 
+    def _insert_health_status(self, date, rows):
+        athlete_id = self.conn.execute("SELECT id FROM athlete_profile LIMIT 1").fetchone()["id"]
+        for metric, status in rows:
+            self.conn.execute(
+                "INSERT INTO health_status (athlete_id, date, metric, value, baseline_lower, "
+                "baseline_upper, status, percentage, source, fetched_at) "
+                "VALUES (?, ?, ?, 50, 40, 60, ?, 50, 'garmin_export', 'x')",
+                (athlete_id, date, metric, status),
+            )
+
+    def test_garmin_health_reference_flags_outliers_as_caution(self):
+        """Garmin 健康狀態有任一指標在範圍外 → caution=True，並列出是哪幾項；
+        走 reference_only 形狀，不可有 fact() 的三欄位（避免被當事實層使用）。"""
+        self._insert_health_status(
+            "2026-03-10", [("HR", "IN_RANGE"), ("HRV", "BELOW"), ("SPO2", "IN_RANGE")]
+        )
+        ref = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))["garmin_reference"]
+        self.assertTrue(ref["reference_only"])
+        self.assertTrue(ref["caution"])
+        self.assertEqual([o["metric"] for o in ref["health_status"]["outliers"]], ["HRV"])
+        self.assertEqual(ref["health_status"]["outliers"][0]["status"], "BELOW")
+        self.assertEqual(ref["health_status"]["metrics_total"], 3)
+        self.assertIsNone(ref["health_status"]["as_of"])
+        self.assertNotIn("confidence", ref)
+
+    def test_garmin_health_reference_all_in_range_is_not_caution(self):
+        self._insert_health_status("2026-03-10", [("HR", "IN_RANGE"), ("HRV", "IN_RANGE")])
+        ref = queries.get_today(self.conn, today=datetime.date(2026, 3, 10))["garmin_reference"]
+        self.assertFalse(ref["caution"])
+        self.assertEqual(ref["health_status"]["outliers"], [])
+
+    def test_garmin_health_reference_does_not_change_readiness(self):
+        """硬邊界：Garmin 異常只影響 caution 旗標，readiness 判定本身不得被它改變。"""
+        today = datetime.date(2026, 3, 10)
+        before = queries.get_today(self.conn, today=today)["readiness"]["today"]["readiness"]
+        self._insert_health_status("2026-03-10", [("HRV", "BELOW"), ("HR", "ABOVE")])
+        result = queries.get_today(self.conn, today=today)
+        self.assertEqual(result["readiness"]["today"]["readiness"], before)
+        self.assertTrue(result["garmin_reference"]["caution"])
+
+    def test_garmin_health_reference_fallback_marks_as_of_and_stops_at_window(self):
+        self._insert_health_status("2026-03-10", [("HRV", "BELOW")])
+        day_after = queries.get_today(self.conn, today=datetime.date(2026, 3, 11))
+        self.assertEqual(day_after["garmin_reference"]["health_status"]["as_of"], "2026-03-10")
+        far = queries.get_today(self.conn, today=datetime.date(2026, 6, 1))
+        self.assertIsNone(far["garmin_reference"])
+
     def test_hrv_last_night_5min_high_is_a_fact(self):
         """首頁 HRV 卡比照 Garmin HRV 狀態頁列出「最高 5 分鐘平均」；
         這是手錶量測值不是黑盒判讀，走 fact()；沒有值時回 None。"""
