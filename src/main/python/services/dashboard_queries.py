@@ -661,6 +661,25 @@ def _fetch_planned(
     return payload, match_meta
 
 
+def get_activity_plan_match(
+    conn: sqlite3.Connection, athlete_id: int, activity_id: int
+) -> dict | None:
+    """單場活動目前的 `plan_match`（`{state, method, reason}`），與行事曆、單場明細
+    同一套配對（走 `_fetch_planned`）。供 `PUT /api/plan/{id}/link` 回報寫入後的結果；
+    活動不存在或不屬於這位學員時回 None。
+    """
+    row = conn.execute(
+        "SELECT started_at, activity_type FROM activities WHERE id = ? AND athlete_id = ?",
+        (activity_id, athlete_id),
+    ).fetchone()
+    if row is None:
+        return None
+    _, match = _fetch_planned(
+        conn, athlete_id, row["started_at"], activity_id, row["activity_type"]
+    )
+    return match
+
+
 def _fetch_records(conn: sqlite3.Connection, session_id: int) -> list[dict]:
     return [
         {
