@@ -186,7 +186,8 @@ function actualNode(day) {
   // 配速與平均心率同一行，灰色小字
   var sub = [];
   var warmup = one ? warmupsByMain(day.activities)[one.id] : null;
-  if (warmup) sub.push(warmupLabel(warmup));
+  // 「含暖身」獨立一行：這一欄只有 7.6rem，和配速、心率擠在同一行會把心率切掉
+  if (warmup) btn.appendChild(h('span', 'wp-sub', warmupLabel(warmup)));
   if (one && one.distance_km && one.duration_sec) {
     sub.push(C.formatPace(one.duration_sec / one.distance_km) + '/km');
   }
