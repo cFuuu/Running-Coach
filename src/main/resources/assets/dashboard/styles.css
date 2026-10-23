@@ -3719,7 +3719,7 @@ button.recent-row .rc-dist {
   color: var(--ready-low-text);
 }
 
-/* 課表在左、自評今日體感狀態在右：體感只佔內容寬度（三顆圖示），其餘給課表，
+/* 課表在左、今日體感狀況在右：體感只佔內容寬度（三顆圖示），其餘給課表，
    課表文字才不會被擠。區塊太窄時上下排 */
 .today-top {
   display: grid;
@@ -3733,16 +3733,22 @@ button.recent-row .rc-dist {
   }
 }
 
-/* 自評今日體感狀態：三格選擇，選中的填色（疲憊紅、普通黃、充沛綠）。
-   與課表同列時被拉高，圖示在剩餘空間內垂直置中 */
-/* 三列：標題｜圖示（吃掉剩下的高度、在其中垂直置中）｜狀態文字（固定在最下面） */
+/* 今日體感狀況：三格選擇，選中的填色（疲憊紅、普通黃、充沛綠）。
+   標題與副標在上；圖示以整張卡片的垂直中線定位（與同列的課表卡片中線對齊）；
+   狀態文字固定在最下面。圖示與狀態文字脫離版面流，所以用 min-width／min-height
+   保證卡片不會比它們小（與課表同列時高度由課表決定，這裡只是下限） */
 .feel-block {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  position: relative;
+  min-width: 170px;
+  min-height: 148px;
 }
 
 .feel-block .feel-options {
-  align-self: center;
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .feel-block .today-block-title {
@@ -3750,11 +3756,18 @@ button.recent-row .rc-dist {
   flex-wrap: wrap;
   align-items: center;
   gap: 0 6px;
-  margin-bottom: 8px;
+  margin-bottom: 2px;
+}
+
+.feel-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
 }
 
 .feel-status {
-  min-height: 1.4em;
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }

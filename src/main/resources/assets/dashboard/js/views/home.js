@@ -302,25 +302,26 @@ var FEEL_OPTIONS = [
 ];
 
 var FEEL_TIPS = [
-  '自評今日體感狀態只是記錄，不影響任何判定（綜合整備狀態、訓練負荷都不讀它）。'
+  '今日體感狀況只是記錄，不影響任何判定（綜合整備狀態、訓練負荷都不讀它）。'
     + '累積下來用來檢驗規則抓到的日子是不是真的累。',
   '點一下記錄，再點同一顆取消。記的是「今天」，即使上方因資料未同步而顯示較早一天的判定。'
 ];
 
 /**
- * 「自評今日體感狀態」獨立區塊：三段式選擇，點一下記錄、再點同一段取消。
+ * 「今日體感狀況」獨立區塊：三段式選擇，點一下記錄、再點同一段取消。
  * 只是記錄供日後對照規則準不準，不影響任何判定（後端規則模組不讀這張表）。
  */
 function renderFeelBlock(dateStr) {
   var block = h('div', 'today-block feel-block');
   var title = h('div', 'today-block-title');
-  title.appendChild(h('span', null, '自評今日體感狀態'));
-  title.appendChild(infoTip('自評今日體感狀態', FEEL_TIPS));
+  title.appendChild(h('span', null, '今日體感狀況'));
+  title.appendChild(infoTip('今日體感狀況', FEEL_TIPS));
   block.appendChild(title);
+  block.appendChild(h('div', 'feel-sub', '自行評估今天身體狀況'));
 
   var group = h('div', 'feel-options');
   group.setAttribute('role', 'group');
-  group.setAttribute('aria-label', '自評今日體感狀態');
+  group.setAttribute('aria-label', '今日體感狀況');
   var current = null;
   var buttons = FEEL_OPTIONS.map(function (opt) {
     var btn = h('button', 'feel-btn feel-' + opt.value);
@@ -625,7 +626,7 @@ export function renderToday() {
   planBlock.appendChild(renderTodayPlanRow('今日', planned.today));
   planBlock.appendChild(renderTodayPlanRow('明日', planned.tomorrow));
 
-  // 課表在左、窄窄的「自評今日體感狀態」在右（區塊太窄時上下排）
+  // 課表在左、窄窄的「今日體感狀況」在右（區塊太窄時上下排）
   var top = h('div', 'today-top');
   top.appendChild(planBlock);
   top.appendChild(renderFeelBlock((data && data.date) || todayISO()));
