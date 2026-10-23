@@ -1106,8 +1106,10 @@
   - [x] W0 共用基礎（2026-10-24 合併；真實 DB 四頁三寬度回歸無錯誤。深色有四個底色為了對比 ≥4.5 略壓暗，登山最明顯 #43a865→#34844f，待 Fu 看過）
   - [x] B1 分圈摘要 API（2026-10-24 完成，`0eae718`；真實 DB：10/22 間歇課配速快慢分明，但區間大多落在 Z2–Z3，因為整圈平均心率加上心率落後，間歇在顏色上不明顯，所以小圖以配速高度為主）
   - [x] B2 課表配對寫入（2026-10-24 完成並合併；真實 DB 實測：暖身與錯日期被拒，連結後 exact／none，取消後還原）
-    - **⚠️ 合併驗證時發現的 bug（待 Fu 確認修法）**：`get_calendar()` 與 `_fetch_planned()`（單場明細，MCP `get_session_detail` 也走這裡）把已併入主課的暖身也算成同一天的競爭者。結果是有暖身的品質課日子主課都變成 `ambiguous`，單場明細不輸出課表，AI 教練看不到當天排了什麼。真實 DB 受影響的有 2026-10-15、10-22 兩堂間歇。`workout_type_resolution` 已經排除暖身，所以課種判讀沒有受影響。
-    - **待 Fu 決定**：① 手機上的配對確認按鈕要用哪種來源限制（目前預設只限本機，`RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK`）② 連結寫入後要不要重算當天課種（`resolve_for_dates`）
+    - ✅ **暖身被當成配對競爭者的 bug 已修（2026-10-24 Fu 確認）**：行事曆與單場明細排除已併入的暖身；真實 DB 的 10/15、10/22 主課改為 `inferred`，單場明細也恢復輸出課表。決策見 PLAN §1
+    - ✅ 配對確認按鈕比照每日體感，區網放行（Fu 決定），拿掉 `RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK`
+    - **待 Fu 決定**：連結寫入後要不要重算當天課種（`resolve_for_dates`）
+    - ✅ 深色模式登山用壓暗的綠 `#34844f` 配白字（Fu 決定）
   - [ ] W1 趨勢
   - [ ] W2 訓練紀錄
   - [ ] W3 行事曆
@@ -1115,7 +1117,7 @@
 - **📋 N-30 離線 Dashboard 匯出腳本＋iPhone 開啟流程（2026-10-24 定案，待執行）**：本機不刪任何歷年紀錄，只縮小匯出檔。規格與 iPhone 捷徑步驟見 [OFFLINE_EXPORT.md](OFFLINE_EXPORT.md)。
   - **現況**：`output/dashboard_offline.html` 有 6.3 MB，是過去臨時產生的，**專案裡沒有可以重跑的產生腳本**。檔內的載入程式已經支援 gzip（`__SNAPSHOT_GZ__`），只是沒有啟用。
   - **實測**：只做 gzip，資料部分就從 5.34 MB 降到 0.94 MB，完全不丟資料。整份 HTML 約 1.3 MB，經過捷徑的 base64 後約 1.7 MB（現在約 8.4 MB）。
-  - [x] ① 新增 `scripts/build_dashboard_offline.py`（2026-10-24 W4a 合併；真實 DB 本機實測：完整歷史 2.16 MB（559 場明細含非跑步活動，比預估的 1.3 MB 大），`--detail-months 12` 約 1.25 MB；資料庫未被改動，手機寬度四頁無錯誤。**預設值待 Fu 決定**），寫法比照 `build_pace_calculator.py`。功能：gzip、`--detail-months`、`--copy-to`（或環境變數 `RC_OFFLINE_EXPORT_DIR`，key 加進 `.env.example`）。
+  - [x] ① 新增 `scripts/build_dashboard_offline.py`（2026-10-24 W4a 合併；真實 DB 本機實測：完整歷史 2.16 MB（559 場明細含非跑步活動，比預估的 1.3 MB 大），`--detail-months 12` 約 1.25 MB；資料庫未被改動，手機寬度四頁無錯誤。預設保留全部歷史，Fu 決定），寫法比照 `build_pace_calculator.py`。功能：gzip、`--detail-months`、`--copy-to`（或環境變數 `RC_OFFLINE_EXPORT_DIR`，key 加進 `.env.example`）。
   - [x] ② 寫出前做資安掃描：出現 token、cookie、email、`userProfileId` 就中止。另外要有單元測試。
   - [ ] ③ 離線模式隱藏線上功能（同步、分析、AI 教練、今日體感、自訂區間）；頁首顯示「資料截至」；「今天」改用匯出日期。
   - [ ] ④ Fu 在 iCloud for Windows 開啟 iCloud 雲碟（2026-10-24 檢查時找不到 `iCloudDrive` 資料夾），並把現有捷徑的第一步改成「取得檔案」。iOS 15 起只能匯入簽署過的捷徑，Windows 無法產生，所以要手動建立。

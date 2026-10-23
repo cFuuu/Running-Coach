@@ -1060,6 +1060,38 @@ class TestCalendar(DashboardQueryTestCase):
         for activity in day["activities"]:
             self.assertEqual(activity["plan_match"]["state"], "ambiguous")
 
+    def test_linked_warmup_is_not_a_competitor(self):
+        """暖身已關聯到主課（N-25）時不算競爭者：主課 inferred、暖身回
+        warmup_of_main；單場明細（MCP get_session_detail 同路徑）也輸出課表。"""
+        main = self.conn.execute(
+            "SELECT id, athlete_id, activity_type FROM activities "
+            "WHERE date(started_at) = '2026-03-09'"
+        ).fetchone()
+        cur = self.conn.execute(
+            "INSERT INTO activities (athlete_id, source, source_version, fetched_at, "
+            "activity_type, title, started_at, distance_km, duration_sec, "
+            "warmup_for_activity_id) "
+            "VALUES (?, 'garmin_export', 'test', '2026-03-10T00:00:00', ?, '熱身', "
+            "'2026-03-09T05:00:00', 1.7, 600, ?)",
+            (main["athlete_id"], main["activity_type"], main["id"]),
+        )
+        warmup_id = cur.lastrowid
+        self.conn.commit()
+        day = queries.get_calendar(
+            self.conn, start="2026-03-09", end="2026-03-09", today=datetime.date(2026, 3, 10)
+        )["days"][0]
+        states = {a["id"]: a["plan_match"] for a in day["activities"]}
+        self.assertEqual(states[main["id"]]["state"], "inferred")
+        self.assertEqual(states[warmup_id]["reason"], "warmup_of_main")
+        self.assertEqual(day["day_state"], "planned_done")
+
+        detail = queries.get_session_detail(self.conn, main["id"])
+        self.assertEqual(detail["planned_match"]["state"], "inferred")
+        self.assertIsNotNone(detail["planned"])
+        warmup_detail = queries.get_session_detail(self.conn, warmup_id)
+        self.assertEqual(warmup_detail["planned_match"]["reason"], "warmup_of_main")
+        self.assertIsNone(warmup_detail["planned"])
+
     def test_planned_day_without_activity_before_today_is_planned_missed(self):
         """2026-03-01 無課表、無活動——先驗證 rest_ok，再驗證有課表無活動的情境。"""
         self.conn.execute(

@@ -14,9 +14,8 @@ import sqlite3
 from pathlib import Path
 from typing import Callable, Iterator
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from src.main.python.api import client_access
 from src.main.python.services import daily_feel_store
 from src.main.python.services import dashboard_queries as queries
 from src.main.python.services import garmin_cards
@@ -262,7 +261,7 @@ def read_overview(
 # --------------------------------------------------------------------------
 # /api/daily-feel：每日體感（首頁卡片的按鈕）
 # --------------------------------------------------------------------------
-# ⚠️ 這是 dashboard 唯一區網放行的寫入端點（/api/plan/{id}/link 另加來源限制，見下方），
+# ⚠️ dashboard 區網放行的寫入端點（另一個是 /api/plan/{id}/link），
 # 刻意**不加**來源限制、與唯讀端點同樣區網放行：
 # 主要情境就是早上在手機上點一下。代價只是「區網內有人可以改你的體感紀錄」，
 # 不花錢、不打外部 API（與 /api/chat、/api/sync 的「被觸發」代價不同）。
@@ -323,28 +322,12 @@ def remove_daily_feel(
 # PLAN.md §1 2026-10-24：配對歧義時由學員確認，結果寫入 training_plan.linked_activity_id。
 # 驗證與寫入都在 training_plan_store.set_plan_link()，這裡只做來源限制與錯誤轉換。
 #
-# 來源限制沿用 client_access（DASHBOARD_TASKS.md E.1 定案），預設只接受本機：
-# 這一欄會改變配對、進而影響課種判讀與教練看到的「課表執行情形」，比體感紀錄的
-# 影響範圍大。放行私有網段需設 RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK=1。
-
-_PLAN_LINK_FORBIDDEN_DETAIL = (
-    "課表配對確認僅限本機使用。要讓區網裝置使用，"
-    "請在啟動 server 的環境設定 RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK=1。"
-)
+# 來源限制比照 /api/daily-feel：與唯讀端點同樣區網放行（2026-10-24 Fu 決定）。
+# 主要情境是在手機上點「這場是課表」；代價只是區網內有人能改配對，
+# 不花錢、不打外部 API，且隨時可再取消。
 
 
-def allow_plan_link_private_network() -> bool:
-    """做成 dependency 而非模組層常數：測試才能覆寫，也不會在 import 時凍住環境變數。"""
-    return client_access.env_flag("RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK")
-
-
-def require_plan_link_client(
-    request: Request, allowed: bool = Depends(allow_plan_link_private_network)
-) -> None:
-    client_access.require_client(request, allowed, _PLAN_LINK_FORBIDDEN_DETAIL)
-
-
-@router.put("/plan/{plan_id}/link", dependencies=[Depends(require_plan_link_client)])
+@router.put("/plan/{plan_id}/link")
 def write_plan_link(
     plan_id: int,
     payload: dict = Body(default_factory=dict),

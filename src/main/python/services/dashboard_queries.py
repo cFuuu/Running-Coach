@@ -54,6 +54,10 @@ DEFAULT_RANGE = "30d"
 # 零改動就能支援自訂區間，不必動路由層簽章與前端每個呼叫點。
 CUSTOM_RANGE_PREFIX = "custom:"
 
+# 已併入主課的暖身（N-25）的配對結果：不參與課表配對，課表對到主課。
+# 行事曆與單場明細共用，與 workout_type_resolution 排除暖身的做法一致。
+WARMUP_PLAN_MATCH = {"state": "none", "method": None, "reason": "warmup_of_main"}
+
 
 # `/api/wellness-trend` 要回傳的指標定義，唯一真實來源——同時用來組 SQL
 # 欄位清單（見 get_wellness_trend 的 columns）與回給前端的顯示中繼資料
@@ -617,6 +621,12 @@ def _fetch_planned(
     if not started_at:
         return None, empty_match
 
+    warmup_row = conn.execute(
+        "SELECT warmup_for_activity_id FROM activities WHERE id = ?", (session_id,)
+    ).fetchone()
+    if warmup_row is not None and warmup_row["warmup_for_activity_id"] is not None:
+        return None, dict(WARMUP_PLAN_MATCH)
+
     plan_date = started_at[:10]
     plan_rows = [
         dict(row)
@@ -631,7 +641,7 @@ def _fetch_planned(
         dict(row)
         for row in conn.execute(
             "SELECT id, activity_type FROM activities "
-            "WHERE athlete_id = ? AND date(started_at) = ?",
+            "WHERE athlete_id = ? AND date(started_at) = ? AND warmup_for_activity_id IS NULL",
             (athlete_id, plan_date),
         )
     ]
@@ -1606,19 +1616,26 @@ def get_calendar(
         date_str = current.isoformat()
         day_plans = plans_by_date.get(date_str, [])
         day_activities = activities_by_date.get(date_str, [])
+        # 已併入主課的暖身不算競爭者（N-25／E.1 規則 3），否則有暖身的品質課主課
+        # 一律變 ambiguous；暖身本身固定回 WARMUP_PLAN_MATCH，課表對到主課
         same_day_for_match = [
-            {"id": a["id"], "activity_type": a["activity_type"]} for a in day_activities
+            {"id": a["id"], "activity_type": a["activity_type"]}
+            for a in day_activities
+            if a["warmup_for_activity_id"] is None
         ]
 
         activities_out = []
         any_matched = False
         any_executed = False
         for activity_row in day_activities:
-            match = plan_reconciliation.match_activity_to_plan(
-                {"id": activity_row["id"], "activity_type": activity_row["activity_type"]},
-                day_plans,
-                same_day_for_match,
-            )
+            if activity_row["warmup_for_activity_id"] is not None:
+                match = dict(WARMUP_PLAN_MATCH)
+            else:
+                match = plan_reconciliation.match_activity_to_plan(
+                    {"id": activity_row["id"], "activity_type": activity_row["activity_type"]},
+                    day_plans,
+                    same_day_for_match,
+                )
             if match["state"] in ("exact", "inferred"):
                 any_matched = True
             # 整天層級只問「有沒有執行」，不問「是哪一場」：熱身另存一場時兩場

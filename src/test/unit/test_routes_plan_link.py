@@ -17,7 +17,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from src.main.python.api import routes_dashboard
 from src.main.python.api.app import create_app
 from src.main.python.services import coach_chat
 from src.test.unit.fixtures import build_fixture_db
@@ -56,10 +55,6 @@ class PlanLinkRouteTestCase(unittest.TestCase):
             str(self.db_path),
             assets_dir=assets_dir,
             chat_config=coach_chat.ChatConfig(api_key_present=False),
-        )
-        self.allow_private = False
-        self.app.dependency_overrides[routes_dashboard.allow_plan_link_private_network] = (
-            lambda: self.allow_private
         )
 
     def _insert_activity(self, conn, started_at, activity_type, distance_km):
@@ -170,22 +165,11 @@ class TestValidationErrors(PlanLinkRouteTestCase):
 
 
 class TestOriginRestriction(PlanLinkRouteTestCase):
-    def test_lan_client_rejected_by_default(self):
-        r = self.put_link(self.main_run, client=LAN_CLIENT)
-        self.assertEqual(r.status_code, 403)
-        self.assertIn("RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK", r.json()["detail"])
-        self.assertIsNone(self.linked_in_db(), "被擋下時不可寫入")
-
-    def test_unparseable_host_rejected(self):
-        r = TestClient(self.app).put(
-            f"/api/plan/{self.plan_id}/link", json={"activity_id": self.main_run}
-        )
-        self.assertEqual(r.status_code, 403)
-
-    def test_lan_client_allowed_when_flag_set(self):
-        self.allow_private = True
+    def test_lan_client_allowed_like_daily_feel(self):
+        """比照 /api/daily-feel 區網放行：手機上要能確認配對。"""
         r = self.put_link(self.main_run, client=LAN_CLIENT)
         self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.linked_in_db(), self.main_run)
 
 
 if __name__ == "__main__":
