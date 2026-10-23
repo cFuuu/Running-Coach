@@ -1046,19 +1046,20 @@
     - [ ] ④ **遺留的疑慮**：DB 現有 29 筆 `tempo`（28 筆 auto、1 筆 manual），其中 **19 筆在 2021–2023**，依 Fu 說明當時沒有刻意跑節奏跑，這些標記很可能是舊規則（整場配速穩定且比近期平均快 20 秒）把「跑得較快的輕鬆跑」誤判。尚未處理，是否回頭清查由 Fu 決定
   - **不在範圍**：沒有收操的節奏跑（例：主段一直跑到結束）；N-10 排程器的主段結構；節奏跑的逐段配速評估（`assess_session_quality` 對 tempo 仍不評配速執行度，可沿用 N-24 的分段做法，另開項目）。
 
-- **📋 N-28 課種先看當日外部課表，沒有課表才用分圈判斷（2026-10-23 Fu 提出，計畫待確認）**：
+- **✅ N-28 課種先看當日外部課表，沒有課表才用分圈判斷（2026-10-23 Fu 提出並確認，同日完成並寫入真實 DB）**：完整判定邏輯與流程圖見 [WORKOUT_CLASSIFICATION.md](WORKOUT_CLASSIFICATION.md)。
   - **動機**：Fu 的暖身通常分開按錶重新計時，Garmin 分圈本身不區分暖身與主段，光靠配速結構猜課種，節奏跑這類「整場平均看不出來」的課會一再誤判（N-14／N-27）。Fu 知道那天課表排什麼，應先以課表為準。
-  - **範圍的實際數字（2026-10-23 查 DB）**：生效中的課表只有外部（跟團）課表 14 天（2026-10-12 ～ 10-25）；自動產生的 246 筆已全部停用。這兩週有課表的跑步日，課表與現行判定 5/6 一致，不一致的只有 10/20（已手動標 tempo）。更早的歷史沒有課表，仍走分圈判斷。
+  - **範圍的實際數字（2026-10-23 查 DB）**：生效中的課表只有外部（跟團）課表 14 天（2026-10-12 ～ 10-25）；自動產生的 246 筆已全部停用。這兩週有跑步的 6 天裡，**課表寫 tempo 但判成 easy 的有 2 場：10/13（#1102，2km WU＋10km 連跑、沒有收操）與 10/20（#1107）**。（初版計畫寫「5/6 一致、只有 10/20 不同」是看錯 join 結果，已更正。）更早的歷史沒有課表，仍走分圈判斷。
   - **與 2026-09-01「品質評估不做課表對照」的關係**：該決定是指評估維度（配速執行度、強度、遵從度）不拿課表的目標當基準。本項只用課表決定**課種標籤**，評估維度照舊只看實際內容，遵從度仍是獨立的行為指標。
   - **決策（Fu 2026-10-23）**：①衝突時**以課表為準，另存分圈偵測結果**；②只參考**外部課表**，自動產生的課表不當參考。
   - **計畫**：
-    - [ ] ① **schema**：`activities` 新增 `detected_workout_type`（分圈偵測結果，永遠是純分圈判斷）與 `workout_type_basis`（`plan`／`laps`）。`workout_type` 本身成為「生效課種」，`workout_type_source` 的 auto／manual 語意不變。用 ADD COLUMN，不動既有 CHECK
-    - [ ] ② **生效順序**：`manual` 不動 → 當日有生效中的外部課表、課表課種為 easy／tempo／interval／lsd，且 `plan_reconciliation.match_activity_to_plan` 對該場為 exact／inferred → 採課表課種（basis=`plan`）→ 否則採分圈判斷（basis=`laps`）。暖身（`warmup_for_activity_id` 非空）不參與配對，課表對到主課。同日多場跑步無法唯一配對（ambiguous）時退回分圈判斷
-    - [ ] ③ **race 不由課表決定**：課表標 race 的場次不自動設為 `race`——race 會進最佳成績與 VDOT 的計算，誤標代價高，維持手動標註
-    - [ ] ④ **觸發時機**：Garmin 同步分類時；外部課表寫入／更新後（`save_external_workouts`）對受影響日期重算；`--reclassify` CLI 同樣套用。課表日期之後被改掉或刪除時，下次重算自動退回分圈判斷
-    - [ ] ⑤ **下游與教練**：`list_sessions`／單場詳情帶 `detected_workout_type` 與 `workout_type_basis`；MCP 說明要求教練在 basis=`plan` 且偵測結果不同時主動向 Fu 說明「課表是 X，分圈看起來像 Y」，不可只報課表課種。品質評估照用生效課種：課表是 interval 但分圈切不出趟數時，配速維度列不可評並說明原因（不猜）
-    - [ ] ⑥ **回填**：對有外部課表的日期重算；全部 auto 活動補 `detected_workout_type`（不改 `workout_type`，無課表的場次維持現狀）。先列差異給 Fu 確認再寫入
-  - **驗收**：10/12～10/25 各跑步日 basis=`plan` 且課種等於課表、暖身不參與；無課表的場次 basis=`laps` 且 `workout_type` 不變；`manual` 不被覆蓋；移除某天課表後重算退回分圈判斷；單元測試涵蓋上述順序與 race 排除；MCP 實際查 10/20、10/22 各一次。
+    - [x] ① **schema**：`activities` 新增 `detected_workout_type`（分圈偵測結果，永遠是純分圈判斷）與 `workout_type_basis`（`plan`／`laps`）。`workout_type` 本身成為「生效課種」，`workout_type_source` 的 auto／manual 語意不變。用 ADD COLUMN，不動既有 CHECK
+    - [x] ② **生效順序**：新模組 [`workout_type_resolution.py`](../../src/main/python/services/workout_type_resolution.py)。`manual` 不動 → 當日有生效中的外部課表、課表課種為 easy／tempo／interval／lsd，且 `plan_reconciliation.match_activity_to_plan` 對該場為 exact／inferred → 採課表課種（basis=`plan`）→ 否則採分圈判斷（basis=`laps`）。暖身不參與配對，且同日候選活動先排除暖身（否則暖身會與主課爭同一份課表而變 ambiguous）。同日多場非暖身跑步無法唯一配對時退回分圈判斷
+    - [x] ③ **race 不由課表決定**：課表標 race 的場次不自動設為 `race`——race 會進最佳成績與 VDOT 的計算，誤標代價高，維持手動標註
+    - [x] ④ **觸發時機**：`update_workout_type()`（Garmin 同步與 FIT 匯入共用）、`training_plan_store.save_external_workouts()` 寫入後對受影響日期重算、`--reclassify` CLI。課表被取代或移除後，下次重算自動退回分圈判斷
+    - [x] ⑤ **下游與教練**：`list_sessions`／單場詳情／`assess_session_quality` 的 `session` 區塊帶 `detected_workout_type` 與 `workout_type_basis`；MCP 說明要求教練在 basis=`plan` 且偵測結果不同時主動說明「課表是 X，分圈看起來像 Y」。課表是 interval 但分圈切不出趟數時，配速維度列不可評並說明原因
+    - [x] ⑥ **回填（2026-10-23 已寫入真實 DB，改前備份於 scratchpad `running_coach_before_n28.db`）**：290 筆跑步補上 `detected_workout_type`／`workout_type_basis`（plan 5、laps 247、手動 38）；唯一的課種變動是 **10/13 #1102 easy → tempo（依課表；分圈偵測為 easy，因為沒有收操）**。過程中的兩個處理：①`--reclassify` 重跑時 N-27 的節奏主段規則會讓 5 場歷史 easy（#459、#364、#109、#106、#100）又出現在預覽中，依 Fu「以前沒有刻意跑節奏跑」的決定，把這 5 場標為 `manual` easy 固定住（若要恢復自動判斷，把 `workout_type_source` 改回 `auto` 即可）；②10/20 #1107 原本為手動 tempo，課表優先後已涵蓋，改回 `auto`，現為 tempo／basis=`plan`／偵測也是 tempo（N-27 規則抓到）
+  - **驗收結果**：10/12～10/25 各跑步日 basis=`plan` 且課種等於課表（10/13 tempo、10/15 interval、10/17 lsd、10/19 easy、10/20 tempo、10/22 interval），暖身不參與；無課表的場次 `workout_type` 不變；`manual` 不被覆蓋；移除課表後退回分圈判斷；20 項新單元測試（順序、race 排除、暖身、manual、取代課表、匯入掛鉤、無分圈）＋全部 995 項通過。剩 MCP 重啟後實際查 10/13、10/20 各一次。
+  - **前端未改**：場次清單尚未顯示「依課表／分圈偵測」；API 已帶 `workout_type_basis` 與 `detected_workout_type`，呈現方式待 Fu 看過後決定。
 
 - **✅ N-25 暖身被 Garmin 存成獨立活動、與主課沒有關聯（2026-10-23 實查，同日完成並寫入真實 DB：30 組已關聯）**：
   - **現象**：Fu 的品質課習慣先跑約 10 分鐘暖身、停錶，再另外開一筆主課。真實 DB 中 2022-12 起有 40 組「同日、前一筆 ≤15 分鐘」的兩筆跑步，暖身那筆一律 `unknown`。

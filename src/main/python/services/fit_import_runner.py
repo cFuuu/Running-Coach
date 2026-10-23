@@ -31,6 +31,10 @@ from src.main.python.models.db import get_connection
 from src.main.python.services.activity_types import PACE_COMPARABLE_RUNNING_TYPES
 from src.main.python.services import fit_parser
 from src.main.python.services.warmup_links import link_warmups
+from src.main.python.services.workout_type_resolution import (
+    plan_type_for_activity,
+    resolve_workout_type,
+)
 from src.main.python.services.workout_classifier import classify_workout
 
 # 預設匯入的 FIT sport 值。這是「目前預設只做跑步」，不是「只能做跑步」——
@@ -195,13 +199,20 @@ def update_workout_type(conn: sqlite3.Connection, activity_id: int, laps: list[d
     current = conn.execute(
         "SELECT distance_km, workout_type_source FROM activities WHERE id = ?", (activity_id,)
     ).fetchone()
+    detected = _classify_activity(conn, activity_id, laps, current)
     if current and current["workout_type_source"] == "manual":
+        # 手動標註的生效課種不動，但偵測結果照存，供事後比對
+        conn.execute(
+            "UPDATE activities SET detected_workout_type = ? WHERE id = ?", (detected, activity_id)
+        )
         return "manual-kept"
 
-    workout_type = _classify_activity(conn, activity_id, laps, current)
+    # N-28：生效課種先看當日外部課表，沒有才用分圈判斷；偵測結果另存
+    workout_type, basis = resolve_workout_type(detected, plan_type_for_activity(conn, activity_id))
     conn.execute(
-        "UPDATE activities SET workout_type = ?, workout_type_source = 'auto' WHERE id = ?",
-        (workout_type, activity_id),
+        "UPDATE activities SET workout_type = ?, workout_type_source = 'auto', "
+        "workout_type_basis = ?, detected_workout_type = ? WHERE id = ?",
+        (workout_type, basis, detected, activity_id),
     )
     return workout_type
 
@@ -224,20 +235,24 @@ def reclassify_stored_activities(
     apply: bool = False,
     comparison_activity_types: frozenset[str] = DEFAULT_COMPARISON_ACTIVITY_TYPES,
 ) -> list[dict]:
-    """用資料庫已存的分圈重跑自動分類，回傳課種有變動的場次（N-24）。
+    """重跑自動分類並套用生效順序，回傳課種有變動的場次（N-24／N-28）。
 
-    分類器規則改版後用這支補正歷史資料，不需重新解析 FIT 或重打 API。
+    有分圈的活動用資料庫已存的分圈重跑分類器（不需重新解析 FIT 或重打 API），
+    再依當日外部課表決定生效課種（見 workout_type_resolution）。沒有分圈的活動
+    沿用已存的偵測結果，只有在當日有外部課表時才會改變。
     `workout_type_source='manual'` 一律不動。`apply=False`（預設）只回傳
     差異清單、不寫入——改版後應先把清單給使用者確認再寫入。
+    寫入時一併補上每場的 `detected_workout_type` 與 `workout_type_basis`（這兩欄
+    不算課種變動，不出現在差異清單）。
     """
     placeholders = ",".join("?" for _ in comparison_activity_types)
     activities = conn.execute(
         f"""
-        SELECT id, date(started_at) AS date, distance_km, workout_type, workout_type_source
+        SELECT id, date(started_at) AS date, distance_km, workout_type,
+               workout_type_basis, detected_workout_type
         FROM activities
         WHERE activity_type IN ({placeholders})
           AND COALESCE(workout_type_source, 'auto') != 'manual'
-          AND id IN (SELECT activity_id FROM activity_laps)
         ORDER BY started_at
         """,
         tuple(comparison_activity_types),
@@ -253,20 +268,33 @@ def reclassify_stored_activities(
                 (activity["id"],),
             )
         ]
-        new_type = _classify_activity(conn, activity["id"], laps, activity)
-        if new_type == activity["workout_type"]:
+        if laps:
+            detected = _classify_activity(conn, activity["id"], laps, activity)
+        else:
+            # 沒有分圈：沿用已存的偵測結果；舊資料沒有則把沿用分圈判斷的 workout_type 當作偵測結果
+            detected = activity["detected_workout_type"]
+            if detected is None and activity["workout_type_basis"] is None:
+                detected = activity["workout_type"]
+        new_type, basis = resolve_workout_type(
+            detected, plan_type_for_activity(conn, activity["id"])
+        )
+        if new_type is None:
             continue
-        changes.append({
-            "activity_id": activity["id"],
-            "date": activity["date"],
-            "distance_km": round(activity["distance_km"], 2),
-            "old": activity["workout_type"],
-            "new": new_type,
-        })
+        if new_type != activity["workout_type"]:
+            changes.append({
+                "activity_id": activity["id"],
+                "date": activity["date"],
+                "distance_km": round(activity["distance_km"], 2),
+                "old": activity["workout_type"],
+                "new": new_type,
+                "basis": basis,
+                "detected": detected,
+            })
         if apply:
             conn.execute(
-                "UPDATE activities SET workout_type = ?, workout_type_source = 'auto' WHERE id = ?",
-                (new_type, activity["id"]),
+                "UPDATE activities SET workout_type = ?, workout_type_source = 'auto', "
+                "workout_type_basis = ?, detected_workout_type = ? WHERE id = ?",
+                (new_type, basis, detected, activity["id"]),
             )
     if apply:
         conn.commit()
@@ -425,7 +453,11 @@ def main() -> None:
         finally:
             conn.close()
         for c in changes:
-            print(f"  {c['date']}  #{c['activity_id']}  {c['distance_km']:>5} km  {c['old']} → {c['new']}")
+            note = ""
+            if c["basis"] == "plan":
+                note = f"  （依課表；分圈偵測為 {c['detected']}）"
+            print(f"  {c['date']}  #{c['activity_id']}  {c['distance_km']:>5} km  "
+                  f"{c['old']} → {c['new']}{note}")
         action = "已寫入" if args.apply else "未寫入（加 --apply 才會寫入）"
         print(f"\n共 {len(changes)} 場課種變動，{action}")
         return

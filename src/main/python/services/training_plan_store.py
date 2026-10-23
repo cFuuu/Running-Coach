@@ -34,6 +34,8 @@ import datetime
 import sqlite3
 from typing import Any
 
+from src.main.python.services.workout_type_resolution import resolve_for_dates
+
 
 def _pace_zone_midpoint(pace_zone: dict[str, float] | None) -> int | None:
     if pace_zone is None:
@@ -280,6 +282,10 @@ def save_external_workouts(
             """,
             (athlete_id, min(dates), max(dates)),
         )
+
+    # N-28：課種先看當日外部課表。課表寫入或更新後，重新決定受影響日期上跑步的生效課種
+    # （被取代的課表不再生效，該天會自動退回分圈判斷）。
+    resolve_for_dates(conn, athlete_id, sorted({_to_iso_date(w["planned_date"]) for w in workouts}))
 
     conn.commit()
     return new_ids

@@ -175,6 +175,14 @@ def list_running_sessions(
 
     學員常把暖身和主課分開按錶。已辨識為暖身的那筆**不單獨列出**，改以
     `warmup`（距離、時長、配速、心率）掛在主課上；計算跑量時要把暖身加回去。
+
+    ⚠️ **`workout_type` 是生效課種，要看 `workout_type_basis`**：
+    - `plan`：當日有外部（跟團）課表，課種採課表的；`detected_workout_type` 是
+      純分圈判斷的結果。**兩者不同時要主動告訴學員**（例：「課表是節奏跑，但
+      分圈看起來像輕鬆跑」），不可只報課表課種——這是課表與實際是否一致的依據。
+    - `laps`：沒有課表可參考，課種是分圈配速結構的啟發式猜測，只是猜測。
+    - `NULL`：學員手動標註，以學員為準。
+    課表標 race 的場次不會被自動設為 race（race 只由學員手動標註）。
     """
     return _serialize(dashboard_queries.list_sessions(_conn(ctx), athlete_id, range_key))
 
@@ -315,6 +323,8 @@ def assess_session_quality(
         "date": detail["date"],
         "title": detail["title"],
         "workout_type": detail["workout_type"],
+        "workout_type_basis": detail["workout_type_basis"],
+        "detected_workout_type": detail["detected_workout_type"],
         "distance_km": detail["summary"]["distance_km"],
     }
     return _serialize(result)

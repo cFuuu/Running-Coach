@@ -210,6 +210,7 @@ CREATE TABLE activities (
     fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
     raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
     warmup_for_activity_id INTEGER, warmup_link_source TEXT,
+    detected_workout_type TEXT, workout_type_basis TEXT,
     UNIQUE (athlete_id, started_at, activity_type, distance_km)
 );
 CREATE UNIQUE INDEX idx_activities_external_id ON activities (athlete_id, external_id);
@@ -297,6 +298,11 @@ CREATE TABLE metric_coverage (
     source TEXT NOT NULL, earliest_date TEXT, latest_date TEXT,
     updated_at TEXT NOT NULL,
     UNIQUE (athlete_id, metric_name, source)
+);
+CREATE TABLE training_plan (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, athlete_id INTEGER NOT NULL,
+    planned_date TEXT NOT NULL, workout_type TEXT NOT NULL, plan_source TEXT NOT NULL,
+    linked_activity_id INTEGER, is_active INTEGER NOT NULL DEFAULT 1
 );
 INSERT INTO athlete_profile (name) VALUES ('Test');
 """

@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS activities (
     -- 與 training_plan.workout_type（原本「計畫」練什麼）分開，兩者比對即可看出課表遵從度。
     workout_type            TEXT CHECK (workout_type IN ('easy', 'tempo', 'interval', 'lsd', 'race', 'recovery', 'unknown')),
     workout_type_source     TEXT CHECK (workout_type_source IN ('auto', 'manual')),
+    -- N-28：workout_type 為「生效課種」。生效順序 manual → 當日外部課表 → 分圈判斷
+    -- （見 workout_type_resolution.py）。以下兩欄讓課表與實際可以事後比對：
+    --   detected_workout_type：純分圈判斷的結果（workout_classifier），不受課表影響
+    --   workout_type_basis：生效課種的依據，'plan'＝採課表課種、'laps'＝採分圈判斷
+    -- 兩者不同，代表「課表寫 X、分圈看起來像 Y」。manual 的場次 basis 為 NULL。
+    detected_workout_type   TEXT,
+    workout_type_basis      TEXT,
     -- 這筆是哪一場主課的暖身（N-25）：學員常把暖身與主課分開按錶，形成同日兩筆。
     -- 非 NULL 代表本筆為暖身，指向主課的 activities.id。偵測規則見 warmup_links.py。
     -- 暖身的 workout_type 維持原值，角色只由本欄表達，不讓 workout_type 混入第二種語意。

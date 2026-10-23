@@ -384,6 +384,7 @@ def list_sessions(
     type_placeholders = ",".join("?" for _ in running_types)
     sql = f"""
         SELECT id, started_at, title, activity_type, workout_type, workout_type_source,
+               workout_type_basis, detected_workout_type,
                distance_km, duration_sec, avg_pace_sec_per_km, avg_hr_bpm, max_hr_bpm,
                avg_cadence_spm, aerobic_te
         FROM activities
@@ -411,6 +412,10 @@ def list_sessions(
                 "activity_type": row["activity_type"],
                 "workout_type": row["workout_type"],
                 "workout_type_source": row["workout_type_source"],
+                # N-28：生效課種的依據（plan／laps）與純分圈偵測結果，兩者不同代表
+                # 「課表寫 X、分圈看起來像 Y」
+                "workout_type_basis": row["workout_type_basis"],
+                "detected_workout_type": row["detected_workout_type"],
                 "distance_km": row["distance_km"],
                 "duration_sec": row["duration_sec"],
                 "avg_pace_sec_per_km": row["avg_pace_sec_per_km"],
@@ -440,6 +445,7 @@ def get_session_detail(
     resolved = resolve_athlete_id(conn, athlete_id)
     sql = """
         SELECT id, athlete_id, started_at, title, activity_type, workout_type, workout_type_source,
+               workout_type_basis, detected_workout_type,
                distance_km, duration_sec, avg_pace_sec_per_km, avg_hr_bpm, max_hr_bpm,
                avg_cadence_spm, aerobic_te, elevation_gain_m, calories, raw_data_json,
                source_version, warmup_for_activity_id
@@ -464,6 +470,8 @@ def get_session_detail(
         "activity_type": row["activity_type"],
         "workout_type": row["workout_type"],
         "workout_type_source": row["workout_type_source"],
+        "workout_type_basis": row["workout_type_basis"],
+        "detected_workout_type": row["detected_workout_type"],
         **_planned_fields(
             _fetch_planned(
                 conn,
