@@ -188,10 +188,12 @@ var CONSECUTIVE_ROW = {
 };
 
 var READINESS_ROWS = [
-  { dim: 'tsb', key: 'tsb', label: 'TSB',
+  { dim: 'tsb', key: 'tsb', label: 'TSB 指標',
     fmt: function (v) { return signedNumber(v, 1); }, unit: '' },
   { dim: 'hrv', key: 'hrv_change_pct', label: 'HRV 變化',
-    fmt: function (v) { return signedNumber(v, 1) + '%'; }, unit: '' }
+    fmt: function (v) { return signedNumber(v, 1) + '%'; },
+    // 門檻是固定的 −15，不需要小數，省下寬度
+    fmtThreshold: function (v) { return signedNumber(v, 0) + '%'; }, unit: '' }
 ];
 
 /** 一列「數值 / 門檻」。觸發的維度整列標紅並附信賴度；未評的顯示「—」，滑鼠移上去看原因。 */
@@ -206,7 +208,7 @@ function readinessRow(def, entry) {
   var val = h('span', 'wt-row-value');
   val.appendChild(h('span', 'rd-value', hasValue ? def.fmt(m.value) : '—'));
   if (hasValue && m.threshold !== null && m.threshold !== undefined) {
-    val.appendChild(h('span', 'wt-planned', '/ ' + def.fmt(m.threshold) + def.unit));
+    val.appendChild(h('span', 'wt-planned', '/ ' + (def.fmtThreshold || def.fmt)(m.threshold) + def.unit));
   } else if (hasValue && def.unit) {
     val.appendChild(h('span', 'wt-planned', def.unit.trim()));
   }
