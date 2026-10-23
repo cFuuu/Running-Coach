@@ -719,8 +719,8 @@
   - [x] **HRV 改用 LnrMSSD + SWC → 決定「並存」（2026-10-22）**：SWC 以 `hrv_trend` 欄位加進 `readiness.py`，**只當提醒、不計入 readiness**；15% 規則維持原判定。首頁卡片多一列「HRV 趨勢」（橘字＋「提醒」標籤），MCP `get_readiness_status` 說明同步更新
     - **對照報告結果（339 個可判斷日）**：現行 26 天（7.7%，比 09-01 的 32% 低，因已加 3 點充足度檢查）、SWC 81 天（24%），**只重疊 6 天**。SWC 抓到現行規則漏掉的 8/4–8/17 連續兩週疲勞（使用者回報全程「有點累」），但 9/26–10/4 有 9 天觸發而體感「普通」
     - **體感驗證不足以分勝負**：使用者整段填寫，有效樣本僅 3 個時期；9/16–9/25 不論哪條規則都回報「有點累」，兩者皆無區分力。故採並存，日後以逐日體感紀錄再評
-    - **逐日體感紀錄已上線（2026-10-22）**：新表 `daily_feel`（一天一筆、`source` 分 dashboard／coach／backfill）。首頁「自評體感狀況」按鈕＋MCP `record_daily_feel`／`get_daily_feel`；規則模組不得讀取。已回填報告的 42 筆（`backfill`，事後回想，分析時應與即時紀錄分開）
-    - **2026-10-23 改為 3 級並獨立成區塊**：「今天體感」更名「自評體感狀況」，分級由 4 級（very_tired／tired／normal／good）合併為 3 級 `tired` 疲憊／`normal` 普通／`energetic` 充沛。舊資料開庫時自動遷移（很累＋有點累→tired、很好→energetic；`db._migrate_daily_feel_three_levels` 重建表，可重複執行），「很累／有點累」的區別不可回復。UI 改為右欄疊放於「本週訓練狀況」下方的三段式選擇
+    - **逐日體感紀錄已上線（2026-10-22）**：新表 `daily_feel`（一天一筆、`source` 分 dashboard／coach／backfill）。首頁「自評今日體感狀態」按鈕＋MCP `record_daily_feel`／`get_daily_feel`；規則模組不得讀取。已回填報告的 42 筆（`backfill`，事後回想，分析時應與即時紀錄分開）
+    - **2026-10-23 改為 3 級並獨立成區塊**：「今天體感」更名「自評今日體感狀態」，分級由 4 級（very_tired／tired／normal／good）合併為 3 級 `tired` 疲憊／`normal` 普通／`energetic` 充沛。舊資料開庫時自動遷移（很累＋有點累→tired、很好→energetic；`db._migrate_daily_feel_three_levels` 重建表，可重複執行），「很累／有點累」的區別不可回復。UI 改為右欄疊放於「本週訓練狀況」下方的三段式選擇
     - [ ] 累積約 2–3 個月即時紀錄後，重跑對照（只用 dashboard／coach 來源），再決定 SWC 是否升級為正式判定維度
     - **SWC 參數**：LnrMSSD₇d（≥3 點）vs 前 28 天每日 ln 值 mean − 0.5×SD（≥20 點），基線逐日滾動。試過以 LnrMSSD₇d 序列算 SD：太平滑、觸發 44%，不採。**0.5×SD 本來就讓約 1/4 日子落在線下**，用途是「今天別上強度」，不是抓罕見異常
   - 原規劃（保留供參考）：`hrv_ln = ln(rMSSD)` → 4 週基線 mean/SD → 觸發線 `mean − 0.5×SD` → 基線每週更新。🟢 有完整文獻支持（Plews/Buchheit），是四項閾值中唯一如此者

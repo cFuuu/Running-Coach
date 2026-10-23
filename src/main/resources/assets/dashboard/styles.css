@@ -3632,7 +3632,7 @@ button.recent-row .rc-actual .rc-main {
   color: var(--ready-low-text);
 }
 
-/* 本週訓練狀況與自評體感狀況疊在右欄；多出的高度給本週訓練狀況，
+/* 本週訓練狀況與自評今日體感狀態疊在右欄；多出的高度給本週訓練狀況，
    體感區塊貼底，與左欄的訓練完備程度下緣對齊 */
 .today-stack {
   display: flex;
@@ -3651,7 +3651,7 @@ button.recent-row .rc-actual .rc-main {
   margin-top: 0;
 }
 
-/* 自評體感狀況：三段等寬選擇，選中的段落填色（疲憊橘、普通灰、充沛藍） */
+/* 自評今日體感狀態：三段等寬選擇，選中的填色（疲憊紅、普通黃、充沛綠） */
 .feel-block .today-block-title {
   display: flex;
   align-items: center;
