@@ -3601,9 +3601,13 @@ button.recent-row .rc-actual .rc-main {
   margin-left: auto;
 }
 
-/* 日期一律獨佔標題的第二行：兩張並排卡片的標題高度一致，下方的圖示才會對齊 */
+/* 日期小字接在標題後面、同一行（放不下才換行）。兩張並排卡片的日期都在標題列，
+   標題高度一致，下方的圖示才會對齊 */
 .fig-block .fig-title-date {
-  flex-basis: 100%;
+  margin-top: 0;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 24px;
 }
 
 /* 並排時空間只剩一半，數字降一階 */
