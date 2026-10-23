@@ -3758,6 +3758,7 @@ button.recent-row .rc-dist {
 .feel-sub {
   font-size: 11.5px;
   line-height: 1.3;
+  font-weight: 400;
   color: var(--text-muted);
 }
 
@@ -3765,6 +3766,7 @@ button.recent-row .rc-dist {
   min-height: 1.3em;
   font-size: 11.5px;
   line-height: 1.3;
+  font-weight: 400;
   color: var(--text-muted);
 }
 
