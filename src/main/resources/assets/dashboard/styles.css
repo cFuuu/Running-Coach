@@ -1899,23 +1899,6 @@ body.coach-open .coach-fab {
   font-weight: 600;
 }
 
-/* 主要數字加淡底色＋細框（顏色取自該區塊標題色帶，與卡片標題呼應）。
-   上下用 padding 撐出底色、再用同樣大小的負 margin 抵銷，所以不會改變卡片高度，
-   也就不影響兩排卡片等高。訓練負荷、戰力綜覽兩區用 */
-#block-load .kpi-value,
-#block-ability .kpi-value,
-#block-ability .pb-time {
-  display: inline-block;
-  padding: 3px 12px;
-  margin: -3px 0;
-  border: 1px solid var(--hdr-border);
-  border-radius: var(--radius-sm);
-  background: var(--hdr-bg);
-  /* 邊框的 1px 也抵銷掉 */
-  margin-top: -4px;
-  margin-bottom: -4px;
-}
-
 /* 指標卡與最佳成績卡的主要數字（-9.7、44.9、40.2、1:57:27、13:59…）：2026-10-23 Fu 要求再加粗一階 */
 #view-home .kpi-value,
 #view-home .pb-time {
@@ -2752,6 +2735,7 @@ body.coach-open .coach-fab {
 
 .kpi-note {
   margin-top: 6px;
+  white-space: pre-line;
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
@@ -2785,30 +2769,40 @@ body.coach-open .coach-fab {
 
 /* 訓練負荷區上列的 TSB／ATL／CTL：趨勢線是卡片的主角，拉高到 64px（其他指標卡維持 28px）。
    線稿用 preserveAspectRatio:none，只拉高度不會變形 */
-/* 上排三張卡：卡片內容由上而下＝數字｜趨勢線（吃掉剩餘高度，最少 64px）｜註記（貼底），
-   不再在註記下方留一塊空白。只動卡片內部，卡片外框與兩排高度不變 */
-.home-load-cards .kpi-card {
+/* 指標卡（訓練負荷上排三張、戰力綜覽的跑力卡）：卡片內容由上而下＝數字｜趨勢線（吃掉剩餘
+   高度，最少 40px）｜底部兩行灰字（註記，固定預留兩行，各卡的灰字起點一致）。
+   只動卡片內部，卡片外框與兩排高度不變 */
+.home-load-cards .kpi-card,
+.ability-grid > .kpi-card {
   display: flex;
   flex-direction: column;
 }
 
-.home-load-cards .kpi-main {
+.home-load-cards .kpi-main,
+.ability-grid > .kpi-card .kpi-main {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
 }
 
-.home-load-cards .kpi-spark {
+.home-load-cards .kpi-spark,
+.ability-grid > .kpi-card .kpi-spark {
   position: relative;
   flex: 1 1 auto;
-  min-height: 64px;
+  min-height: 40px;
 }
 
-.home-load-cards .kpi-spark .sparkline {
+.home-load-cards .kpi-spark .sparkline,
+.ability-grid > .kpi-card .kpi-spark .sparkline {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.home-load-cards .kpi-note,
+.ability-grid > .kpi-card .kpi-note {
+  min-height: 2.8em;
 }
 
 .sparkline-path {

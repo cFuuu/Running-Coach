@@ -1026,7 +1026,8 @@ function vdotCard(vdot) {
     abbr: 'VDOT',
     value: C.formatNumber(race.value.value, 1),
     badge: confBadge(race.value),
-    note: '依 ' + C.shortDate(race.basis.date) + ' ' + race.basis.distance + (refText ? '，' + refText : ''),
+    // 兩行：依據的成績、Garmin 對照（換行字元由 .kpi-note 的 pre-line 處理）
+    note: '依 ' + C.shortDate(race.basis.date) + ' ' + race.basis.distance + (refText ? '\n' + refText : ''),
     series: history.length > 1 ? history : null,
     tip: tip
   });
