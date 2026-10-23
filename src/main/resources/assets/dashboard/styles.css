@@ -2624,14 +2624,21 @@ body.coach-open .coach-fab {
 .home-load-cards .gc-status-main {
   flex: 1 1 auto;
   justify-content: center;
+  /* 比正中央略高：置中在整個空間裡看起來會偏下（下面有色條），底部多留 28px 把群組往上推 14px */
+  padding-bottom: 28px;
 }
 
 .home-load-cards .gc-card-training_load .gc-body {
   gap: 2px;
 }
 
+/* 負荷焦點：標題列與第一條之間的空白收小（10px→4px），省下的高度分給下面各列的間距 */
+.home-load-cards .gc-card-load_focus > .gc-head {
+  margin-bottom: 4px;
+}
+
 .home-load-cards .gc-card-load_focus .gc-body {
-  gap: 2px;
+  gap: 2.5px;
 }
 
 .gc-focus-legend {
