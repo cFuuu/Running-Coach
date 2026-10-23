@@ -3171,9 +3171,16 @@ button.recent-row .rc-actual .rc-main {
 /* 區塊窄（手機，或首頁排成半欄）時兩行：第一行 日期｜活動｜實際，第二行課表。
    依區塊寬度而非螢幕寬度判斷 */
 @container block (max-width: 600px) {
+  /* 每一列是獨立的格線，「實際」欄若用 auto，各列寬度不同、數字就對不齊（健走那列會偏右），
+     所以用固定欄寬（與寬版同為 7.6rem），數字一律靠右 */
   .recent-row {
-    grid-template-columns: 5rem minmax(0, 1fr) auto;
+    grid-template-columns: 5rem minmax(0, 1fr) 7.6rem;
     row-gap: 2px;
+  }
+
+  .rc-actual {
+    align-items: flex-end;
+    text-align: right;
   }
 
   .recent-row.recent-head {
@@ -5379,25 +5386,37 @@ button.recent-row .rc-actual .rc-main {
   white-space: nowrap;
 }
 
-.customize-move {
-  min-width: 32px;
-  min-height: 32px;
+/* 拖移把手：滑鼠顯示抓取游標；touch-action:none 讓觸控拖動不會變成頁面捲動 */
+.customize-handle {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
   background: var(--surface);
-  color: var(--text);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.customize-move:hover:not(:disabled) {
+.customize-handle:hover {
   border-color: var(--accent);
+  color: var(--text);
 }
 
-.customize-move:disabled {
-  opacity: 0.35;
-  cursor: default;
+.customize-handle:active {
+  cursor: grabbing;
+}
+
+/* 拖動中的列：浮起、加邊框，其他列讓位 */
+.customize-row.is-dragging {
+  background: var(--surface-sunken);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: 0 2px 8px var(--panel-shadow);
 }
 
 /* ------------------------------------------------------------ 數字卡 */

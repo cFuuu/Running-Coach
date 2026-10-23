@@ -113,7 +113,7 @@ export function renderTrendsPage() {
     settingsKey: 'trends',
     defs: CATEGORIES,
     label: '⚙ 自訂類別',
-    hint: '調整類別順序，取消勾選可隱藏整個類別。各類別內的圖表在類別標題旁自訂。',
+    hint: '拖移 ⠿ 調整類別順序，取消勾選可隱藏整個類別。各類別內的圖表在類別標題旁自訂。',
     onChange: renderTrendsPage
   }));
 

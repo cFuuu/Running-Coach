@@ -70,7 +70,7 @@ function mountHomeCustomizer() {
     settingsKey: 'home',
     defs: HOME_BLOCKS,
     label: '⚙ 自訂首頁',
-    hint: '調整區塊順序，取消勾選可隱藏。區塊由上而下兩兩並排，落單的佔滿整欄。',
+    hint: '拖移右側的 ⠿ 調整區塊順序，取消勾選可隱藏。區塊由上而下兩兩並排，落單的佔滿整欄。',
     onChange: function () {
       applyHomeLayout();
       mountHomeCustomizer();

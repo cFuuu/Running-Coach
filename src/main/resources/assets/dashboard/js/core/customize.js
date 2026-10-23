@@ -12,9 +12,11 @@
  * 設定永久藏起來（使用者會以為新功能沒生效）。已不存在的舊 key 直接忽略。
  * hidden 為 null（從未動過設定）時，用各項目的 default_hidden 決定初始顯隱。
  *
- * 【排序用上下箭頭而非拖曳】HTML5 drag&drop 在行動瀏覽器無效（觸控不觸發
- * drag 事件），自製觸控拖曳成本遠超單人自用工具的需求；箭頭鍵盤可操作、
- * 觸控可點擊，而且資料模型（有序 key 陣列）與互動層獨立，日後要換也不用改儲存格式。
+ * 【排序用拖移把手（Pointer Events），不用 HTML5 drag&drop】後者在行動瀏覽器無效
+ * （觸控不觸發 drag 事件）。Pointer Events 滑鼠與觸控共用，把手設 touch-action:none
+ * 就不會被頁面捲動搶走；把手聚焦後也能按 ↑／↓ 移動，鍵盤可操作。
+ * 資料模型（有序 key 陣列）與互動層獨立，儲存格式沒有因此改變。
+ * （2026-10-23 由上下箭頭鈕改為拖移，原因：箭頭一次只動一格、清單長時很難用。）
  */
 
 import * as Theme from '../theme.js';
@@ -76,8 +78,75 @@ function buildPanel(opts) {
   }
 
   var list = h('div', 'customize-list');
-  layout.ordered.forEach(function (def, idx) {
+
+  /** 依畫面上目前的列順序讀回 key 陣列（拖移中列直接在 DOM 裡移動，放開才存）。 */
+  function currentOrder() {
+    return Array.prototype.map.call(list.children, function (r) { return r.getAttribute('data-key'); });
+  }
+
+  /**
+   * 拖移把手：用 Pointer Events（滑鼠與觸控共用；把手設 touch-action:none，
+   * 觸控才不會被頁面捲動搶走）。拖動時列隨指標在清單內換位，放開才寫入偏好。
+   * 把手也能用鍵盤：聚焦後按 ↑／↓ 移動一格。
+   */
+  function dragHandle(def, row) {
+    var handle = h('button', 'customize-handle', '⠿');
+    handle.type = 'button';
+    handle.title = '拖移調整順序';
+    handle.setAttribute('aria-label', def.label + '：拖移調整順序，或按上下鍵');
+    handle.setAttribute('data-ckey', opts.settingsKey + ':' + def.key);
+
+    handle.addEventListener('pointerdown', function (evt) {
+      if (evt.pointerType === 'mouse' && evt.button !== 0) return;
+      evt.preventDefault();
+      handle.setPointerCapture(evt.pointerId);
+      row.classList.add('is-dragging');
+      var startOrder = currentOrder().join('|');
+
+      function onMove(e) {
+        // 找出「中線在指標下方」的第一個其他列，把被拖的列插到它前面；沒有就放最後
+        var before = null;
+        var others = Array.prototype.filter.call(list.children, function (r) { return r !== row; });
+        for (var i = 0; i < others.length; i += 1) {
+          var rect = others[i].getBoundingClientRect();
+          if (e.clientY < rect.top + rect.height / 2) { before = others[i]; break; }
+        }
+        if (before !== row.nextSibling) list.insertBefore(row, before);
+      }
+      function onEnd() {
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onEnd);
+        handle.removeEventListener('pointercancel', onEnd);
+        row.classList.remove('is-dragging');
+        if (currentOrder().join('|') !== startOrder) commit(currentOrder());
+      }
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onEnd);
+      handle.addEventListener('pointercancel', onEnd);
+    });
+
+    handle.addEventListener('keydown', function (evt) {
+      var delta = evt.key === 'ArrowUp' ? -1 : (evt.key === 'ArrowDown' ? 1 : 0);
+      if (!delta) return;
+      evt.preventDefault();
+      var order = currentOrder();
+      var idx = order.indexOf(def.key);
+      var target = idx + delta;
+      if (target < 0 || target >= order.length) return;
+      var tmp = order[target]; order[target] = order[idx]; order[idx] = tmp;
+      commit(order);
+      // 面板會整個重畫，把焦點還給同一個把手，才能連續按鍵
+      setTimeout(function () {
+        var again = document.querySelector('[data-ckey="' + opts.settingsKey + ':' + def.key + '"]');
+        if (again) again.focus();
+      }, 0);
+    });
+    return handle;
+  }
+
+  layout.ordered.forEach(function (def) {
     var row = h('label', 'customize-row');
+    row.setAttribute('data-key', def.key);
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = !hidden[def.key];
@@ -88,22 +157,7 @@ function buildPanel(opts) {
     row.appendChild(checkbox);
     row.appendChild(h('span', 'customize-label', def.label));
 
-    function moveBtn(text, delta, aria) {
-      var btn = h('button', 'customize-move', text);
-      btn.type = 'button';
-      btn.setAttribute('aria-label', def.label + aria);
-      var target = idx + delta;
-      btn.disabled = target < 0 || target >= keys.length;
-      btn.addEventListener('click', function (evt) {
-        evt.preventDefault(); // 在 <label> 內，避免點按鈕連帶切換勾選
-        var order = keys.slice();
-        var tmp = order[target]; order[target] = order[idx]; order[idx] = tmp;
-        commit(order);
-      });
-      return btn;
-    }
-    row.appendChild(moveBtn('↑', -1, '上移'));
-    row.appendChild(moveBtn('↓', 1, '下移'));
+    row.appendChild(dragHandle(def, row));
     list.appendChild(row);
   });
   panel.appendChild(list);
