@@ -191,7 +191,7 @@
           前端、後端三處各自維護一份清單而漂移。
         -->
           <div class="range-switch" role="group" aria-label="時間區間切換" id="range-switch"></div>
-          <div class="custom-range" id="custom-range">
+          <div class="custom-range" id="custom-range" data-online-only>
             <button type="button" class="range-btn" id="custom-range-toggle" aria-expanded="false">自訂區間</button>
             <div class="custom-range-panel" id="custom-range-panel" hidden>
               <label class="custom-range-field">
@@ -218,7 +218,7 @@
           是否啟用——來源不被允許時（例如從區網裝置連進來）維持停用並顯示理由，
           而不是讓使用者按下去才吃 403。
         -->
-          <button type="button" class="tool-btn has-label" id="sync-btn" data-action="sync" disabled title="同步資料"
+          <button type="button" class="tool-btn has-label" id="sync-btn" data-action="sync" data-online-only disabled title="同步資料"
             aria-label="同步資料">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -228,7 +228,7 @@
           </button>
 
           <!-- AI 分析近況：打開 AI 面板並跑一次新的分析（js/shell/coach-frame.js） -->
-          <button type="button" class="tool-btn has-label" id="analyze-btn" title="AI 分析最近的訓練與身體狀況（約 1～2 分鐘，結果自動保存）"
+          <button type="button" class="tool-btn has-label" id="analyze-btn" data-online-only title="AI 分析最近的訓練與身體狀況（約 1～2 分鐘，結果自動保存）"
             aria-label="分析近況">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -236,6 +236,9 @@
             </svg>
             <span class="tool-label">分析近況</span>
           </button>
+
+          <!-- 離線快照的資料時間（js/shell/loader.js renderMeta 填入；側邊列在手機上隱藏，所以頂列也放一份） -->
+          <span class="offline-stamp" id="offline-stamp" hidden></span>
 
           <!-- 日夜切換只在系統設定頁（2026-10-21 移出頂列） -->
           <a class="tool-btn has-label" id="settings-btn" href="#/settings" data-view="settings" title="系統設定"
@@ -249,7 +252,7 @@
         </div>
 
         <!-- 平板：內容頂列多一顆 AI 教練開關（桌機面板常駐、手機用 FAB） -->
-        <button type="button" class="coach-toggle" id="coach-toggle" aria-expanded="false">
+        <button type="button" class="coach-toggle" id="coach-toggle" data-online-only aria-expanded="false">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <use href="#icon-bubble"></use>
@@ -455,7 +458,7 @@
           </div>
         </section>
 
-        <section class="panel" aria-labelledby="h-set-coach">
+        <section class="panel" aria-labelledby="h-set-coach" data-online-only>
           <h2 class="panel-title" id="h-set-coach">AI 教練</h2>
           <div class="setting-row">
             <div class="setting-label">
@@ -492,7 +495,7 @@
             </div>
           </div>
 
-          <div class="setting-row">
+          <div class="setting-row" data-online-only>
             <div class="setting-label">
               <span class="setting-name">立即同步</span>
               <span class="setting-hint">會先估算耗時並詢問確認，再實際執行</span>
@@ -509,9 +512,9 @@
           </div>
 
           <!-- 同步的進度／結果／失敗原因。空的時候由 CSS 收起不留空白塊。 -->
-          <p class="setting-sync-message" id="settings-sync-message"></p>
+          <p class="setting-sync-message" id="settings-sync-message" data-online-only></p>
 
-          <p class="setting-note">
+          <p class="setting-note" data-online-only>
             同步使用的是一次性認證取得的 OAuth token。token 失效時匯入器不會自動用
             帳密重新登入（那會觸發 Garmin 的反爬蟲機制），請在終端機重跑一次性
             認證指令重新取得 token。
@@ -529,7 +532,7 @@
     S1 只做殼：版面、收合／展開、三種寬度的形態切換。
     對話、串流、工具 chip 屬 S2／S3（coach.js），此處不放假的對話 UI。
   -->
-    <aside class="coach-panel" id="coach-panel" aria-label="AI 教練">
+    <aside class="coach-panel" id="coach-panel" data-online-only aria-label="AI 教練">
       <div class="coach-head">
         <h2 class="coach-title">AI 教練</h2>
         <!-- 回看過去的 AI 分析報告（不跑新的）；跑新分析在頂列「分析近況」 -->
@@ -565,7 +568,7 @@
     改成貼齊右緣的圓形浮動按鈕，與手機 FAB／頂列開關共用同一個對話泡泡符號——
     「AI 教練」在各種形態下因此是同一個視覺語言。
   -->
-    <button type="button" class="coach-rail" id="coach-rail" hidden aria-label="展開 AI 教練" title="展開 AI 教練">
+    <button type="button" class="coach-rail" id="coach-rail" data-online-only hidden aria-label="展開 AI 教練" title="展開 AI 教練">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"
         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <use href="#icon-bubble"></use>
@@ -628,7 +631,7 @@
   </nav>
 
   <!-- AI 教練浮動按鈕（<768px 顯示，位於分頁列上方） -->
-  <button type="button" class="coach-fab" id="coach-fab" aria-label="開啟 AI 教練">
+  <button type="button" class="coach-fab" id="coach-fab" data-online-only aria-label="開啟 AI 教練">
     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <use href="#icon-bubble"></use>
@@ -636,7 +639,7 @@
   </button>
 
   <!-- 平板／手機面板開啟時的遮罩 -->
-  <div class="coach-scrim" id="coach-scrim" hidden></div>
+  <div class="coach-scrim" id="coach-scrim" data-online-only hidden></div>
 
   <!--
     開發用假資料（DEV ONLY，內容為虛構）已於 2026-09-08 停止預設載入——

@@ -482,9 +482,9 @@ LOADER_JS = r"""
       return Promise.resolve(out);
     }
     if (/^\/api\/sessions\/\d+$/.test(r.path)) {
-      return Promise.reject(new Error(D.detail_since
-        ? '離線快照只保留 ' + D.detail_since + ' 之後的單場明細'
-        : '離線快照沒有這場的明細'));
+      // 前端（shell/loader.js）離線時把這個訊息當說明顯示，不當讀取失敗
+      return Promise.reject(new Error('離線檔未包含這場的明細'
+        + (D.detail_since ? '（只保留 ' + D.detail_since + ' 之後的單場明細）' : '')));
     }
     var s = r.p.get('start'), e = r.p.get('end');
     if (r.path === '/api/calendar' && s && e) {
@@ -501,7 +501,8 @@ LOADER_JS = r"""
   window.MOCK_API = {
     isMock: true,
     isOffline: true,
-    snapshotAt: window.__SNAPSHOT_AT__,
+    snapshotAt: window.__SNAPSHOT_AT__,      // 頁首「資料截至」
+    today: window.__SNAPSHOT_TODAY__,        // 前端 todayISO() 的「今天」＝匯出日期
     request: function (raw, body) { return ready.then(function () { return routeNow(raw, body); }); },
     chatRequest: function (path) {
       if (/\/status$/.test(canon(path).path)) {
@@ -511,13 +512,6 @@ LOADER_JS = r"""
     },
     chatStream: function () { return offline('AI 教練'); }
   };
-  document.addEventListener('DOMContentLoaded', function () {
-    var b = document.createElement('div');
-    b.className = 'offline-snapshot-badge';
-    b.textContent = '離線快照 · ' + window.__SNAPSHOT_AT__;
-    b.style.cssText = 'position:fixed;top:4px;right:8px;z-index:9999;font:12px system-ui;padding:2px 8px;border-radius:10px;background:#f59e0b;color:#000;opacity:.85;pointer-events:none';
-    document.body.appendChild(b);
-  });
 })();
 """
 
@@ -543,7 +537,8 @@ def build_page(snapshot: dict, snapshot_at: str, use_gzip: bool = True) -> tuple
         data_js = "window.__SNAPSHOT__ = " + snapshot_json.replace("</", "<\\/") + ";"
 
     tail = (
-        f"<script>window.__SNAPSHOT_AT__ = {json.dumps(snapshot_at)};\n{data_js}</script>\n"
+        f"<script>window.__SNAPSHOT_AT__ = {json.dumps(snapshot_at)};\n"
+        f"window.__SNAPSHOT_TODAY__ = {json.dumps(snapshot['today'])};\n{data_js}</script>\n"
         f"  <script>{LOADER_JS}</script>\n"
         f"  <script type=\"importmap\">{_importmap(sources)}</script>\n"
         f"  <script type=\"module\">import '{MODULE_PREFIX}{_bpc._key(ENTRY)}';</script>"

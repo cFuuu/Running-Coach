@@ -4,7 +4,7 @@
 
 import * as C from '../charts.js';
 import { state } from '../core/state.js';
-import { api, apiPost } from '../core/api.js';
+import { api, apiPost, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h } from '../core/dom.js';
 import { shortDateTime } from '../core/format.js';
 import { loadHome } from '../views/home.js';
@@ -226,6 +226,7 @@ export function requestSync() {
  * 裝置連進來）維持 disabled 並顯示理由，而不是讓使用者按下去才吃 403。
  */
 export function bindSyncButtons() {
+  if (isOfflineSnapshot()) return; // 離線快照：同步鈕已隱藏，不綁定也不問 /api/sync/status
   Array.prototype.forEach.call(syncButtons(), function (btn) {
     btn.addEventListener('click', requestSync);
   });

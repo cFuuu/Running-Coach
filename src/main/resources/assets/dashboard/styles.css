@@ -5917,6 +5917,42 @@ button.recent-row .rc-dist {
   color: var(--badge-mock-text);
 }
 
+/* ------------------------------------------------------------ 離線快照（W4b）
+ *
+ * scripts/build_dashboard_offline.py 產生的單一 HTML：main.js 在 <html> 加 .is-offline，
+ * 需要連伺服器的控制項（同步、AI 教練、自訂區間…）在 HTML 標 data-online-only，這裡一次隱藏。
+ * 「資料截至」用提示列的色票（舊資料提醒，不是錯誤）。
+ */
+.is-offline [data-online-only] {
+  display: none !important;
+}
+
+.badge-offline,
+.offline-stamp {
+  background: var(--notice-bg);
+  border: 1px solid var(--notice-border);
+  color: var(--notice-text);
+}
+
+.offline-stamp {
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.offline-stamp[hidden] {
+  display: none;
+}
+
+/* 桌機的完整側邊列已有同一個徽章；手機沒有側邊列、平板的圖示欄藏起 meta，頂列才顯示 */
+@media (min-width: 1280px) {
+  .offline-stamp {
+    display: none;
+  }
+}
+
 /* ------------------------------------------------------------ Tooltip
  *
  * 全頁單一 tooltip 元素（由 app.js 建立、position:fixed 依 pointer 座標

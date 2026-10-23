@@ -13,6 +13,7 @@
 
 import * as C from '../charts.js';
 import { h, clear, showLoading, showUnavailable } from '../core/dom.js';
+import { todayISO } from '../core/format.js';
 import { infoTip, hrvStatusMark, toneMark } from '../core/facts.js';
 import { HRV_STATUS_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 
@@ -78,14 +79,9 @@ function monthDay(iso) {
   return parseInt(p[1], 10) + '月' + parseInt(p[2], 10) + '日';
 }
 
-function todayIso() {
-  var today = new Date();
-  return today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
-}
-
 /** 卡片底下「資料日期」：不是今天時要寫出來，免得把昨天的值當今天。 */
 function dateNote(card) {
-  return card.date && card.date !== todayIso() ? C.shortDate(card.date) + ' 的資料' : '';
+  return card.date && card.date !== todayISO() ? C.shortDate(card.date) + ' 的資料' : '';
 }
 
 function minuteToClock(m) {
@@ -148,7 +144,7 @@ function weekChecks(items) {
  */
 function intraday(points, opts, date) {
   var last = (points || []).length ? points[points.length - 1][0] : null;
-  var pending = date === todayIso() && last !== null && last < 1439;
+  var pending = date === todayISO() && last !== null && last < 1439;
   var svg = C.intradayChart(points, pending ? Object.assign({ pendingFrom: last + 1 }, opts) : opts);
   if (!svg) return null;
   var wrap = h('div', 'gc-intraday-wrap');
