@@ -5,6 +5,23 @@
 import * as C from '../charts.js';
 import { WORKOUT_TYPE_LABEL } from './state.js';
 
+/**
+ * 某天的暖身：主課 id → 暖身活動（/api/calendar 的 warmup_for_activity_id，N-25）。
+ * 學員常把暖身與主課分開按錶，後端已關聯；前端據此把暖身折進主課或標示為暖身。
+ */
+export function warmupsByMain(activities) {
+  var map = {};
+  (activities || []).forEach(function (a) {
+    if (a.warmup_for_activity_id) map[a.warmup_for_activity_id] = a;
+  });
+  return map;
+}
+
+/** '含暖身 1.3 km' */
+export function warmupLabel(warmup) {
+  return '含暖身 ' + C.formatNumber(warmup.distance_km || 0, 1) + ' km';
+}
+
 export function fmtDelta(v, decimals, unit) {
   if (v === null || v === undefined || !isFinite(v)) return '—';
   var n = Number(v);

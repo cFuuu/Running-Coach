@@ -15,7 +15,7 @@ import * as C from '../charts.js';
 import { DAY_STATE_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { h } from '../core/dom.js';
-import { mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
+import { mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote, warmupsByMain, warmupLabel } from '../core/format.js';
 import { navigate } from '../shell/router.js';
 
 /** 某日期所屬課表週的起訖（週一、週日）。 */
@@ -167,19 +167,26 @@ function summaryNode(days) {
   return wrap;
 }
 
-/** 當天的實際：只列跑步。單場顯示距離與配速並可點進單場分析，多場只加總距離；健走等其他活動不列。 */
+/**
+ * 當天的實際：只列跑步。單場顯示距離與配速並可點進單場分析，多場只加總距離；健走等其他活動不列。
+ * 另存的暖身（N-25）不算一場：距離仍加進總里程，但配速／心率與點擊目標都以主課為準，
+ * 並標「含暖身 x km」。
+ */
 function actualNode(day) {
-  var runs = (day.activities || []).filter(function (a) { return a.is_running; });
+  var allRuns = (day.activities || []).filter(function (a) { return a.is_running; });
+  var runs = allRuns.filter(function (a) { return !a.warmup_for_activity_id; });
   var cell = h('span', 'wp-actual');
   if (runs.length === 0) {
     cell.textContent = '—';
     return cell;
   }
-  var km = runs.reduce(function (t, a) { return t + (a.distance_km || 0); }, 0);
+  var km = allRuns.reduce(function (t, a) { return t + (a.distance_km || 0); }, 0);
   var btn = h('button', 'wp-actual-link', C.formatNumber(km, 1) + ' km');
   var one = runs.length === 1 ? runs[0] : null;
   // 配速與平均心率同一行，灰色小字
   var sub = [];
+  var warmup = one ? warmupsByMain(day.activities)[one.id] : null;
+  if (warmup) sub.push(warmupLabel(warmup));
   if (one && one.distance_km && one.duration_sec) {
     sub.push(C.formatPace(one.duration_sec / one.distance_km) + '/km');
   }

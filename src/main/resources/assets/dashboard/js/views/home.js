@@ -17,7 +17,7 @@ import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFID
 import { api, apiSend } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover } from '../core/facts.js';
-import { addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
+import { addDaysISO, todayISO, dowLabel, planSummary, shortPlanNote, warmupsByMain, warmupLabel } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
 import { activityDots, firstRunningActivity } from './calendar.js';
@@ -1055,8 +1055,11 @@ export function renderRecentSessions() {
   ['日期', '活動', '實際', '課表'].forEach(function (t) { head.appendChild(h('span', null, t)); });
   list.appendChild(head);
 
+  // 暖身是另存的獨立活動：不單獨成列，折進主課（主課的「活動」欄標「含暖身 x km」）
+  var items = state.recentActivities.filter(function (item) { return !item.activity.warmup_for_activity_id; });
+
   var prev = null;
-  state.recentActivities.slice(0, 8).forEach(function (item) {
+  items.slice(0, 8).forEach(function (item) {
     var a = item.activity;
     // 跑步才有單場分析可看（同行事曆）；健走、重訓等整列淡色、不可點
     var row = h(a.is_running ? 'button' : 'div', 'recent-row' + (a.is_running ? '' : ' is-other'));
@@ -1072,7 +1075,10 @@ export function renderRecentSessions() {
     act.appendChild(h('span', 'rc-main', a.is_running
       ? (WORKOUT_TYPE_LABEL[a.workout_type] || a.workout_type || '未分類')
       : (ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type)));
-    if (a.is_running && a.duration_sec) act.appendChild(h('span', 'rc-sub', C.formatDuration(a.duration_sec)));
+    if (a.is_running && a.duration_sec) {
+      var actSub = C.formatDuration(a.duration_sec) + (item.warmup ? ' · ' + warmupLabel(item.warmup) : '');
+      act.appendChild(h('span', 'rc-sub', actSub));
+    }
     row.appendChild(act);
 
     // 實際：跑步以距離為主、配速與心率小字；其他活動以時長為主
@@ -1109,9 +1115,10 @@ export function loadRecentSessions() {
     var items = [];
     ((data && data.days) || []).slice().reverse().forEach(function (d) {
       var p = (d.planned || [])[0] || null;
+      var warmups = warmupsByMain(d.activities);
       (d.activities || []).slice().reverse().forEach(function (a) {
         var matched = p && a.plan_match && a.plan_match.state !== 'none';
-        items.push({ date: d.date, activity: a, plan: matched ? p : null });
+        items.push({ date: d.date, activity: a, plan: matched ? p : null, warmup: warmups[a.id] || null });
       });
     });
     state.recentActivities = items;

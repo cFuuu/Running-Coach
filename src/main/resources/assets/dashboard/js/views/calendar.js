@@ -246,8 +246,11 @@ export function renderCalendarDay() {
       var dot = h('span', 'cd-dot');
       dot.style.background = 'var(' + activityColorVar(a.activity_type) + ')';
       row.appendChild(dot);
-      row.appendChild(h('span', 'cd-type', ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type));
-      if (a.title) row.appendChild(h('span', 'cd-title', a.title));
+      // 暖身是另存的獨立活動（N-25）：標為「暖身」並連到它所屬的主課
+      var isWarmup = !!a.warmup_for_activity_id;
+      row.appendChild(h('span', 'cd-type',
+        isWarmup ? '暖身' : (ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type)));
+      if (a.title && !isWarmup) row.appendChild(h('span', 'cd-title', a.title));
       if (a.distance_km) row.appendChild(h('span', 'cd-val', C.formatNumber(a.distance_km, 2) + ' km'));
       if (a.duration_sec) row.appendChild(h('span', 'cd-val', C.formatDuration(a.duration_sec)));
       if (a.distance_km && a.duration_sec) {
@@ -255,9 +258,9 @@ export function renderCalendarDay() {
       }
       // 跑步才有單場明細可看：其餘類型（健走、重訓）在訓練紀錄裡沒有對應頁面
       if (a.is_running) {
-        var link = h('button', 'cd-link', '看單場分析 →');
+        var link = h('button', 'cd-link', isWarmup ? '看主課分析 →' : '看單場分析 →');
         link.type = 'button';
-        link.addEventListener('click', function () { navigate('sessions', a.id); });
+        link.addEventListener('click', function () { navigate('sessions', a.warmup_for_activity_id || a.id); });
         row.appendChild(link);
       }
       asec.appendChild(row);

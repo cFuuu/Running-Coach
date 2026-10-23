@@ -1460,7 +1460,7 @@ def get_calendar(
     activity_rows = conn.execute(
         """
         SELECT id, date(started_at) AS d, activity_type, workout_type,
-               title, distance_km, duration_sec, avg_hr_bpm
+               title, distance_km, duration_sec, avg_hr_bpm, warmup_for_activity_id
         FROM activities
         WHERE athlete_id = ? AND date(started_at) >= ? AND date(started_at) <= ?
         ORDER BY started_at
@@ -1511,6 +1511,8 @@ def get_calendar(
                     "duration_sec": activity_row["duration_sec"],
                     "avg_hr_bpm": activity_row["avg_hr_bpm"],
                     "title": activity_row["title"],
+                    # N-25：非 NULL 代表這筆是暖身，值為主課的 activity id
+                    "warmup_for_activity_id": activity_row["warmup_for_activity_id"],
                     "plan_match": {
                         "state": match["state"],
                         "method": match["method"],
