@@ -1835,11 +1835,11 @@ body.coach-open .coach-fab {
 /* 訓練負荷區六張卡：上列本專案 TSB／ATL／CTL，下列 Garmin 訓練負荷／訓練狀態／負荷焦點。
    區塊夠寬時一列三張，讓兩種來源各佔一列；窄時退回兩欄。 */
 /* 訓練負荷與戰力綜覽並排時，兩邊的兩排卡片要上下緣對齊：兩個區塊的兩排用同一組最小高度
-   （兩排同高 262px，容得下兩邊最高的一張；CSS 像素，非截圖像素）。數字取自實測內容高度，內容更高時仍會撐開 */
+   （兩排同高 230px，以 Playwright 實測兩邊最高的一張約 230px；CSS 像素）。數字取自實測內容高度，內容更高時仍會撐開 */
 @container block (min-width: 540px) {
   .home-load-cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(262px, auto));
+    grid-template-rows: repeat(2, minmax(230px, auto));
   }
 }
 
@@ -1855,7 +1855,7 @@ body.coach-open .coach-fab {
 @container block (min-width: 540px) {
   .ability-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(262px, auto));
+    grid-template-rows: repeat(2, minmax(230px, auto));
   }
 }
 
@@ -2596,6 +2596,27 @@ body.coach-open .coach-fab {
 .gc-focus-anaerobic { background: var(--gc-focus-anaerobic); }
 .gc-focus-high { background: var(--gc-focus-high); }
 .gc-focus-low { background: var(--gc-focus-low); }
+
+/* 訓練負荷卡：「負荷比」標籤與數字並排 */
+.gc-ratio-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* 首頁訓練負荷區的 Garmin 卡片：高度由格線的兩排決定（兩排同高 230px），不另設 236px 下限；
+   訓練負荷與負荷焦點的列距收緊（3px／1px），才壓得進 230px */
+.home-load-cards .gc-card {
+  min-height: 0;
+}
+
+.home-load-cards .gc-card-training_load .gc-body {
+  gap: 3px;
+}
+
+.home-load-cards .gc-card-load_focus .gc-body {
+  gap: 1px;
+}
 
 .gc-focus-legend {
   display: flex;

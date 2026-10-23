@@ -442,8 +442,11 @@ function renderTrainingLoad(c, body) {
   body.appendChild(bigValue(num(c.acute) + '/' + num(c.chronic)));
   body.appendChild(h('div', 'gc-caption', '短期/長期負荷'));
   if (c.ratio !== null) {
-    body.appendChild(bigValue(num(c.ratio, 1), null, 'gc-value-sm'));
-    body.appendChild(h('div', 'gc-caption', '負荷比'));
+    // 標籤與數字同一行，省下一行高度（首頁兩排卡片要壓在 230px 內）
+    var ratioRow = h('div', 'gc-ratio-row');
+    ratioRow.appendChild(h('span', 'gc-caption', '負荷比'));
+    ratioRow.appendChild(bigValue(num(c.ratio, 1), null, 'gc-value-sm'));
+    body.appendChild(ratioRow);
   }
   // 短期負荷的走勢，與首頁「近期疲勞 ATL」卡同一種迷你趨勢線
   return sparkFrom(c.series, 'acute_load');
