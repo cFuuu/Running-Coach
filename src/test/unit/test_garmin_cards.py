@@ -88,6 +88,25 @@ class TestGetGarminCards(unittest.TestCase):
         self.assertEqual(im["week_total"], 30 + 2 * 20 + 10 + 2 * 5)
         self.assertEqual(im["weekly_goal"], 150)
 
+    def test_training_readiness_card_carries_factor_feedback(self):
+        """完備程度卡附上六個因素的評級代碼與對應數值（Garmin 網頁的「因素」清單）。"""
+        self.conn.execute(
+            "UPDATE daily_wellness SET training_readiness_score = 61, readiness_level = 'MODERATE', "
+            "readiness_sleep_feedback = 'GOOD', readiness_recovery_feedback = 'GOOD', "
+            "readiness_hrv_feedback = 'VERY_GOOD', readiness_load_feedback = 'GOOD', "
+            "readiness_sleep_history_feedback = 'MODERATE', readiness_stress_feedback = 'GOOD', "
+            "recovery_time_hours = 9, acute_load = 406, hrv_weekly_avg_ms = 58, hrv_status = 'BALANCED' "
+            "WHERE date = '2026-10-21'")
+        card = garmin_cards.get_garmin_cards(self.conn, 1, "7d")["cards"]["training_readiness"]
+        self.assertEqual(card["score"], 61)
+        self.assertEqual((card["sleep_feedback"], card["sleep_score"]), ("GOOD", 80))
+        self.assertEqual((card["recovery_feedback"], card["recovery_time_hours"]), ("GOOD", 9))
+        self.assertEqual((card["hrv_feedback"], card["hrv_weekly_avg_ms"], card["hrv_status"]),
+                         ("VERY_GOOD", 58, "BALANCED"))
+        self.assertEqual((card["load_feedback"], card["acute_load"]), ("GOOD", 406))
+        self.assertEqual(card["sleep_history_feedback"], "MODERATE")
+        self.assertEqual(card["stress_feedback"], "GOOD")
+
     def test_training_status_strips_variant_suffix_and_uses_garmin_since(self):
         """PRODUCTIVE_3 → PRODUCTIVE；起始日用 Garmin 給的，即使早於 7d 區間。"""
         ts = self.cards["training_status"]

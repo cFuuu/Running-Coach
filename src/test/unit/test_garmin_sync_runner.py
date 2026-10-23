@@ -230,6 +230,8 @@ CREATE TABLE daily_wellness (
     sleep_awake_sec INTEGER, body_battery_at_wake INTEGER,
     readiness_input_context TEXT, readiness_timestamp_local TEXT,
     readiness_level TEXT, readiness_feedback_short TEXT,
+    readiness_sleep_feedback TEXT, readiness_recovery_feedback TEXT, readiness_hrv_feedback TEXT,
+    readiness_load_feedback TEXT, readiness_sleep_history_feedback TEXT, readiness_stress_feedback TEXT,
     sleep_start_local TEXT, sleep_end_local TEXT,
     respiration_sleep_avg REAL, respiration_low REAL, respiration_high REAL,
     spo2_lowest REAL, spo2_latest REAL,
@@ -1185,13 +1187,29 @@ class TestNormalizeWellnessGarminCardFields(unittest.TestCase):
             }},
             "training_readiness": [{"score": 72, "level": "MODERATE",
                                     "feedbackShort": "GOOD_SLEEP_HISTORY",
-                                    "inputContext": "AFTER_WAKEUP_RESET"}],
+                                    "inputContext": "AFTER_WAKEUP_RESET",
+                                    "sleepScoreFactorFeedback": "GOOD",
+                                    "recoveryTimeFactorFeedback": "GOOD",
+                                    "hrvFactorFeedback": "VERY_GOOD",
+                                    "acwrFactorFeedback": "GOOD",
+                                    "sleepHistoryFactorFeedback": "MODERATE",
+                                    "stressHistoryFactorFeedback": "GOOD"}],
         }
 
     def test_readiness_level_and_feedback(self):
         row = runner.normalize_wellness(self._raw())
         self.assertEqual(row["readiness_level"], "MODERATE")
         self.assertEqual(row["readiness_feedback_short"], "GOOD_SLEEP_HISTORY")
+
+    def test_readiness_factor_feedback_codes_are_stored_raw(self):
+        """訓練完備程度的六個因素評級原樣存 Garmin 代碼（黑盒衍生值，不翻譯、不重算）。"""
+        row = runner.normalize_wellness(self._raw())
+        self.assertEqual(
+            (row["readiness_sleep_feedback"], row["readiness_recovery_feedback"],
+             row["readiness_hrv_feedback"], row["readiness_load_feedback"],
+             row["readiness_sleep_history_feedback"], row["readiness_stress_feedback"]),
+            ("GOOD", "GOOD", "VERY_GOOD", "GOOD", "MODERATE", "GOOD"),
+        )
 
     def test_sleep_window_is_local_wall_clock(self):
         row = runner.normalize_wellness(self._raw())

@@ -158,6 +158,18 @@ export function hrvStatusMark(status) {
   return mark;
 }
 
+/** 依語氣畫形狀圖示：good 綠圓、warn 橘方、bad 紅三角、muted 空心灰圓（與 hrvStatusMark 同一套）。 */
+var TONE_SHAPE = { good: 'circle', warn: 'square', bad: 'triangle', muted: 'circle' };
+
+export function toneMark(tone) {
+  var shape = TONE_SHAPE[tone];
+  if (!shape) return null;
+  var mark = h('span', 'hrv-mark hrv-mark-' + tone);
+  mark.innerHTML = '<svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">'
+    + HRV_MARK_SHAPE[shape] + '</svg>';
+  return mark;
+}
+
 /** 信賴度 badge（fact 的三欄位契約），hover 顯示依據來源與已知偏誤。 */
 export function confBadge(fact) {
   var level = (fact && fact.confidence && fact.confidence.level) || 'high';

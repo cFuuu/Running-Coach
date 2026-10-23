@@ -56,6 +56,9 @@ _WELLNESS_COLUMNS = (
     "hrv_ms", "hrv_weekly_avg_ms", "hrv_last_night_5min_high", "hrv_status",
     "hrv_baseline_low_upper", "hrv_baseline_balanced_low", "hrv_baseline_balanced_upper",
     "training_readiness_score", "readiness_level", "readiness_feedback_short",
+    "readiness_sleep_feedback", "readiness_recovery_feedback", "readiness_hrv_feedback",
+    "readiness_load_feedback", "readiness_sleep_history_feedback", "readiness_stress_feedback",
+    "recovery_time_hours", "acute_load",
     "sleep_score", "sleep_duration_sec", "sleep_start_local", "sleep_end_local",
     "sleep_deep_sec", "sleep_light_sec", "sleep_rem_sec", "sleep_awake_sec",
     "steps", "steps_goal",
@@ -264,6 +267,14 @@ def get_garmin_cards(
     readiness = _card(w, "training_readiness_score", {
         "score": "training_readiness_score", "level": "readiness_level",
         "feedback_short": "readiness_feedback_short",
+        # 因素清單（Garmin 網頁的「因素」）：評級代碼＋對應的數值
+        "sleep_feedback": "readiness_sleep_feedback", "sleep_score": "sleep_score",
+        "recovery_feedback": "readiness_recovery_feedback", "recovery_time_hours": "recovery_time_hours",
+        "hrv_feedback": "readiness_hrv_feedback", "hrv_weekly_avg_ms": "hrv_weekly_avg_ms",
+        "hrv_status": "hrv_status",
+        "load_feedback": "readiness_load_feedback", "acute_load": "acute_load",
+        "sleep_history_feedback": "readiness_sleep_history_feedback",
+        "stress_feedback": "readiness_stress_feedback",
     })
     if readiness:
         readiness["series"] = _series(w, "training_readiness_score")

@@ -2616,6 +2616,48 @@ body.coach-open .coach-fab {
 .gc-focus-high { background: var(--gc-focus-high); }
 .gc-focus-low { background: var(--gc-focus-low); }
 
+/* 訓練完備程度的因素清單：名稱｜數值｜評級文字＋圖示，一列一項，緊湊（貼 Garmin 網頁的排法） */
+.gc-factors {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.gc-factor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: var(--fs-xs);
+}
+
+.gc-factor:last-child {
+  border-bottom: none;
+}
+
+.gc-factor-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gc-factor-value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.gc-factor-verdict {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 4.2em;
+  font-weight: 600;
+}
+
 /* 訓練負荷卡：「負荷比」標籤與數字並排 */
 .gc-ratio-row {
   display: flex;

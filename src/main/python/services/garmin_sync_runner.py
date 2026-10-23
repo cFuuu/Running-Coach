@@ -463,6 +463,13 @@ def normalize_wellness(raw: dict) -> dict | None:
         # --- 2026-10-22：Garmin 網頁卡片所需欄位（皆在既有 payload 內）---
         "readiness_level": readiness.get("level"),
         "readiness_feedback_short": readiness.get("feedbackShort"),
+        # --- 2026-10-23：訓練完備程度的六個因素評級（皆在既有 payload 內，零額外請求）---
+        "readiness_sleep_feedback": readiness.get("sleepScoreFactorFeedback"),
+        "readiness_recovery_feedback": readiness.get("recoveryTimeFactorFeedback"),
+        "readiness_hrv_feedback": readiness.get("hrvFactorFeedback"),
+        "readiness_load_feedback": readiness.get("acwrFactorFeedback"),
+        "readiness_sleep_history_feedback": readiness.get("sleepHistoryFactorFeedback"),
+        "readiness_stress_feedback": readiness.get("stressHistoryFactorFeedback"),
         "sleep_start_local": _local_ms_to_iso(sleep_dto.get("sleepStartTimestampLocal")),
         "sleep_end_local": _local_ms_to_iso(sleep_dto.get("sleepEndTimestampLocal")),
         "respiration_sleep_avg": sleep_dto.get("averageRespirationValue"),

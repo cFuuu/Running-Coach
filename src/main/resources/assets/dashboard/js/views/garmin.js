@@ -13,7 +13,7 @@
 
 import * as C from '../charts.js';
 import { h, clear, showLoading, showUnavailable } from '../core/dom.js';
-import { infoTip, hrvStatusMark } from '../core/facts.js';
+import { infoTip, hrvStatusMark, toneMark } from '../core/facts.js';
 import { HRV_STATUS_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 
 // Training Readiness 等級。MODERATE「中」對照 Garmin 網頁；其餘依 Garmin 的五級
@@ -27,7 +27,19 @@ var READINESS_BANDS = [
   { to: 100, className: 'gc-tone-purple' }
 ];
 // 回饋代碼的中文只收錄對照過 Garmin 網頁的；沒收錄的不顯示，不自己翻譯。
-var READINESS_FEEDBACK_LABEL = { RECOVERED_AND_READY: '已恢復且準備好' };
+var READINESS_FEEDBACK_LABEL = { RECOVERED_AND_READY: '已恢復且準備好', WELL_RESTED: '充分休息' };
+// 訓練完備程度的「因素」評級：Garmin 代碼 → 語氣（圖示形狀與顏色，與 HRV 狀態同一套）。
+// 只分語氣，不代表本專案的判讀。
+var READINESS_FACTOR_TONE = { VERY_GOOD: 'good', GOOD: 'good', MODERATE: 'warn', POOR: 'bad', VERY_POOR: 'bad' };
+// 各因素右側的中文：只收錄對照過 Garmin 網頁的組合（2026-10-23 Fu 截圖）；沒收錄的只顯示圖示，
+// 代碼放在滑鼠提示，不自己翻譯。看到新的組合再補。
+var READINESS_FACTOR_TEXT = {
+  sleep: { GOOD: '良好' },
+  recovery: { GOOD: '低度需求' },
+  load: { GOOD: '極佳' },
+  sleep_history: { MODERATE: '普通' },
+  stress: { GOOD: '低' }
+};
 // 耐力分數分級（共 7 級）。只收錄對照過網頁的 3＝進階，其餘顯示級數。
 var ENDURANCE_CLASS_LABEL = { 3: '進階' };
 // 訓練狀態色條的配色：只分語氣，不代表本專案的判讀
@@ -198,11 +210,51 @@ function hrvRangeGauge(weeklyAvg, low, upper) {
   return gauge;
 }
 
+/**
+ * 因素清單（Garmin 網頁的「因素」）：名稱｜數值｜評級文字＋形狀圖示。
+ * 評級是 Garmin 的黑盒輸出，只供參考；舊的日子沒有評級時整塊不顯示。
+ */
+function present(v) { return v !== null && v !== undefined; }
+
+function readinessFactors(c) {
+  var rows = [
+    { key: 'sleep', label: '睡眠分數', feedback: c.sleep_feedback,
+      value: present(c.sleep_score) ? num(c.sleep_score) : '' },
+    { key: 'recovery', label: '恢復時間', feedback: c.recovery_feedback,
+      value: present(c.recovery_time_hours) ? Math.round(c.recovery_time_hours) + ' 時' : '' },
+    { key: 'hrv', label: 'HRV 狀態', feedback: c.hrv_feedback,
+      value: present(c.hrv_weekly_avg_ms) ? num(c.hrv_weekly_avg_ms) + ' 毫秒' : '',
+      text: HRV_STATUS_LABEL[c.hrv_status] },
+    { key: 'load', label: '短期負荷', feedback: c.load_feedback,
+      value: present(c.acute_load) ? num(c.acute_load) : '' },
+    { key: 'sleep_history', label: '最近的睡眠分數', feedback: c.sleep_history_feedback, value: '' },
+    { key: 'stress', label: '最近的壓力', feedback: c.stress_feedback, value: '' }
+  ].filter(function (r) { return r.feedback; });
+  if (!rows.length) return null;
+  var list = h('div', 'gc-factors');
+  rows.forEach(function (r) {
+    var row = h('div', 'gc-factor');
+    row.appendChild(h('span', 'gc-factor-label', r.label));
+    row.appendChild(h('span', 'gc-factor-value', r.value));
+    var verdict = h('span', 'gc-factor-verdict');
+    var text = r.text || (READINESS_FACTOR_TEXT[r.key] || {})[r.feedback] || '';
+    if (text) verdict.appendChild(h('span', null, text));
+    var mark = toneMark(READINESS_FACTOR_TONE[r.feedback] || 'muted');
+    if (mark) verdict.appendChild(mark);
+    row.title = 'Garmin 評級：' + r.feedback;
+    row.appendChild(verdict);
+    list.appendChild(row);
+  });
+  return list;
+}
+
 function renderReadiness(c, body) {
   body.appendChild(gaugeWithCenter(C.bandArc(c.score, { min: 0, max: 100, bands: READINESS_BANDS }), num(c.score)));
   if (c.level) body.appendChild(h('div', 'gc-center-label', READINESS_LEVEL_LABEL[c.level] || c.level));
   var feedback = READINESS_FEEDBACK_LABEL[c.feedback_short];
   if (feedback) body.appendChild(h('div', 'gc-center-caption', feedback));
+  var factors = readinessFactors(c);
+  if (factors) body.appendChild(factors);
   // 序列的 key 是欄位名 training_readiness_score（見 garmin_cards._series），不是卡片上的 score
   return sparkFrom(c.series, 'training_readiness_score');
 }

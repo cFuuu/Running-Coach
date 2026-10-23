@@ -234,6 +234,14 @@ CREATE TABLE IF NOT EXISTS daily_wellness (
     -- Garmin 黑盒衍生值，僅供顯示。
     readiness_level              TEXT,
     readiness_feedback_short     TEXT,
+    -- 2026-10-23：訓練完備程度的六個「因素」評級（Garmin 網頁的因素清單），存 Garmin 原始代碼
+    -- （VERY_GOOD／GOOD／MODERATE／POOR…）。黑盒衍生值，僅供顯示與標明「Garmin 參考」後引用，不進規則引擎。
+    readiness_sleep_feedback          TEXT,
+    readiness_recovery_feedback       TEXT,
+    readiness_hrv_feedback            TEXT,
+    readiness_load_feedback           TEXT,
+    readiness_sleep_history_feedback  TEXT,
+    readiness_stress_feedback         TEXT,
     -- 主睡眠的入睡／起床時間（當地時間 ISO 字串）
     sleep_start_local            TEXT,
     sleep_end_local              TEXT,
