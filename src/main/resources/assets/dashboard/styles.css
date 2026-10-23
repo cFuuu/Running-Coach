@@ -3193,6 +3193,41 @@ button.recent-row .rc-actual .rc-main {
   }
 }
 
+/* 中寬度（約 480～600px）：「實際」拆成距離｜配速｜心率三個對齊的欄，填滿活動與實際之間的空白。
+   .rc-actual／.rc-sub 用 display:contents 讓裡面的節點直接成為格線的欄 */
+@container block (min-width: 481px) and (max-width: 600px) {
+  .recent-row {
+    grid-template-columns: 5rem minmax(0, 1fr) 4.4rem 4.2rem 4rem;
+  }
+
+  .rc-actual,
+  .rc-sub {
+    display: contents;
+  }
+
+  .rc-sep {
+    display: none;
+  }
+
+  .rc-actual .rc-main,
+  .rc-pace,
+  .rc-hr {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .rc-pace,
+  .rc-hr {
+    color: var(--text-muted);
+    font-size: var(--fs-sm);
+  }
+
+  /* 表頭「實際」橫跨三欄 */
+  .recent-head > :nth-child(3) {
+    grid-column: 3 / span 3;
+  }
+}
+
 .today-block {
   background: var(--surface-sunken);
   border: 1px solid var(--border);

@@ -1207,15 +1207,21 @@ export function renderRecentSessions() {
 
     // 實際：跑步以距離為主、配速與心率小字；其他活動以時長為主
     var actual = h('span', 'rc-actual');
-    var sub = [];
+    var paceText = '';
     if (a.is_running) {
       actual.appendChild(h('span', 'rc-main', a.distance_km ? C.formatNumber(a.distance_km, 1) + ' km' : '—'));
-      if (a.distance_km && a.duration_sec) sub.push(C.formatPace(a.duration_sec / a.distance_km) + '/km');
+      if (a.distance_km && a.duration_sec) paceText = C.formatPace(a.duration_sec / a.distance_km) + '/km';
     } else {
       actual.appendChild(h('span', 'rc-main', a.duration_sec ? Math.round(a.duration_sec / 60) + ' 分' : '—'));
     }
-    if (a.avg_hr_bpm) sub.push(Math.round(a.avg_hr_bpm) + ' bpm');
-    if (sub.length) actual.appendChild(h('span', 'rc-sub', sub.join(' · ')));
+    var hrText = a.avg_hr_bpm ? Math.round(a.avg_hr_bpm) + ' bpm' : '';
+    // 配速與心率各自一個節點（缺的留空殼）：中寬度時拆成獨立欄，缺值也不會讓後面的欄位錯位；
+    // 其他寬度當一行小字「配速 · 心率」
+    var sub = h('span', 'rc-sub');
+    sub.appendChild(h('span', 'rc-pace', paceText));
+    if (paceText && hrText) sub.appendChild(h('span', 'rc-sep', ' · '));
+    sub.appendChild(h('span', 'rc-hr', hrText));
+    actual.appendChild(sub);
     row.appendChild(actual);
 
     // 課表：同一天多場對到同一份課表時只列在第一場，其餘與沒對到課表的一律「—」
