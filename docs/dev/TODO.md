@@ -1092,3 +1092,18 @@
     - [x] ② **同步規則**（Fu 選擇 HRmax 與靜止心率一起同步）：[`garmin_api_client.fetch_heart_rate_zones()`](../../src/main/python/services/garmin_api_client.py)＋[`garmin_sync_runner._sync_hr_settings()`](../../src/main/python/services/garmin_sync_runner.py)，每次同步打一次。優先取 `RUNNING` 區間、沒有則 `DEFAULT`。HRmax 在 `max_hr_source='measured'` 時不覆寫，其餘覆寫並標為 `watch_display`；靜止心率一律覆寫（無來源欄位，Garmin 預設自動更新）。有變動時同步結果帶 `hr_settings_changes`（新舊值），CLI 印出、MCP `sync_garmin_data` 說明要求教練轉述。抓取失敗不影響同步
     - [x] ③ **不存歷史版本**：改了就全部即時重算。已知偏誤：整段歷史都用目前的靜止心率 48 計算，2026-05 前後靜止心率約 57 的月份，%HRR 會被略為高估。若日後需要更準，可改用每日靜止心率（另開項目）
   - **驗收結果**：真實帳號同步 → `resting_hr_bpm` 56 → 48、HRmax 維持 193（當天稍早已手動改）、CLI 印出變動；再同步一次不誤報；`max_hr_source` 暫設 `measured`（200）後同步不被覆寫，已還原。TSB 影響小：10/23 −9.2 → −9.7、CTL 32.9 → 35.3。940 項測試通過。
+
+- **📋 N-29 行事曆／趨勢／訓練紀錄三頁改版（2026-10-24 定案，待執行）**：Fu 對照首頁後回饋：行事曆只有顏色、看不出內容；趨勢頁約 30 張圖平鋪、沒有邏輯分區，Garmin 卡與首頁重複；訓練紀錄頁不直覺。經三輪預覽討論後定案，完整規格見 [DASHBOARD_TASKS.md Task E](DASHBOARD_TASKS.md#task-e行事曆趨勢訓練紀錄改版2026-10-24-定案待執行)。
+  - [ ] E.2 **趨勢**：照首頁分四區（訓練負荷／恢復與身體／跑力表現／訓練量與強度），每區是數字卡加一張大折線圖，現有每個指標都做成開關，CTL／ATL／TSB 畫在同一張圖，心率區間分布保留原設計。Garmin 數據獨立一區，分三層：可自選的線圖、小格分數、首頁式圖卡。
+  - [ ] E.3 **訓練紀錄**：C1 日誌列，按週分組，點擊在原地展開。⚠️ 分圈小圖要用到每圈的配速和心率，屬於 API 變更（`/api/sessions` 加分圈摘要，或展開時才抓），**動工前先寫計畫給 Fu 確認，並補進 PLAN**。
+  - [ ] E.1 **行事曆**：當月月曆，每筆活動一顆膠囊（圖示＋公里或時間），顏色只分運動種類，暖身沿用 N-25 關聯併入主課，用外框表示課表狀態，圖例收進 ⓘ，頂部顯示連續訓練週數。**待定：圖示 A／B／C 三選一、外框細則**（`ambiguous` 配對、課表與實際運動種類不同時怎麼畫）。
+  - ⚠️ 趨勢的數字卡要和「前一個等長區間」比較，但目前 API 只回傳選定區間。若最後決定由後端補欄位，同樣要先寫進 TODO 和 PLAN。
+
+- **📋 N-30 離線 Dashboard 匯出腳本＋iPhone 開啟流程（2026-10-24 定案，待執行）**：本機不刪任何歷年紀錄，只縮小匯出檔。規格與 iPhone 捷徑步驟見 [OFFLINE_EXPORT.md](OFFLINE_EXPORT.md)。
+  - **現況**：`output/dashboard_offline.html` 有 6.3 MB，是過去臨時產生的，**專案裡沒有可以重跑的產生腳本**。檔內的載入程式已經支援 gzip（`__SNAPSHOT_GZ__`），只是沒有啟用。
+  - **實測**：只做 gzip，資料部分就從 5.34 MB 降到 0.94 MB，完全不丟資料。整份 HTML 約 1.3 MB，經過捷徑的 base64 後約 1.7 MB（現在約 8.4 MB）。
+  - [ ] ① 新增 `scripts/build_dashboard_offline.py`，寫法比照 `build_pace_calculator.py`。功能：gzip、`--detail-months`、`--copy-to`（或環境變數 `RC_OFFLINE_EXPORT_DIR`，key 加進 `.env.example`）。
+  - [ ] ② 寫出前做資安掃描：出現 token、cookie、email、`userProfileId` 就中止。另外要有單元測試。
+  - [ ] ③ 離線模式隱藏線上功能（同步、分析、AI 教練、今日體感、自訂區間）；頁首顯示「資料截至」；「今天」改用匯出日期。
+  - [ ] ④ Fu 在 iCloud for Windows 開啟 iCloud 雲碟（2026-10-24 檢查時找不到 `iCloudDrive` 資料夾），並把現有捷徑的第一步改成「取得檔案」。iOS 15 起只能匯入簽署過的捷徑，Windows 無法產生，所以要手動建立。
+  - [ ] ⑤ 驗收：用 Playwright 以 `file://` 開啟測試，再由 Fu 用 iPhone 真機確認。

@@ -450,6 +450,8 @@ grill 過程中最先被推翻的，是「單押一派 vs 多派融合 vs 依情
 | `output/current_training_plan.md` | 當期課表排程與配速指引 | `training_plan` |
 | `output/training_log.md` | 實際執行紀錄與教練觀察 | `activities` / `daily_wellness` |
 
+**離線 Dashboard 匯出檔**（N-30，2026-10-24 定案）：`output/dashboard_offline.html` 是本機資料庫的唯讀快照，內含健康資料，不含任何帳密或 token。匯出時寫出前會掃描，發現 token、cookie、email 或 `userProfileId` 就中止。這份檔案另外會複製一份到 **Fu 本人的 iCloud Drive**（路徑由 `RC_OFFLINE_EXPORT_DIR` 設定，不寫死在程式碼），供 iPhone 離線閱讀。資料庫仍是唯一的真實來源，匯出檔只是快照，不會再寫回資料庫。流程見 [OFFLINE_EXPORT.md](OFFLINE_EXPORT.md)。
+
 > 這些 md 是**資料庫就緒前的過渡方案**。Phase 1 資料匯入完成後應遷移進 SQLite，避免同一份資料存在兩處而互相矛盾。
 
 編號慣例：本檔與 TODO.md 用 `P-`（專案層級待確認事項）；`output/athlete_profile.md` 用 `A-`（學員個人層級）。兩組編號各自獨立，不互相延續。
