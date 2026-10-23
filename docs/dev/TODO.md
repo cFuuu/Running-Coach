@@ -1103,7 +1103,7 @@
     - 第一批，可平行：W0 共用基礎（圖示、色彩 token、`multiLineChart`／`lapStrip`）、B1 分圈摘要 API、B2 課表配對寫入、W4a 匯出腳本（屬於 N-30）
     - 第二批：W1 趨勢、W2 訓練紀錄、W3 行事曆
     - 第三批：W4b 離線模式收尾 → W4c iPhone 實機
-  - [ ] W0 共用基礎　- [ ] B1 分圈摘要 API（⚠️ 後端，待 Fu 確認）　- [ ] B2 課表配對寫入　- [ ] W1 趨勢　- [ ] W2 訓練紀錄　- [ ] W3 行事曆
+  - [ ] W0 共用基礎　- [ ] B1 分圈摘要 API（2026-10-24 Fu 同意，見 PLAN §1）　- [ ] B2 課表配對寫入　- [ ] W1 趨勢　- [ ] W2 訓練紀錄　- [ ] W3 行事曆
 
 - **📋 N-30 離線 Dashboard 匯出腳本＋iPhone 開啟流程（2026-10-24 定案，待執行）**：本機不刪任何歷年紀錄，只縮小匯出檔。規格與 iPhone 捷徑步驟見 [OFFLINE_EXPORT.md](OFFLINE_EXPORT.md)。
   - **現況**：`output/dashboard_offline.html` 有 6.3 MB，是過去臨時產生的，**專案裡沒有可以重跑的產生腳本**。檔內的載入程式已經支援 gzip（`__SNAPSHOT_GZ__`），只是沒有啟用。

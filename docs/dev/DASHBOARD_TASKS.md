@@ -776,7 +776,7 @@ B1、B2、W4a 可以和 W0 同時開工
 | 流程 | 內容 | 主要檔案 | 依賴 | 可在雲端做 | 必須在本機做 |
 |---|---|---|---|---|---|
 | **W0 共用基礎** | ① `js/core/sport-icons.js`：E.1 的八個 SVG，搭配 `activity_type → 運動種類` 對照，沿用 `activity_types.py` 的分類。② 運動種類色彩 token：淺色是淡底加深字，深色是方案 ① 的飽和實心加自動黑白字，並擴充 `test_dashboard_theme_contrast.py` 驗證對比 ≥4.5:1。③ `charts.js` 新增 `multiLineChart`：多條線、同單位共用軸、最多左右兩軸、超過兩種單位自動改成各自刻度、TSB 中線柱、游標提示。④ `charts.js` 新增 `lapStrip`：每圈一根柱，高度是配速，顏色是區間。⑤ ⓘ 提示元件確認可以重用 | `core/sport-icons.js`（新增）、`styles.css`（token）、`charts.js`、`core/state.js`、測試 | — | 全部，含 mock 模式截圖 | 真實 DB 下深色、淺色各看一次 |
-| **B1 分圈摘要 API** | `/api/sessions` 每場加 `lap_strip: [{pace_sec_per_km, avg_hr_bpm, zone}]`。`zone` 用與 `hr_zones` 相同的 %HRR 區間換算；沒有分圈或沒有心率時為 `null`。同步更新契約文件與 mock。⚠️ **後端變更，需 Fu 確認後才寫進 PLAN 並動工** | `dashboard_queries.list_sessions()`、本檔 API 契約、`mock-data.js`、`test_dashboard_queries.py` | — | 全部（fixture DB） | 真實 DB 檢查回應大小與區間是否正確 |
+| **B1 分圈摘要 API** | `/api/sessions` 每場加 `lap_strip: [{pace_sec_per_km, avg_hr_bpm, zone}]`。`zone` 用與 `hr_zones` 相同的 %HRR 區間換算；沒有分圈或沒有心率時為 `null`。同步更新契約文件與 mock。✅ 2026-10-24 Fu 同意，決策見 PLAN §1 | `dashboard_queries.list_sessions()`、本檔 API 契約、`mock-data.js`、`test_dashboard_queries.py` | — | 全部（fixture DB） | 真實 DB 檢查回應大小與區間是否正確 |
 | **B2 課表配對寫入** | 新增 `PUT /api/plan/{plan_id}/link`，body 為 `{activity_id \| null}`。檢查同一天、運動種類相容，只寫 `linked_activity_id`，來源限制沿用 `client_access`。測試：寫入、取消、拒絕不相容的組合，寫入後 `plan_reconciliation` 回傳 `exact`。決策已記入 PLAN §1 | `routes_dashboard.py`、`training_plan_store.py` 或新的小函式、測試 | — | 全部 | 對真實 DB 寫一筆再取消 |
 | **W1 趨勢** | E.2 全部：四區各有數字卡（含前期比較）＋大折線圖＋開關列；訓練量區保留心率區間分布；Garmin 區分三層，第三層直接共用 `garmin.js`。開關狀態存進 `rc-dashboard-settings`。重寫 `views/trends.js` 的版面組裝，`load.js`／`wellness.js`／`overview.js` 只保留資料轉換的函式，不能刪掉現有指標 | `views/trends.js`、`load.js`、`overview.js`、`wellness.js`、`styles.css`（E.2 區塊） | W0 | 全部（mock） | 真實 DB 下三種寬度、深淺色、Fu 親自確認 |
 | **W2 訓練紀錄** | E.3 C1 日誌列：按週分組並附合計、對齊的數字欄位、`lapStrip`、點擊在原地展開（初版沿用現有單場分析元件）、手機兩行版面 | `views/sessions.js`、`styles.css`（E.3 區塊）、`mock-data.js` | W0、B1 | 全部（mock） | 同上 |
@@ -786,7 +786,7 @@ B1、B2、W4a 可以和 W0 同時開工
 | **W4c iPhone 實機** | Fu 開啟 iCloud 雲碟、修改捷徑（OFFLINE_EXPORT.md §3、§4），用真機開啟 | — | W4b | — | **只有 Fu 能做** |
 
 **建議的開工批次**
-1. **第一批（平行）**：W0、B1（Fu 確認後）、B2、W4a。
+1. **第一批（平行）**：W0、B1、B2、W4a。
 2. **第二批（平行）**：W1、W2、W3，每個流程等它依賴的項目合併後才開始。
 3. **第三批**：W4b，最後是 W4c。
 
@@ -796,6 +796,8 @@ B1、B2、W4a 可以和 W0 同時開工
 - 本機用真實 DB 驗證。
 - Fu 在瀏覽器親自確認後才合併。
 - 每個流程獨立 commit，訊息依全域規範。
+
+**執行方式（2026-10-24 Fu 決定）**：全部在本機做。每個流程開一個平行 session，各自在獨立的 git worktree 分支上實作，完成後自行跑測試和 mock 截圖、commit。由主 session 檢查後併回 main，並用真實 DB 驗證。全部工項完成後，再對 Task E 做一次總核對。
 
 ---
 
