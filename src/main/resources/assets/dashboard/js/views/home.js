@@ -560,17 +560,19 @@ export function renderToday() {
   planBlock.appendChild(planBlockTitle(planned));
   planBlock.appendChild(renderTodayPlanRow('今日', planned.today));
   planBlock.appendChild(renderTodayPlanRow('明日', planned.tomorrow));
-  node.appendChild(planBlock);
 
-  // 訓練完備程度在左；右邊疊「本週訓練狀況」與「自評今日體感狀態」（區塊太窄時上下排）
+  // 課表在左、窄窄的「自評今日體感狀態」在右（區塊太窄時上下排）
+  var top = h('div', 'today-top');
+  top.appendChild(planBlock);
+  top.appendChild(renderFeelBlock((data && data.date) || todayISO()));
+  node.appendChild(top);
+
+  // 訓練完備程度與本週訓練狀況並排（區塊太窄時上下排）
   var pair = h('div', 'today-pair');
   pair.appendChild(renderTodayReadinessBlock(data.readiness));
-  var stack = h('div', 'today-stack');
   var weekTraining = h('div', 'today-block fig-block');
   weekTraining.id = 'week-training';
-  stack.appendChild(weekTraining);
-  stack.appendChild(renderFeelBlock((data && data.date) || todayISO()));
-  pair.appendChild(stack);
+  pair.appendChild(weekTraining);
   node.appendChild(pair);
   renderWeekTraining();
 

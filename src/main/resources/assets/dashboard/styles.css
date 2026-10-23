@@ -3632,28 +3632,34 @@ button.recent-row .rc-actual .rc-main {
   color: var(--ready-low-text);
 }
 
-/* 本週訓練狀況與自評今日體感狀態疊在右欄；多出的高度給本週訓練狀況，
-   體感區塊貼底，與左欄的訓練完備程度下緣對齊 */
-.today-stack {
+/* 課表在左、自評今日體感狀態在右：體感只佔內容寬度（三顆圖示），其餘給課表，
+   課表文字才不會被擠。區塊太窄時上下排 */
+.today-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+@container block (min-width: 560px) {
+  .today-top {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+/* 自評今日體感狀態：三格選擇，選中的填色（疲憊紅、普通黃、充沛綠）。
+   與課表同列時被拉高，圖示在剩餘空間內垂直置中 */
+.feel-block {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-width: 0;
 }
 
-.today-stack > .fig-block {
-  flex: 1 1 auto;
+.feel-block .feel-options {
+  margin-block: auto;
 }
 
-/* 疊放時日期接在標題後面（不獨佔第二行），省下一行高度；放不下才自然換行 */
-.today-stack .fig-block .fig-title-date {
-  flex-basis: auto;
-  margin-top: 0;
-}
-
-/* 自評今日體感狀態：三段等寬選擇，選中的填色（疲憊紅、普通黃、充沛綠） */
 .feel-block .today-block-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0 6px;
   margin-bottom: 8px;
