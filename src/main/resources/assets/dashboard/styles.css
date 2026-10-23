@@ -3743,11 +3743,13 @@ button.recent-row .rc-dist {
   min-height: 148px;
 }
 
+/* 圖示中心對到左邊課表卡片「今日／明日」之間的分隔線：那是課表標題以下那塊的中心，
+   比整張卡的幾何中線低「課表標題高度的一半」（約 8px，依截圖估算） */
 .feel-block .feel-options {
   position: absolute;
   left: 12px;
   right: 12px;
-  top: 50%;
+  top: calc(50% + 8px);
   transform: translateY(-50%);
 }
 
