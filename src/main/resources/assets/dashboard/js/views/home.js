@@ -964,17 +964,17 @@ export function renderWeekTraining() {
   // 里程與時間兩列在左、完成率環形圖在右；說明文字放在下方整列
   var card = h('div', 'wt-card');
   var figs = h('div', 'wt-figs');
-  figs.appendChild(weekFigRow('里程',
+  figs.appendChild(weekFigRow('距離',
     C.formatNumber(s.doneKm, 1),
     s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—', 'km'));
-  figs.appendChild(weekFigRow('時間', hoursText(s.doneSec), null, 'h'));
+  figs.appendChild(weekFigRow('時間', hoursText(s.doneSec), null, 'hr'));
   figs.appendChild(weekFigRow('堂數', String(s.doneSessions), String(s.plannedSessions), '堂'));
   card.appendChild(figs);
 
   if (s.plannedKm > 0) {
     var pct = s.doneKm / s.plannedKm * 100;
     var ring = progressRing(pct);
-    ring.title = '以里程計算：' + Math.round(pct) + '%';
+    ring.title = '以距離計算：' + Math.round(pct) + '%';
     // 與綜合整備狀態的判定圖示同結構（圖＋下方一行字），兩張卡片置中後兩個圖的中心才會在同一高度
     var ringBox = h('span', 'wt-ring-box');
     ringBox.appendChild(ring);

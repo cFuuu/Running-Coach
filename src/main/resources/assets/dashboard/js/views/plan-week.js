@@ -108,15 +108,15 @@ export function planWeekTileValue(big, rest, trailing) {
   return val;
 }
 
-/** 本週預計跑量區段：實際／課表公里數，下方進度條內直接寫百分比。 */
+/** 本週跑量區段：實際／課表公里數，下方進度條內直接寫百分比。 */
 function kmSection(s) {
   var sec = h('div', 'pw-sec');
-  sec.appendChild(h('div', 'pw-tile-label', '本週預計跑量'));
+  sec.appendChild(h('div', 'pw-tile-label', '本週跑量'));
   var pct = s.plannedKm > 0 ? Math.min(100, (s.doneKm / s.plannedKm) * 100) : null;
   sec.appendChild(planWeekTileValue(C.formatNumber(s.doneKm, 1),
     '/ ' + (s.plannedKm > 0 ? C.formatNumber(s.plannedKm, 1) : '—') + ' km'));
   if (s.plannedKmEstimated > 0) {
-    sec.title = '預計里程含 ' + C.formatNumber(s.plannedKmEstimated, 1)
+    sec.title = '預計距離含 ' + C.formatNumber(s.plannedKmEstimated, 1)
       + ' km 推算值：課表只寫時間的課，以學員檔的輕鬆配速中點換算';
   }
   if (pct !== null) {
@@ -141,7 +141,7 @@ function kmSection(s) {
 function sessionsSection(s) {
   var sec = h('div', 'pw-sec pw-sec-inline');
   var left = h('div');
-  left.appendChild(h('div', 'pw-tile-label', '課表完成進度'));
+  left.appendChild(h('div', 'pw-tile-label', '課表完成度'));
   left.appendChild(planWeekTileValue(String(s.doneSessions), '/ ' + s.plannedSessions + ' 堂'));
   sec.appendChild(left);
   var dots = h('div', 'pw-dots');
