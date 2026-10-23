@@ -1895,10 +1895,14 @@ body.coach-open .coach-fab {
 }
 
 /* 數字已放大，字重用半粗即可；再粗反而糊成一團（Fu 回饋） */
-#view-home .kpi-value,
-#view-home .pw-big,
-#view-home .pb-time {
+#view-home .pw-big {
   font-weight: 600;
+}
+
+/* 指標卡與最佳成績卡的主要數字（-9.7、44.9、40.2、1:57:27、13:59…）：2026-10-23 Fu 要求再加粗一階 */
+#view-home .kpi-value,
+#view-home .pb-time {
+  font-weight: 700;
 }
 
 /* 卡片標題：與數字拉開層級但不能小到要瞇眼看。2026-10-22 由 19px 降為 15px，
