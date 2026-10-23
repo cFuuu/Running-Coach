@@ -667,6 +667,18 @@ var LOAD_TIPS = {
   ]
 };
 
+/**
+ * 信賴度說明（併進 ⓘ 提示）。卡片上不再放「低信心度」標籤，太突兀；
+ * 可信度仍照三欄位契約讀出，只是改成點 ⓘ 才看得到。信賴度為 high 時沒有額外說明。
+ */
+function confidenceTip(fact) {
+  var c = fact && fact.confidence;
+  if (!c || c.level === 'high') return [];
+  var biases = (c.biases || []).map(function (b) { return b.detail; }).filter(Boolean);
+  return ['信賴度：' + (CONFIDENCE_LABEL[c.level] || c.level)
+    + (biases.length ? '。已知偏誤：' + biases.join('；') : '')];
+}
+
 // 訓練負荷區接在 TSB／ATL／CTL 後面的 Garmin 卡片（views/garmin.js）
 var HOME_LOAD_GARMIN_KEYS = ['training_load', 'training_status', 'load_focus'];
 
@@ -695,28 +707,25 @@ export function renderHomeLoad() {
     label: '狀態平衡',
     abbr: 'TSB',
     value: typeof tsb === 'number' ? (tsb > 0 ? '+' : '') + C.formatNumber(tsb, 1) : '—',
-    badge: confBadge(load.tsb),
     note: ctl ? '佔 CTL ' + (tsb > 0 ? '+' : '−') + Math.abs(tsb / ctl * 100).toFixed(0) + '%，近 30 天走勢' : '近 30 天走勢',
     series: rows.map(function (r) { return r.tsb ? r.tsb.value : null; }),
-    tip: LOAD_TIPS.tsb
+    tip: LOAD_TIPS.tsb.concat(confidenceTip(load.tsb))
   }));
   cards.appendChild(kpiCard({
     label: '近期疲勞',
     abbr: 'ATL',
     value: load.atl ? C.formatNumber(load.atl.value, 1) : '—',
-    badge: confBadge(load.atl),
     note: '7 日指數加權，近 30 天走勢',
     series: rows.map(function (r) { return r.atl ? r.atl.value : null; }),
-    tip: LOAD_TIPS.atl
+    tip: LOAD_TIPS.atl.concat(confidenceTip(load.atl))
   }));
   cards.appendChild(kpiCard({
     label: '長期體能',
     abbr: 'CTL',
     value: load.ctl ? C.formatNumber(load.ctl.value, 1) : '—',
-    badge: confBadge(load.ctl),
     note: '42 日指數加權，近 30 天走勢',
     series: rows.map(function (r) { return r.ctl ? r.ctl.value : null; }),
-    tip: LOAD_TIPS.ctl
+    tip: LOAD_TIPS.ctl.concat(confidenceTip(load.ctl))
   }));
 
   // Garmin 的訓練負荷、訓練狀態、負荷焦點（2026-10-22 Fu 指定）：與趨勢頁「Garmin 數據」
