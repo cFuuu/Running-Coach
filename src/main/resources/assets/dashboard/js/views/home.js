@@ -351,7 +351,6 @@ export function renderTodayReadinessBlock(readiness) {
   var block = h('div', 'today-block readiness-block fig-block');
   var title = h('div', 'today-block-title');
   title.appendChild(h('span', null, '綜合訓練完備程度'));
-  title.appendChild(infoTip('綜合訓練完備程度', READINESS_TIPS));
   block.appendChild(title);
 
   var entry = readiness && readiness.today;
@@ -366,6 +365,8 @@ export function renderTodayReadinessBlock(readiness) {
   }
   var shownDate = entry && entry.date ? entry.date : (state.today && state.today.date);
   if (shownDate) title.appendChild(h('span', 'today-note fig-title-date', C.shortDate(shownDate) + ' (' + dowLabel(shownDate) + ')'));
+  // ⓘ 靠標題列最右邊，所以要在日期之後才加
+  title.appendChild(infoTip('綜合訓練完備程度', READINESS_TIPS));
 
   // 左側三個維度的數值 / 門檻、右側判定圖示
   var card = h('div', 'wt-card');
