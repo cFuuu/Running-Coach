@@ -660,19 +660,28 @@ event: error        data: {"message": "..."}      ← 之後串流結束；該�
 - **深色模式**：採方案 ①「飽和實心」，文字依底色亮度自動選黑或白，對比 ≥4.5:1（見 `v5_dark.png`）。黃、淺藍、粉、橘配黑字，其餘配白字。
 - 已執行外框在深色模式是白框，中間隔一圈背景色。
 
-**圖示（2026-10-24 定案為 A3 雙色調；人形待選）**
+**圖示（2026-10-24 定案）**
 - 採 A3 雙色調：線條加 22% 同色填面（見 `v5_ic.png`）。全站共用一套，寫成 SVG 常數，不引用外部圖示庫。
 - **人形不要火柴人**。跑步、健走、游泳三個圖示的候選（見 `v6_fig.png`）：
   - P1 剪影雙色
   - P2 奧運式粗筆畫（遠側手腳淡色）
   - P3 不畫人，改用跑鞋／腳印／泳鏡
-- **Fu 選 P2，並要求修正**：v6 放大後關節像錯位，游泳的頭和手臂比例不對。修正版見 `v7_p2.png`：
-  - 筆畫寬 2.9，頭的半徑 2.1–2.2。
-  - 跑步改成後腳蹬地、前腳抬膝。
-  - 健走的遠側手腳藏在身體後面。
-  - 游泳改成頭壓在水線上，手臂從肩膀劃一道弧線到頭頂前方。
-  - **待 Fu 確認修正版。**
-- 健身、登山、自行車、賽事（獎牌）、其他（心跳線）維持 A3。
+- **人形定案（2026-10-24）**：跑步、健走用 **P2 原版**；游泳用**修正版**，頭和手臂之間留出空隙，手臂從肩膀劃一道弧線到頭頂前方（見 `v7_p2.png`）。
+- **最終 SVG**：八個圖示都以 `currentColor` 上色，`viewBox` 為 24×24，淡色部分用 `stroke-opacity` 或 `fill-opacity` 做出雙色調。實作時直接搬進一個共用模組（例如 `js/core/sport-icons.js`），不要另外再畫一份：
+
+  ```js
+  const SPORT_ICONS = {
+    run: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.1"><circle cx="16" cy="3.9" r="2.4" fill="currentColor" stroke="none"/><path d="M13.6 8.1 10 8.7 8.1 11.3M11.2 12.6 8.8 16.6 4.7 17.5" stroke-opacity=".4"/><path d="M14.2 7.3 11.2 12.6l3.4 2.8-1.2 5.4M13.9 8l2.9 2.7 2.8-.5"/></svg>',
+    strength: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.6" y="6.5" width="3.2" height="11" rx="1.2" fill="currentColor" fill-opacity=".22"/><rect x="16.2" y="6.5" width="3.2" height="11" rx="1.2" fill="currentColor" fill-opacity=".22"/><path d="M2.6 9.5v5M21.4 9.5v5M7.8 12h8.4"/></svg>',
+    walk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.1"><circle cx="12.8" cy="3.9" r="2.4" fill="currentColor" stroke="none"/><path d="M12.3 8.2 10 11.2l-.6 2.6M11.6 13.2 10 17.1l-1.2 3.9" stroke-opacity=".4"/><path d="M12.3 7.5 11.6 13.2l2 3.8 1 4M12.4 8.3l2 3 1.8 1.4"/></svg>',
+    hike: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5 8.6 9.6l3.3 5.1 2.6-3.6 7 8.4z" fill="currentColor" fill-opacity=".22"/><path d="M7.1 12.1 8.6 13.2l1.4-1.1"/><circle cx="17.5" cy="5" r="1.8" fill="currentColor"/></svg>',
+    bike: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.6" cy="16.2" r="3.6" fill="currentColor" fill-opacity=".22"/><circle cx="18.4" cy="16.2" r="3.6" fill="currentColor" fill-opacity=".22"/><path d="M5.6 16.2 9.4 9.4h5.9l3.1 6.8"/><path d="M9.4 9.4 12 16.2h1.2"/><path d="M8 6.8h3M14.3 6.2h2.3l-1.3 3.2"/></svg>',
+    swim: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="2.9" d="M3.4 13.4 12.6 12.4"/><circle cx="16.6" cy="12.2" r="2" fill="currentColor" stroke="none"/><path stroke-width="2.9" d="M11.2 12.2Q12.4 5 18.6 7.2"/><path stroke-width="1.8"  d="M2 16.8c1.7 0 1.7-1.3 3.3-1.3S7 16.8 8.6 16.8s1.7-1.3 3.4-1.3 1.7 1.3 3.4 1.3 1.6-1.3 3.3-1.3 1.7 1.3 3.3 1.3"/><path stroke-width="1.8" stroke-opacity=".4" d="M2 20.4c1.7 0 1.7-1.3 3.3-1.3S7 20.4 8.6 20.4s1.7-1.3 3.4-1.3 1.7 1.3 3.4 1.3 1.6-1.3 3.3-1.3 1.7 1.3 3.3 1.3"/></svg>',
+    race: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.2 2.8 10.6 9M15.8 2.8 13.4 9"/><circle cx="12" cy="14.8" r="5.6" fill="currentColor" fill-opacity=".22"/><path d="m12 12.2.9 1.8 2 .3-1.4 1.4.3 2-1.8-.9-1.8.9.3-2-1.4-1.4 2-.3z" fill="currentColor" stroke-width="1"/></svg>',
+    other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5h3.8l2.3-5.5 4 11 2.4-5.5h6.5"/></svg>',
+  };
+  ```
+- 健身、登山、自行車、賽事（獎牌）、其他（心跳線）使用 A3。
 
 ### E.2 趨勢（定案）
 
