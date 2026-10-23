@@ -3735,13 +3735,14 @@ button.recent-row .rc-dist {
 
 /* 自評今日體感狀態：三格選擇，選中的填色（疲憊紅、普通黃、充沛綠）。
    與課表同列時被拉高，圖示在剩餘空間內垂直置中 */
+/* 三列：標題｜圖示（吃掉剩下的高度、在其中垂直置中）｜狀態文字（固定在最下面） */
 .feel-block {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
 }
 
 .feel-block .feel-options {
-  margin-block: auto;
+  align-self: center;
 }
 
 .feel-block .today-block-title {
@@ -3754,7 +3755,6 @@ button.recent-row .rc-dist {
 
 .feel-status {
   min-height: 1.4em;
-  margin-top: 4px;
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
