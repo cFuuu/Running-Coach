@@ -273,7 +273,7 @@ function garminHrvRow() {
   var val = h('span', 'wt-row-value is-centered');
   var mark = hrvStatusMark(status);
   if (mark) val.appendChild(mark);
-  val.appendChild(h('span', 'rd-value', status ? (HRV_STATUS_LABEL[status] || status) : '—'));
+  val.appendChild(h('span', 'rd-value rd-value-text', status ? (HRV_STATUS_LABEL[status] || status) : '—'));
   row.appendChild(val);
 
   var tips = ['Garmin（Firstbeat）判定的 HRV 狀態，演算法未公開，不屬於本專案的判定規則'];

@@ -3543,6 +3543,11 @@ button.recent-row .rc-actual .rc-main {
   line-height: 1.2;
 }
 
+/* 狀態文字（平衡等）比數字小一階：中文字形視覺上比同字級的數字大 */
+.fig-block .rd-value.rd-value-text {
+  font-size: var(--fs-md);
+}
+
 /* 左側三列與右側圖示（判定圓圈／完成率環）在標題下方的剩餘高度內垂直置中。
    兩張卡片列數相同時，兩個圖示的高度也會一致 */
 .fig-block .wt-card {
