@@ -1115,8 +1115,8 @@
 - **📋 N-30 離線 Dashboard 匯出腳本＋iPhone 開啟流程（2026-10-24 定案，待執行）**：本機不刪任何歷年紀錄，只縮小匯出檔。規格與 iPhone 捷徑步驟見 [OFFLINE_EXPORT.md](OFFLINE_EXPORT.md)。
   - **現況**：`output/dashboard_offline.html` 有 6.3 MB，是過去臨時產生的，**專案裡沒有可以重跑的產生腳本**。檔內的載入程式已經支援 gzip（`__SNAPSHOT_GZ__`），只是沒有啟用。
   - **實測**：只做 gzip，資料部分就從 5.34 MB 降到 0.94 MB，完全不丟資料。整份 HTML 約 1.3 MB，經過捷徑的 base64 後約 1.7 MB（現在約 8.4 MB）。
-  - [ ] ① 新增 `scripts/build_dashboard_offline.py`，寫法比照 `build_pace_calculator.py`。功能：gzip、`--detail-months`、`--copy-to`（或環境變數 `RC_OFFLINE_EXPORT_DIR`，key 加進 `.env.example`）。
-  - [ ] ② 寫出前做資安掃描：出現 token、cookie、email、`userProfileId` 就中止。另外要有單元測試。
+  - [x] ① 新增 `scripts/build_dashboard_offline.py`（2026-10-24 W4a 合併；真實 DB 本機實測：完整歷史 2.16 MB（559 場明細含非跑步活動，比預估的 1.3 MB 大），`--detail-months 12` 約 1.25 MB；資料庫未被改動，手機寬度四頁無錯誤。**預設值待 Fu 決定**），寫法比照 `build_pace_calculator.py`。功能：gzip、`--detail-months`、`--copy-to`（或環境變數 `RC_OFFLINE_EXPORT_DIR`，key 加進 `.env.example`）。
+  - [x] ② 寫出前做資安掃描：出現 token、cookie、email、`userProfileId` 就中止。另外要有單元測試。
   - [ ] ③ 離線模式隱藏線上功能（同步、分析、AI 教練、今日體感、自訂區間）；頁首顯示「資料截至」；「今天」改用匯出日期。
   - [ ] ④ Fu 在 iCloud for Windows 開啟 iCloud 雲碟（2026-10-24 檢查時找不到 `iCloudDrive` 資料夾），並把現有捷徑的第一步改成「取得檔案」。iOS 15 起只能匯入簽署過的捷徑，Windows 無法產生，所以要手動建立。
   - [ ] ⑤ 驗收：用 Playwright 以 `file://` 開啟測試，再由 Fu 用 iPhone 真機確認。
