@@ -1892,9 +1892,13 @@ body.coach-open .coach-fab {
 }
 
 /* 首頁字級放大一階、字重加粗（2026-10-21 Fu：首頁字太小也太細，要一眼看得清楚）。
-   只在首頁範圍重新定義字級 token，其他頁維持原本的 6 階；首頁內所有用 var(--fs-*) 的
-   元素自動跟著放大，不必逐一覆寫。 */
-#view-home {
+   在 view 範圍重新定義字級 token，view 內所有用 var(--fs-*) 的元素自動跟著放大，
+   不必逐一覆寫。2026-10-24 Fu：趨勢、行事曆、訓練紀錄的標題與內文都比照首頁，
+   所以四個主頁共用這一套；配速計算機與系統設定維持原本的 6 階。 */
+#view-home,
+#view-trends,
+#view-calendar,
+#view-sessions {
   --fs-xs: 13px;
   --fs-sm: 15px;
   --fs-md: 16px;
@@ -2079,14 +2083,17 @@ body.coach-open .coach-fab {
   font-weight: 600;
 }
 
-/* 表格：課表週與最近訓練的數值加粗 */
+/* 表格：課表週與最近訓練的數值加粗（行事曆右欄的課表週同一套） */
 #view-home .wp-row,
+#view-calendar .wp-row,
 #view-home .recent-row {
   font-size: var(--fs-md);
 }
 
 #view-home .wp-date,
 #view-home .wp-actual,
+#view-calendar .wp-date,
+#view-calendar .wp-actual,
 #view-home .rc-date,
 #view-home .rc-actual {
   font-weight: 600;
@@ -3709,10 +3716,11 @@ button.recent-row .rc-dist {
   border-radius: 4px;
 }
 
-/* 單純「尚未同步」的狀態說明不是警示，用灰色；黃色留給 Garmin 異常提醒 */
+/* 單純「尚未同步」的狀態說明不是警示，只留灰字；黃底左線留給 Garmin 異常提醒 */
 .sync-fallback-note.is-muted {
-  border-left-color: var(--border);
-  background: var(--surface-sunken);
+  padding-left: 0;
+  border-left: 0;
+  background: none;
   color: var(--text-muted);
 }
 
