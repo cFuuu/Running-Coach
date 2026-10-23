@@ -3785,6 +3785,19 @@ button.recent-row .rc-actual .rc-main {
   line-height: 1.2;
 }
 
+/* 本週訓練狀況的完成率環＋下方文字：結構與尺寸同 .rd-status，兩張卡片的圖才會水平對齊 */
+.wt-ring-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.wt-ring-label {
+  color: var(--text-muted);
+}
+
 
 /* ---- 本週訓練狀況：左側實際／課表數字，右側完成率環形圖 ---- */
 .wt-card {

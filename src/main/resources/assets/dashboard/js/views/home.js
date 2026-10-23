@@ -965,7 +965,11 @@ export function renderWeekTraining() {
     var pct = s.doneKm / s.plannedKm * 100;
     var ring = progressRing(pct);
     ring.title = '以里程計算：' + Math.round(pct) + '%';
-    card.appendChild(ring);
+    // 與綜合整備狀態的判定圖示同結構（圖＋下方一行字），兩張卡片置中後兩個圖的中心才會在同一高度
+    var ringBox = h('span', 'wt-ring-box');
+    ringBox.appendChild(ring);
+    ringBox.appendChild(h('span', 'rd-status-label wt-ring-label', '完成率'));
+    card.appendChild(ringBox);
   }
   body.appendChild(card);
 }
