@@ -1,6 +1,6 @@
 # 離線 Dashboard 匯出與 iPhone 開啟流程
 
-> **建立日期**：2026-10-24　**狀態**：📋 規劃定案，待實作（TODO **N-30**）
+> **建立日期**：2026-10-24　**狀態**：🔵 W4a 匯出腳本已完成（2026-10-24），W4b 離線模式收尾、W4c 實機待做（TODO **N-30**）
 > **目的**：把本機 Dashboard 打包成單一 HTML，經 iCloud Drive 同步到 iPhone，再用捷徑一鍵開啟。電腦不用開著，也不需要網路。
 > 本機資料庫**不刪除任何歷年紀錄**，以下的縮減只作用在匯出檔上。
 
@@ -50,6 +50,22 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 3. 內嵌 `styles.css` 和 JS 模組（importmap ＋ `data:` URL）。
 4. 寫出 `output/dashboard_offline.html`。有指定 iCloud 目錄時，再複製一份到 iCloud。
 
+**實作結果（W4a，2026-10-24）**
+- **URL 清單唯一定義處**：`snapshot_requests()`（依 URL 原樣回應的 `exact`）與 `span_requests()`（`/api/calendar`、`/api/daily-feel`）。前端新增請求時在 `snapshot_requests()` 補一行，例如前期比較的 `custom:` 區間。range 清單取自 `/api/meta` 的 `ranges`，不另寫一份。
+- **行事曆與體感**：起訖日由前端當場決定（任意月份、課表週、首頁近 30 天），所以各取一份涵蓋整段期間的資料，頁面內依 `start`／`end` 切片。期間是「最早活動或課表（有 `--detail-months` 時改為截止日）所在月曆格」到「今天所在月曆格／本課表週／最後一筆課表」。
+- **單場明細**：行事曆上的全部活動（含非跑步，首頁近況與行事曆都能點進去）加上場次清單，依 `--detail-months` 截止日篩選。逐秒資料存成欄式 `{cols, rows}`，載入程式取用時還原。
+- **前端打包**：JS 用 importmap ＋ `data:` URL，import 路徑改寫成 `@rc/js/<路徑>`，保留真正的 ES module 語意（`tooltip.js` 等會重新指定 export 的變數，`build_pace_calculator` 的函式作用域打包做不到）。只重用它的 import 解析工具，遇到動態 `import()`、re-export、多行 import 直接報錯。
+- **接縫**：載入程式把自己掛成 `window.MOCK_API`（`isMock: true`、`isOffline: true`、`snapshotAt`），走 `core/api.js` 的 `useMock` 與 `coach.js` 的 `chatRequest`，前端程式碼不用改。寫入請求、同步狀態、AI 教練一律回錯誤或停用狀態。
+- **不寫入資料庫**：`create_app()` 啟動時會套 schema 遷移並改寫分析紀錄狀態，所以來源資料庫以 sqlite `mode=ro` 開啟、用 backup API 複製到暫存目錄，API 只打在暫存副本上。學員檔（賽事名稱）預設取來源資料庫同資料夾的 `athlete_profile.md`，可用 `--profile-path` 指定。
+- **資安掃描**：快照掃欄位名稱（`userProfileId`、`displayName`、token／cookie／authorization、email 等）、40 字以上的不透明 token 字串，以及資料庫 `athlete_source_identity.external_ref` 的帳號識別值；快照與頁面程式碼都掃 email、JWT、Bearer、Garmin／Cloudflare cookie 名稱。命中就以 exit code 2 中止、不寫檔，訊息只列規則名稱與次數，不回顯內容。
+- **實測大小**（2026-10-24 真實資料庫，559 場明細）：gzip＋全部歷史 **2.05 MB**；gzip＋`--detail-months 12` **1.25 MB**；`--no-gzip` 7.31 MB。全部歷史比 §1 試算的 1.3 MB 大，主要是資料本身變多：快照原文 7.0 MB（明細 3.9 MB，`wellness-trend`／`training-load`／`garmin-cards` 的 1 年與全部區間合計約 1.7 MB，行事曆 0.35 MB），gzip 後 1.11 MB，base64 後 1.48 MB；JS 0.48 MB、CSS 0.13 MB。只留跑步明細也只能降到約 1.98 MB，差別不大。
+
+**留給 W4b 的前端接縫**
+- `core/format.js` 的 `todayISO()` 與 `views/garmin.js` 的 `todayIso()` 仍用瀏覽器今天；離線時要改用匯出日期（快照的 `today` 欄位，或 `window.MOCK_API.snapshotAt`）。
+- `shell/loader.js` 的 `useMock` 徽章會顯示「開發用假資料」，離線時應改為「資料截至 …」並移除載入程式內的臨時浮動徽章（`.offline-snapshot-badge`）。
+- AI 教練面板顯示的是「伺服器未設定 ANTHROPIC_API_KEY…」加上載入程式給的理由；離線時應整個隱藏（同步、分析近況、今日體感、自訂區間、配對確認按鈕同理）。判斷依據可用 `window.MOCK_API && window.MOCK_API.isOffline`。
+- 超出 `--detail-months` 的場次點進去會顯示「離線快照只保留 YYYY-MM-DD 之後的單場明細」錯誤；W4b 可改成較友善的提示。
+
 **CLI 參數**
 
 | 參數 | 預設 | 說明 |
@@ -59,6 +75,8 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 | `--copy-to` | 讀環境變數 `RC_OFFLINE_EXPORT_DIR`；沒設就不複製 | iCloud Drive 裡的目標資料夾。**路徑不寫死在程式碼**，並把 key 加進 `.env.example`（本專案沒有 dotenv 載入器，要在 shell 設定或直接帶參數） |
 | `--detail-months` | `0`（全部） | 只保留近 N 個月的單場明細 |
 | `--no-gzip` | 關 | 除錯用，輸出未壓縮的 JSON |
+| `--athlete-id` | 第一位學員 | 同其他 CLI |
+| `--profile-path` | 資料庫同資料夾的 `athlete_profile.md` | 學員檔（賽事名稱來源），與 dashboard server 相同預設 |
 
 **資安要求（CLAUDE.md §🔐 第 3 條）**
 - 匯出檔只能有運動與生理指標。
@@ -135,7 +153,7 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 
 ## 7. 驗收
 
-- [ ] 匯出腳本有單元測試：用 fixture DB 產生輸出、gzip 能還原、資安掃描能擋下假 token、`--detail-months` 生效。
-- [ ] 用 Playwright 以 `file://` 開啟產出的 HTML：五個 view 都能顯示，console 沒有錯誤；390px 寬度沒有橫向捲動。
-- [ ] 檔案大小約 1.3 MB（全部歷史＋gzip）。
+- [x] 匯出腳本有單元測試：用 fixture DB 產生輸出、gzip 能還原、資安掃描能擋下假 token、`--detail-months` 生效（`src/test/unit/test_build_dashboard_offline.py`）。
+- [x] 用 Playwright 以 `file://` 開啟產出的 HTML：五個 view 都能顯示，console 沒有錯誤；390px 寬度沒有橫向捲動（W4a 以 fixture 與真實資料各驗一次；W4b 改完前端要再驗）。
+- [ ] 檔案大小約 1.3 MB（全部歷史＋gzip）。實測 2.05 MB，`--detail-months 12` 為 1.25 MB，見 §2「實測大小」，預設值待 Fu 決定。
 - [ ] 真機測試：Fu 用 iPhone 經 iCloud 加捷徑開啟成功。這項只能由 Fu 本人確認。
