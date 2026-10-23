@@ -2,6 +2,7 @@
  * state.js — 共用狀態、路由表、range 常數、標籤對照表與檢視脈絡
  */
 
+import { sportOf } from './sport-icons.js';
 
 export var state = {
   range: '30d',
@@ -121,17 +122,16 @@ export var ACTIVITY_TYPE_LABEL = {
   cycling: '騎車',
   hiking: '登山'
 };
-export var ACTIVITY_COLOR_VARS = {
-  running: '--activity-running',
-  treadmill_running: '--activity-running',
-  track_running: '--activity-running',
-  trail_running: '--activity-running',
-  strength_training: '--activity-strength_training',
-  walking: '--activity-walking',
-  cycling: '--activity-cycling'
+// 「哪些 activity_type 屬於同一種運動」只在 core/sport-icons.js 的 sportOf()
+// 定義一次，這裡只把種類 key 對到既有的 --activity-* 色票。
+var ACTIVITY_COLOR_VAR_BY_SPORT = {
+  run: '--activity-running',
+  strength: '--activity-strength_training',
+  walk: '--activity-walking',
+  bike: '--activity-cycling'
 };
 export function activityColorVar(activityType) {
-  return ACTIVITY_COLOR_VARS[activityType] || '--activity-other';
+  return ACTIVITY_COLOR_VAR_BY_SPORT[sportOf(activityType)] || '--activity-other';
 }
 
 export var DAY_STATE_LABEL = {

@@ -52,6 +52,9 @@ export function hideTooltip() {
  * （見 charts.js 的 trendLineChart／wellnessChart）；純文字 tooltip
  * 場景不需要粗體分段，統一拼成一行字串即可。 */
 export function tipToText(tip) {
+  if (tip && typeof tip === 'object' && tip.rows) {
+    return [tip.label].concat(tip.rows.map(function (r) { return r.name + ' ' + r.value; })).join('\n');
+  }
   if (tip && typeof tip === 'object') return tip.label + ' ' + tip.value;
   return tip;
 }
@@ -163,11 +166,20 @@ export function drawSyncCursorOnSvg(svg, meta, logicalX) {
   layer.appendChild(svgEl('line', {
     x1: x, y1: box.top, x2: x, y2: box.top + box.height, class: 'sync-cursor-line'
   }));
-  if (y !== null && y !== undefined) {
+  if (meta.dots) {
+    // 多系列圖（charts.multiLineChart）：每條線各畫一個圓點，描邊用該系列色
+    meta.dots(idx).forEach(function (d) {
+      var dot = svgEl('circle', { cx: x, cy: d.y, r: 3.5, class: 'sync-cursor-dot' });
+      if (d.color) dot.setAttribute('style', 'stroke:' + d.color);
+      layer.appendChild(dot);
+    });
+  } else if (y !== null && y !== undefined) {
     layer.appendChild(svgEl('circle', { cx: x, cy: y, r: 3.5, class: 'sync-cursor-dot' }));
   }
 
-  if (tip) {
+  if (tip && typeof tip === 'object' && tip.rows) {
+    layer.appendChild(buildRowsLabel(tip, x, box));
+  } else if (tip) {
     var isStructured = typeof tip === 'object';
     var displayText = isStructured ? (tip.label + ' ' + tip.value) : tip;
     var labelY = y !== null && y !== undefined ? y : box.top + 12;
@@ -200,6 +212,59 @@ export function drawSyncCursorOnSvg(svg, meta, logicalX) {
   }
 
   svg.appendChild(layer); // 必須最後 append 才會蓋在折線/長條之上
+}
+
+/** 粗估一段文字的寬度（viewBox 單位）：中日韓全形字約一個字級寬，其餘用 SYNC_LABEL_CHAR_W。 */
+function estimateTextWidth(str) {
+  var w = 0;
+  for (var i = 0; i < str.length; i += 1) {
+    w += str.charCodeAt(i) >= 0x2e80 ? 13 : SYNC_LABEL_CHAR_W;
+  }
+  return w;
+}
+
+var ROW_H = 17;
+var SWATCH = 8;
+
+/**
+ * 多列游標標籤（tip = {label, rows:[{name, value, color}]}）：第一列日期，
+ * 之後每個系列一列「色塊 名稱 數值」，數值粗體。貼在垂直線右側，放不下翻到左側；
+ * 垂直方向靠繪圖區頂端，避免蓋住大部分折線的同時又不超出 viewBox。
+ */
+function buildRowsLabel(tip, x, box) {
+  var lines = [tip.label].concat(tip.rows.map(function (r) { return r.name + ' ' + r.value; }));
+  var textW = lines.reduce(function (m, s, i) {
+    return Math.max(m, estimateTextWidth(s) + (i > 0 ? SWATCH + 5 : 0));
+  }, 0);
+  var labelW = textW + SYNC_LABEL_PAD_X * 2;
+  var labelH = lines.length * ROW_H + 6;
+  var atRightEdge = x + 8 + labelW > box.left + box.width;
+  var labelX = atRightEdge ? Math.max(x - 8 - labelW, 0) : x + 8;
+  var labelTop = box.top + 2;
+
+  var group = svgEl('g', { class: 'sync-cursor-label' });
+  group.appendChild(svgEl('rect', { x: labelX, y: labelTop, width: labelW, height: labelH, rx: 3 }));
+  var head = svgEl('text', { x: labelX + SYNC_LABEL_PAD_X, y: labelTop + ROW_H - 2, 'text-anchor': 'start' });
+  head.textContent = tip.label;
+  group.appendChild(head);
+  tip.rows.forEach(function (r, i) {
+    var rowY = labelTop + ROW_H * (i + 2) - 2;
+    var swatch = svgEl('rect', {
+      x: labelX + SYNC_LABEL_PAD_X, y: rowY - SWATCH - 1, width: SWATCH, height: SWATCH, rx: 2,
+      class: 'sync-cursor-swatch'
+    });
+    if (r.color) swatch.setAttribute('style', 'fill:' + r.color);
+    group.appendChild(swatch);
+    var t = svgEl('text', { x: labelX + SYNC_LABEL_PAD_X + SWATCH + 5, y: rowY, 'text-anchor': 'start' });
+    var nameSpan = svgEl('tspan', {});
+    nameSpan.textContent = r.name + ' ';
+    var valueSpan = svgEl('tspan', { class: 'sync-cursor-label-value' });
+    valueSpan.textContent = r.value;
+    t.appendChild(nameSpan);
+    t.appendChild(valueSpan);
+    group.appendChild(t);
+  });
+  return group;
 }
 
 /**
@@ -257,7 +322,15 @@ export function handlePointerMove(evt) {
         var pt = toSvgPoint(svg, evt.clientX, evt.clientY);
         if (!pt) { hideAllSyncCursors(); return; }
         var idx = nearestIndex(meta.xs, pt.x);
-        showTooltipText(tipToText(meta.tips[idx]), evt.clientX, evt.clientY);
+        if (meta.crosshair) {
+          // 不在同步群組裡的多系列圖：在圖內畫垂直參考線與多列數值標籤
+          if (loneCursorSvg && loneCursorSvg !== svg) clearSyncCursor(loneCursorSvg);
+          drawSyncCursorOnSvg(svg, meta, meta.logicalXs[idx]);
+          loneCursorSvg = svg;
+          hideTooltip();
+        } else {
+          showTooltipText(tipToText(meta.tips[idx]), evt.clientX, evt.clientY);
+        }
       }
       return;
     }
@@ -271,8 +344,12 @@ export function handlePointerMove(evt) {
 }
 
 /** 滑鼠離開整個委派容器時：隱藏 tooltip 並清掉所有群組的同步游標。 */
+// 不屬於任何同步群組、但自己畫了參考線的圖（meta.crosshair），離開時要單獨清掉
+var loneCursorSvg = null;
+
 export function hideAllSyncCursors() {
   hideTooltip();
+  if (loneCursorSvg) { clearSyncCursor(loneCursorSvg); loneCursorSvg = null; }
   SYNC_GROUPS.forEach(function (id) {
     var container = $(id);
     if (container) clearSyncGroup(container);
