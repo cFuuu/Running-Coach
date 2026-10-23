@@ -114,6 +114,20 @@ class TestReadOnlyTools(unittest.TestCase):
         # started_at 已是字串（DB 存字串），此處確認整體結構走過序列化無報錯
         self.assertIsInstance(result["sessions"][0]["started_at"], str)
 
+    def test_list_running_sessions_omits_lap_strip(self):
+        """lap_strip 只給 dashboard 清單畫小圖（N-29 B1）；每場幾十圈灌進
+        AI 教練的 context 是純成本，MCP 輸出必須維持原樣。"""
+        activity_id = _insert_activity(self.conn, self.athlete_id, START)
+        self.conn.execute(
+            "INSERT INTO activity_laps (activity_id, lap_index, distance_km, duration_sec, "
+            "pace_sec_per_km, avg_hr_bpm) VALUES (?, 1, 1.0, 360.0, 360, 140)",
+            (activity_id,),
+        )
+        self.conn.commit()
+
+        session = list_running_sessions(_fake_ctx(self.conn), range_key="all")["sessions"][0]
+        self.assertNotIn("lap_strip", session)
+
     def test_get_session_detail_returns_none_for_missing_session(self):
         result = get_session_detail(_fake_ctx(self.conn), session_id=9999)
         self.assertIsNone(result)

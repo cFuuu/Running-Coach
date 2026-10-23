@@ -205,6 +205,107 @@ class TestListSessions(DashboardQueryTestCase):
             self.assertNotIn(title, titles)
 
 
+class TestLapStrip(DashboardQueryTestCase):
+    """N-29 B1：/api/sessions 每場附 lap_strip。
+
+    手錶設定 [0.54, 0.59, 0.74, 0.83, 0.88, 1.0]、靜止 56、HRmax 195 換算成 bpm：
+    Z1 131–138、Z2 138–159、Z3 159–171、Z4 171–178、Z5 178–195。
+    """
+
+    def _set_watch_zones(self):
+        self.conn.execute(
+            "UPDATE athlete_profile SET max_hr_bpm = 195, resting_hr_bpm = 56, "
+            "hr_zone_hrr_bounds_json = '[0.54, 0.59, 0.74, 0.83, 0.88, 1.0]'"
+        )
+
+    def _sessions(self, **kwargs) -> dict:
+        result = queries.list_sessions(self.conn, range_key="all", **kwargs)
+        return {s["title"]: s for s in result["sessions"]}
+
+    def _replace_laps(self, title: str, laps: list[tuple[int, int | None]]):
+        """把某場的分圈換成指定的 (lap_index, avg_hr_bpm)；配速設成 300 + lap_index。"""
+        session_id = self._sessions()[title]["id"]
+        self.conn.execute("DELETE FROM activity_laps WHERE activity_id = ?", (session_id,))
+        for lap_index, hr in laps:
+            self.conn.execute(
+                "INSERT INTO activity_laps (activity_id, lap_index, distance_km, duration_sec, "
+                "pace_sec_per_km, avg_hr_bpm) VALUES (?, ?, 1.0, 300.0, ?, ?)",
+                (session_id, lap_index, 300 + lap_index, hr),
+            )
+
+    def test_lap_strip_absent_by_default(self):
+        """MCP 的 list_running_sessions 走預設值，不得多出 lap_strip。"""
+        for session in self._sessions().values():
+            self.assertNotIn("lap_strip", session)
+
+    def test_lap_strip_lists_fit_laps_in_lap_order(self):
+        self._set_watch_zones()
+        # 刻意倒序插入，驗證排序依 lap_index 而非寫入順序
+        self._replace_laps("測試晨跑", [(3, 172), (1, 140), (2, 160)])
+        strip = self._sessions(include_lap_strip=True)["測試晨跑"]["lap_strip"]
+        self.assertEqual(
+            strip,
+            [
+                {"pace_sec_per_km": 301, "avg_hr_bpm": 140, "zone": 2},
+                {"pace_sec_per_km": 302, "avg_hr_bpm": 160, "zone": 3},
+                {"pace_sec_per_km": 303, "avg_hr_bpm": 172, "zone": 4},
+            ],
+        )
+
+    def test_zone_boundaries_lower_inclusive_and_out_of_range(self):
+        self._set_watch_zones()
+        laps = [130, 131, 137, 138, 158, 159, 171, 178, 195, 200]
+        self._replace_laps("測試晨跑", list(enumerate(laps, start=1)))
+        zones = [lap["zone"] for lap in self._sessions(include_lap_strip=True)["測試晨跑"]["lap_strip"]]
+        # 低於 Z1 → 0（與 hr_zones 的 below_zone_1 同義）；邊界值歸較高區；高於 HRmax 仍是 Z5
+        self.assertEqual(zones, [0, 1, 1, 2, 2, 3, 4, 5, 5, 5])
+
+    def test_zone_null_without_watch_settings(self):
+        """沒設定手錶區間就不換算，絕不套預設區間；配速與心率照給。"""
+        strip = self._sessions(include_lap_strip=True)["測試晨跑"]["lap_strip"]
+        self.assertEqual(len(strip), 3)
+        self.assertTrue(all(lap["zone"] is None for lap in strip))
+        self.assertEqual([lap["avg_hr_bpm"] for lap in strip], [146, 147, 148])
+
+    def test_zone_null_when_lap_has_no_hr(self):
+        self._set_watch_zones()
+        self._replace_laps("測試晨跑", [(1, None), (2, 150)])
+        strip = self._sessions(include_lap_strip=True)["測試晨跑"]["lap_strip"]
+        self.assertEqual([(lap["avg_hr_bpm"], lap["zone"]) for lap in strip], [(None, None), (150, 2)])
+
+    def test_session_without_fit_laps_gets_empty_list(self):
+        """activity 200 只有手動分段：lap_strip 只取 FIT 分圈，不退回手動分段。"""
+        self.assertEqual(self._sessions(include_lap_strip=True)["測試手動分圈跑"]["lap_strip"], [])
+
+    def test_laps_fetched_in_single_query(self):
+        """不能每場查一次（N+1）：整份清單只查一次 activity_laps。"""
+        statements: list[str] = []
+        self.conn.set_trace_callback(statements.append)
+        self.addCleanup(self.conn.set_trace_callback, None)
+        self._sessions(include_lap_strip=True)
+        self.assertEqual(sum("activity_laps" in s for s in statements), 1)
+
+    def test_dashboard_route_includes_lap_strip(self):
+        """開關只在 dashboard 路由打開。"""
+        from fastapi.testclient import TestClient
+
+        from src.main.python.api.app import create_app
+        from src.main.python.services import coach_chat
+
+        self.conn.commit()
+        assets_dir = Path(self._tmp.name) / "assets"
+        assets_dir.mkdir()
+        app = create_app(
+            str(Path(self._tmp.name) / "test.db"),
+            assets_dir=assets_dir,
+            chat_config=coach_chat.ChatConfig(api_key_present=False),
+        )
+        sessions = TestClient(app).get("/api/sessions", params={"range": "all"}).json()["sessions"]
+        by_title = {s["title"]: s for s in sessions}
+        self.assertEqual(len(by_title["測試晨跑"]["lap_strip"]), 3)
+        self.assertEqual(by_title["測試手動分圈跑"]["lap_strip"], [])
+
+
 class TestSessionDetail(DashboardQueryTestCase):
     def _detail(self, title: str) -> dict:
         for s in queries.list_sessions(self.conn, range_key="all")["sessions"]:

@@ -364,15 +364,52 @@ def _fetch_warmups(conn: sqlite3.Connection, main_ids: list[int]) -> dict[int, d
     }
 
 
+def _fetch_lap_strips(
+    conn: sqlite3.Connection, activity_ids: list[int], zone_bounds: dict
+) -> dict[int, list[dict]]:
+    """活動 id → 每圈摘要（N-29 B1），一次查詢取回所有場次的 FIT 分圈。
+
+    只取 activity_laps（FIT 分圈），不退回手動分段：清單小圖只求一眼看出
+    節奏，手動分段長短不一畫成等寬色塊反而誤導。zone 由 `_hr_zone_for_bpm()`
+    依手錶 %HRR 邊界換算；已知偏誤是用整圈平均心率，間歇圈會被平均掉。
+    """
+    if not activity_ids:
+        return {}
+    placeholders = ",".join("?" for _ in activity_ids)
+    strips: dict[int, list[dict]] = {}
+    for row in conn.execute(
+        f"""
+        SELECT activity_id, pace_sec_per_km, avg_hr_bpm
+        FROM activity_laps WHERE activity_id IN ({placeholders})
+        ORDER BY activity_id, lap_index
+        """,
+        activity_ids,
+    ):
+        strips.setdefault(row["activity_id"], []).append(
+            {
+                "pace_sec_per_km": row["pace_sec_per_km"],
+                "avg_hr_bpm": row["avg_hr_bpm"],
+                "zone": _hr_zone_for_bpm(zone_bounds, row["avg_hr_bpm"]),
+            }
+        )
+    return strips
+
+
 def list_sessions(
     conn: sqlite3.Connection,
     athlete_id: int | None = None,
     range_key: str = DEFAULT_RANGE,
+    *,
+    include_lap_strip: bool = False,
 ) -> dict:
     """列出 range 內的跑步類活動，依開始時間由新到舊。
 
     已關聯為暖身的活動不單獨列出，改以 `warmup` 摘要掛在主課上（N-25）——
     否則每堂品質課都多一筆來路不明的短跑，場次數偏多。
+
+    `include_lap_strip=True` 時每場多一個 `lap_strip`（N-29 B1，沒有 FIT 分圈為
+    空陣列）。只有 dashboard 路由開啟；MCP 的 list_running_sessions 共用本函式，
+    預設關閉以免每場幾十圈的資料灌進 AI 教練的 context。
     """
     resolved = resolve_athlete_id(conn, athlete_id)
     window = resolve_range(conn, resolved, range_key)
@@ -401,6 +438,11 @@ def list_sessions(
 
     rows = conn.execute(sql, params).fetchall()
     warmups = _fetch_warmups(conn, [row["id"] for row in rows])
+    lap_strips = (
+        _fetch_lap_strips(conn, [row["id"] for row in rows], _hr_zone_bounds(conn, resolved))
+        if include_lap_strip
+        else None
+    )
     sessions = []
     for row in rows:
         sessions.append(
@@ -426,6 +468,8 @@ def list_sessions(
                 "warmup": warmups.get(row["id"]),
             }
         )
+        if lap_strips is not None:
+            sessions[-1]["lap_strip"] = lap_strips.get(row["id"], [])
     return {**window, "sessions": sessions}
 
 
@@ -2130,6 +2174,21 @@ def _hr_zone_bounds(conn: sqlite3.Connection, athlete_id: int) -> dict:
             for i in range(HR_ZONE_MAX)
         ],
     }
+
+
+def _hr_zone_for_bpm(zone_bounds: dict, bpm: float | None) -> int | None:
+    """把一個心率值歸到 `_hr_zone_bounds()` 的手錶五區，與首頁顯示的 bpm 邊界同一份。
+
+    下界含、上界不含（相鄰兩區共用的邊界值歸較高區）；低於 Z1 下界回
+    `HR_ZONE_BELOW_FIRST`（0，與 hr_zones 的 below_zone_1 同義），高於 HRmax
+    仍歸 Z5。邊界未設定或沒有心率回 None——不套任何預設區間。
+    """
+    if not zone_bounds.get("available") or not bpm:
+        return None
+    zones = zone_bounds["zones"]
+    if bpm < zones[0]["bpm_low"]:
+        return HR_ZONE_BELOW_FIRST
+    return next(z["zone"] for z in reversed(zones) if bpm >= z["bpm_low"])
 
 
 def _race_vdot(conn: sqlite3.Connection, athlete_id: int, today: datetime.date) -> dict:

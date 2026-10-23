@@ -104,7 +104,46 @@
     return sessions; // 已是由新到舊（dayOffset 遞增 = 日期遞減）
   }
 
+  // 虛構的手錶五區下界（bpm），模擬後端 _hr_zone_for_bpm()：下界含、低於 Z1 為 0
+  var MOCK_ZONE_BPM_LOW = [131, 138, 159, 171, 178];
+
+  function mockZone(bpm) {
+    if (bpm === null) return null;
+    for (var z = MOCK_ZONE_BPM_LOW.length; z >= 1; z -= 1) {
+      if (bpm >= MOCK_ZONE_BPM_LOW[z - 1]) return z;
+    }
+    return 0;
+  }
+
+  /**
+   * /api/sessions 每場的 lap_strip（N-29 B1）。用各場自己的 seed，不動
+   * buildSessions() 的亂數序列，其他假資料維持原樣。
+   * - interval：快慢交替（快圈配速快、心率高；恢復圈慢、心率掉）
+   * - 其餘：穩定配速、心率緩升
+   * - 與單場詳細的 noFit 一致：id % 5 === 0 沒有 FIT 分圈 → []
+   */
+  function buildLapStrip(session) {
+    if (session.id % 5 === 0) return [];
+    var rnd = makeRandom(session.id * 104729);
+    var count = Math.max(1, Math.ceil(session.distance_km));
+    var strip = [];
+    for (var i = 0; i < count; i += 1) {
+      var pace, hr;
+      if (session.workout_type === 'interval') {
+        var fast = i > 0 && i < count - 1 && i % 2 === 1; // 首尾當暖身／收操
+        pace = session.avg_pace_sec_per_km + (fast ? -70 : 25) + Math.round((rnd() - 0.5) * 10);
+        hr = session.avg_hr_bpm === null ? null : session.avg_hr_bpm + (fast ? 18 : -10) + Math.round(rnd() * 4);
+      } else {
+        pace = session.avg_pace_sec_per_km + Math.round((rnd() - 0.5) * 16);
+        hr = session.avg_hr_bpm === null ? null : session.avg_hr_bpm - 5 + Math.round((i / count) * 10);
+      }
+      strip.push({ pace_sec_per_km: pace, avg_hr_bpm: hr, zone: mockZone(hr) });
+    }
+    return strip;
+  }
+
   var ALL_SESSIONS = buildSessions();
+  ALL_SESSIONS.forEach(function (s) { s.lap_strip = buildLapStrip(s); });
 
   // ---- 單場詳細資料 ----
   function buildLaps(session, seed) {

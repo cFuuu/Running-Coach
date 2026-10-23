@@ -106,7 +106,9 @@ def read_sessions(
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict:
-    return queries.list_sessions(conn, athlete_id, _validate_range(range))
+    return queries.list_sessions(
+        conn, athlete_id, _validate_range(range), include_lap_strip=True
+    )
 
 
 @router.get("/sessions/{session_id}")

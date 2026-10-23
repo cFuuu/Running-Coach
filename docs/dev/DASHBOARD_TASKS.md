@@ -124,12 +124,25 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
       "title": "傍晚跑步", "activity_type": "running",
       "workout_type": "easy", "workout_type_source": "auto",
       "distance_km": 6.02, "duration_sec": 2210, "avg_pace_sec_per_km": 367,
-      "avg_hr_bpm": 152, "max_hr_bpm": 168, "avg_cadence_spm": 171, "aerobic_te": 3.4
+      "avg_hr_bpm": 152, "max_hr_bpm": 168, "avg_cadence_spm": 171, "aerobic_te": 3.4,
+      "lap_strip": [
+        { "pace_sec_per_km": 372, "avg_hr_bpm": 146, "zone": 2 },
+        { "pace_sec_per_km": 365, "avg_hr_bpm": 153, "zone": 2 },
+        { "pace_sec_per_km": 361, "avg_hr_bpm": 160, "zone": 3 }
+      ]
     }
   ]
 }
 ```
 任何欄位可能為 `null`（舊資料未必齊全），前端須容錯。
+
+**`lap_strip`（N-29 B1，訓練紀錄清單的分圈小圖用）**：
+- 來源只有 FIT 分圈（`activity_laps`），依 `lap_index` 排序；不退回手動按錶分段（單場詳細的 `laps.source = garmin_manual_lap` 那種）。
+- 沒有 FIT 分圈 → **空陣列 `[]`**（不是 `null`），前端直接不畫。
+- `zone`：該圈平均心率依 `_hr_zone_bounds()` 的手錶 %HRR 邊界換算，與首頁 `hr_zone_bounds` 顯示的 bpm 同一份。下界含、上界不含（相鄰兩區共用的邊界值歸較高區）；低於 Z1 下界為 `0`（與 `hr_zones.below_zone_1` 同義）；高於 HRmax 仍為 `5`。
+- `zone: null`：學員未設定手錶區間或心率參數（**不套任何預設區間**），或該圈沒有心率（`avg_hr_bpm: null`）。`pace_sec_per_km` 也可能為 `null`。
+- ⚠️ 已知偏誤：用**整圈平均心率**判區間，間歇課若一圈內含快跑與恢復會被平均掉，結果與單場詳細的逐秒 `hr_zones` 分布不完全相同。純呈現用，不進規則引擎。
+- 只有 dashboard 的 `/api/sessions` 有這個欄位；MCP 的 `list_running_sessions` 共用同一查詢但**不含** `lap_strip`（避免灌進 AI 教練的 context）。
 
 ### `GET /api/sessions/{id}?athlete_id=1`
 ```json
