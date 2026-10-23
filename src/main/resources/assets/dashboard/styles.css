@@ -5053,7 +5053,12 @@ button.recent-row .rc-dist {
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font: italic 600 0.75rem/20px Georgia, serif;
+  /* 一般直立的無襯線字，不用斜體襯線（草書感）；字體沿用頁面 */
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 20px;
+  font-family: inherit;
   cursor: pointer;
   position: relative;
 }
