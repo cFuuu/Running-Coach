@@ -10,7 +10,7 @@
 
 import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, activityColorVar, DAY_STATE_LABEL } from '../core/state.js';
-import { api, apiSend } from '../core/api.js';
+import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
 import { sundayOf, mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
 import { infoTip } from '../core/facts.js';
@@ -617,8 +617,11 @@ function linkActions(day, entry) {
   var wrap = h('div', 'cal-link-actions');
   var plan = planFor(day, entry.act);
   if (!plan) return null;
+  // 確認／取消要寫回伺服器：離線快照只留狀態文字，不放按鈕
+  var editable = !isOfflineSnapshot();
   if (entry.linked) {
     wrap.appendChild(h('span', 'cal-link-state', '已確認為課表'));
+    if (!editable) return wrap;
     var cancel = h('button', 'cal-link-btn cal-link-btn--cancel', '取消');
     cancel.type = 'button';
     cancel.addEventListener('click', function () { sendPlanLink(plan.id, null, cancel); });
@@ -627,6 +630,7 @@ function linkActions(day, entry) {
   }
   if (entry.pending) {
     wrap.appendChild(h('span', 'cal-link-state is-pending', '待確認'));
+    if (!editable) return wrap;
     var confirm = h('button', 'cal-link-btn', '這場是課表');
     confirm.type = 'button';
     confirm.addEventListener('click', function () { sendPlanLink(plan.id, entry.act.id, confirm); });

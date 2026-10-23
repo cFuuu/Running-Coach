@@ -21,7 +21,7 @@
  */
 import * as Theme from './theme.js';
 import { state, FALLBACK_RANGES, CUSTOM_RANGE_PATTERN } from './core/state.js';
-import { api } from './core/api.js';
+import { api, isOfflineSnapshot } from './core/api.js';
 import { $, clear, h } from './core/dom.js';
 import { bindInfoTipDismiss } from './core/facts.js';
 import { bindTooltipDelegation } from './core/tooltip.js';
@@ -43,20 +43,26 @@ import { initCoach } from './coach.js';
  * 已足夠涵蓋兩種情況（列舉值或 custom: 格式皆可通過格式檢查）。
  */
 function restoreInitialRange() {
+  // 離線快照只有預先匯出的區間，自訂區間（網址或先前存的偏好）一律不還原
+  var allowed = function (r) {
+    return FALLBACK_RANGES.indexOf(r) !== -1 || (!isOfflineSnapshot() && CUSTOM_RANGE_PATTERN.test(r));
+  };
   var params = new URLSearchParams(window.location.search);
   var fromUrl = params.get('range');
-  if (fromUrl && (FALLBACK_RANGES.indexOf(fromUrl) !== -1 || CUSTOM_RANGE_PATTERN.test(fromUrl))) {
+  if (fromUrl && allowed(fromUrl)) {
     state.range = fromUrl;
     return;
   }
   var settings = Theme.getSettings();
   var fromSettings = settings && settings.range;
-  if (fromSettings && (FALLBACK_RANGES.indexOf(fromSettings) !== -1 || CUSTOM_RANGE_PATTERN.test(fromSettings))) {
+  if (fromSettings && allowed(fromSettings)) {
     state.range = fromSettings;
   }
 }
 
 function init() {
+  // 離線快照：標記在 <html> 上，styles.css 據此隱藏所有 [data-online-only]（同步、AI 教練、自訂區間…）
+  if (isOfflineSnapshot()) document.documentElement.classList.add('is-offline');
   Theme.init();
   restoreInitialRange();
   bindResize();
@@ -93,7 +99,8 @@ function init() {
 
   // AI 教練面板：原本是 coach.js 自己在 DOMContentLoaded 註冊、排在 app 之後執行，
   // 改成 module 後由這裡明確呼叫，維持「App 殼先就緒、面板後啟動」的順序。
-  initCoach();
+  // 離線快照沒有 AI 教練（面板已隱藏），不啟動、也不發狀態請求。
+  if (!isOfflineSnapshot()) initCoach();
 }
 
 if (document.readyState === 'loading') {

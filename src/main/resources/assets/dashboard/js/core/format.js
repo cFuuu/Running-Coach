@@ -4,6 +4,7 @@
 
 import * as C from '../charts.js';
 import { WORKOUT_TYPE_LABEL } from './state.js';
+import { offlineSnapshotInfo } from './api.js';
 
 /**
  * 某天的暖身：主課 id → 暖身活動（/api/calendar 的 warmup_for_activity_id，N-25）。
@@ -70,8 +71,11 @@ export function addDaysISO(dateStr, days) {
 /**
  * 瀏覽器本地時區的今天（YYYY-MM-DD）。
  * 不可用 toISOString()：那是 UTC 日期，台灣（UTC+8）08:00 前會得到昨天。
+ * 離線快照改用匯出日期：隔幾天打開時，行事曆、首頁與資料新鮮度才與快照內容一致。
  */
 export function todayISO() {
+  var offline = offlineSnapshotInfo();
+  if (offline && offline.today) return offline.today;
   var d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
     + '-' + String(d.getDate()).padStart(2, '0');

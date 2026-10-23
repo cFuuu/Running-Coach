@@ -14,7 +14,7 @@
 
 import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL } from '../core/state.js';
-import { api, apiSend } from '../core/api.js';
+import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark } from '../core/facts.js';
 import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel } from '../core/format.js';
@@ -629,7 +629,8 @@ export function renderToday() {
   // 課表在左、窄窄的「今日體感狀況」在右（區塊太窄時上下排）
   var top = h('div', 'today-top');
   top.appendChild(planBlock);
-  top.appendChild(renderFeelBlock((data && data.date) || todayISO()));
+  // 今日體感要寫回伺服器，離線快照不顯示
+  if (!isOfflineSnapshot()) top.appendChild(renderFeelBlock((data && data.date) || todayISO()));
   node.appendChild(top);
 
   // 綜合整備狀態與本週訓練狀況並排（區塊太窄時上下排）

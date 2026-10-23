@@ -1,6 +1,6 @@
 # 離線 Dashboard 匯出與 iPhone 開啟流程
 
-> **建立日期**：2026-10-24　**狀態**：🔵 W4a 匯出腳本已完成（2026-10-24），W4b 離線模式收尾、W4c 實機待做（TODO **N-30**）
+> **建立日期**：2026-10-24　**狀態**：🔵 W4a 匯出腳本、W4b 離線模式收尾已完成（2026-10-24），W4c 實機待做（TODO **N-30**）
 > **目的**：把本機 Dashboard 打包成單一 HTML，經 iCloud Drive 同步到 iPhone，再用捷徑一鍵開啟。電腦不用開著，也不需要網路。
 > 本機資料庫**不刪除任何歷年紀錄**，以下的縮減只作用在匯出檔上。
 
@@ -60,11 +60,13 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 - **資安掃描**：快照掃欄位名稱（`userProfileId`、`displayName`、token／cookie／authorization、email 等）、40 字以上的不透明 token 字串，以及資料庫 `athlete_source_identity.external_ref` 的帳號識別值；快照與頁面程式碼都掃 email、JWT、Bearer、Garmin／Cloudflare cookie 名稱。命中就以 exit code 2 中止、不寫檔，訊息只列規則名稱與次數，不回顯內容。
 - **實測大小**（2026-10-24 真實資料庫，559 場明細）：gzip＋全部歷史 **2.05 MB**；gzip＋`--detail-months 12` **1.25 MB**；`--no-gzip` 7.31 MB。全部歷史比 §1 試算的 1.3 MB 大，主要是資料本身變多：快照原文 7.0 MB（明細 3.9 MB，`wellness-trend`／`training-load`／`garmin-cards` 的 1 年與全部區間合計約 1.7 MB，行事曆 0.35 MB），gzip 後 1.11 MB，base64 後 1.48 MB；JS 0.48 MB、CSS 0.13 MB。只留跑步明細也只能降到約 1.98 MB，差別不大。
 
-**留給 W4b 的前端接縫**
-- `core/format.js` 的 `todayISO()` 與 `views/garmin.js` 的 `todayIso()` 仍用瀏覽器今天；離線時要改用匯出日期（快照的 `today` 欄位，或 `window.MOCK_API.snapshotAt`）。
-- `shell/loader.js` 的 `useMock` 徽章會顯示「開發用假資料」，離線時應改為「資料截至 …」並移除載入程式內的臨時浮動徽章（`.offline-snapshot-badge`）。
-- AI 教練面板顯示的是「伺服器未設定 ANTHROPIC_API_KEY…」加上載入程式給的理由；離線時應整個隱藏（同步、分析近況、今日體感、自訂區間、配對確認按鈕同理）。判斷依據可用 `window.MOCK_API && window.MOCK_API.isOffline`。
-- 超出 `--detail-months` 的場次點進去會顯示「離線快照只保留 YYYY-MM-DD 之後的單場明細」錯誤；W4b 可改成較友善的提示。
+**W4b 離線模式（2026-10-24）**
+- **唯一判斷**：`core/api.js` 的 `isOfflineSnapshot()`（＝`window.MOCK_API.isOffline`）與 `offlineSnapshotInfo()`（`{at, today}`），其他地方不直接讀 `window.MOCK_API`。
+- **隱藏線上功能**：`main.js` 離線時在 `<html>` 加 `.is-offline`，`index.html` 中需要伺服器的元素標 `data-online-only`（同步鈕兩顆、分析近況、AI 教練面板／開關／直條／FAB／遮罩、自訂區間、設定頁的 AI 教練區塊與立即同步），`styles.css` 一條規則隱藏。動態產生的今日體感區塊與行事曆「這場是課表」／「取消」按鈕在 JS 不產生（行事曆仍顯示「已確認為課表」／「待確認」狀態文字）。AI 教練不啟動、同步狀態不查詢，所以離線時沒有任何寫入或聊天請求。網址或偏好裡的 `custom:` 區間離線時不還原。後端的區網警語（`meta.notice`）離線不顯示。
+- **資料截至**：側邊列的「開發用假資料」徽章改為「資料截至 YYYY-MM-DD HH:MM」；手機與平板看不到側邊列的 meta，頂列另顯示一份（`#offline-stamp`，≥1280px 隱藏）。載入程式的臨時浮動徽章已移除。
+- **今天＝匯出日期**：匯出腳本寫入 `window.__SNAPSHOT_TODAY__`（快照的 `today`），掛成 `MOCK_API.today`；`format.js` 的 `todayISO()` 離線時回傳它，`garmin.js` 原本自己的 `todayIso()` 刪掉改用 `todayISO()`。行事曆的今天、連續週數、資料新鮮度本來就取自匯出當下的 API 回應，與此一致。
+- **缺明細的場次**：訊息改為「離線檔未包含這場的明細（只保留 YYYY-MM-DD 之後的單場明細）」，訓練紀錄展開列與完整單場以說明框（非「讀取失敗」）顯示，完整單場的各圖收掉載入中、隔天恢復照常顯示。
+- **請求稽核**（真實資料庫副本，390×844 與 1280 各一輪）：六個 view、五個區間、趨勢開關全部切換、行事曆往前 14 個月再往後 16 個月並點選日期、訓練紀錄展開 5 場與完整單場，共 169 個請求、111 個不同 URL，**快照答不出的請求 0 個**、console 0 錯誤、無橫向捲動、無可見的線上功能。W1～W3 新增的請求（前期比較的 `custom:`、課表週、連續週數的行事曆區段）都已被 `snapshot_requests()`／`span_requests()` 涵蓋，不需要新增 URL。
 
 **CLI 參數**
 
@@ -154,6 +156,6 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 ## 7. 驗收
 
 - [x] 匯出腳本有單元測試：用 fixture DB 產生輸出、gzip 能還原、資安掃描能擋下假 token、`--detail-months` 生效（`src/test/unit/test_build_dashboard_offline.py`）。
-- [x] 用 Playwright 以 `file://` 開啟產出的 HTML：五個 view 都能顯示，console 沒有錯誤；390px 寬度沒有橫向捲動（W4a 以 fixture 與真實資料各驗一次；W4b 改完前端要再驗）。
+- [x] 用 Playwright 以 `file://` 開啟產出的 HTML：五個 view 都能顯示，console 沒有錯誤；390px 寬度沒有橫向捲動（W4a 以 fixture 與真實資料各驗一次；W4b 改完前端後以真實資料在 390 與 1280 再驗，見 §2「W4b 離線模式」）。
 - [ ] 檔案大小約 1.3 MB（全部歷史＋gzip）。實測 2.05 MB，`--detail-months 12` 為 1.25 MB，見 §2「實測大小」，預設值待 Fu 決定。
 - [ ] 真機測試：Fu 用 iPhone 經 iCloud 加捷徑開啟成功。這項只能由 Fu 本人確認。

@@ -189,6 +189,32 @@ class TestCli(BuildDashboardOfflineTestCase):
             self.assertEqual(offline.main(["--db-path", str(self.db_path), "--out", str(self.out)]), 0)
         self.assertEqual(sorted(p.name for p in self.out.parent.iterdir()), [self.out.name])
 
+    def test_offline_mode_hooks(self):
+        """W4b：「今天」＝匯出日期、臨時浮動徽章已移除、線上功能有 data-online-only 標記。"""
+        html = self.build()
+        self.assertIn(f'window.__SNAPSHOT_TODAY__ = "{FIXTURE_TODAY.isoformat()}";', html)
+        self.assertIn("today: window.__SNAPSHOT_TODAY__", html)
+        self.assertNotIn("offline-snapshot-badge", html)
+        for element_id in ("sync-btn", "analyze-btn", "coach-toggle", "custom-range", "coach-panel",
+                           "coach-rail", "coach-fab", "coach-scrim"):
+            tag = re.search(r'<[^>]*\bid="' + element_id + r'"[^>]*>', html).group(0)
+            self.assertIn("data-online-only", tag, element_id)
+        self.assertIn('id="offline-stamp"', html)
+
+    def test_previous_period_requests_in_snapshot(self):
+        """趨勢頁前期比較：每個有起日的 range 都有前一段等長期間的 custom: 回應。"""
+        exact = _read_snapshot(self.build())["exact"]
+        expected = 0
+        for range_key in ("7d", "30d", "90d", "1y", "all"):
+            win = exact[f"/api/wellness-trend?range={range_key}"]
+            prev = offline.previous_range(win.get("start_date"), win["end_date"])
+            if prev is None:
+                continue
+            expected += 1
+            for endpoint in offline.PREV_ENDPOINTS:
+                self.assertIn(f"{endpoint}?range={prev}", exact)
+        self.assertGreaterEqual(expected, 4)
+
 
 class TestHelpers(unittest.TestCase):
     def test_canonical_key_drops_athlete_id_and_decodes(self):

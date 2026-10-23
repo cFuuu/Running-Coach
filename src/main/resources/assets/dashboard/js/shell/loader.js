@@ -3,7 +3,7 @@
  */
 
 import { state } from '../core/state.js';
-import { useMock, api } from '../core/api.js';
+import { useMock, api, isOfflineSnapshot, offlineSnapshotInfo } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
 import { renderSessionPicker, renderSessionDetail, renderSessionList, renderSessionDetailError } from '../views/sessions.js';
 import { loadLoadSeries } from '../views/load.js';
@@ -26,12 +26,23 @@ export function renderMeta() {
     chip.appendChild(text);
     node.appendChild(chip);
   }
-  if (useMock) {
+  var offline = offlineSnapshotInfo();
+  if (offline) {
+    // 離線快照：側邊列與頂列（手機沒有側邊列）都標資料時間，避免把舊資料當成今天
+    var label = '資料截至 ' + offline.at;
+    node.appendChild(h('span', 'badge badge-offline', label));
+    var stamp = $('offline-stamp');
+    if (stamp) {
+      stamp.textContent = label;
+      stamp.hidden = false;
+    }
+  } else if (useMock) {
     node.appendChild(h('span', 'badge badge-mock', '開發用假資料'));
   }
   var notice = $('notice-bar');
   clear(notice);
-  if (state.meta.notice) {
+  // 後端的部署警語（區網、無身分驗證）對離線檔不適用
+  if (state.meta.notice && !offline) {
     notice.appendChild(h('span', null, state.meta.notice));
   }
 }
@@ -107,6 +118,7 @@ export function loadSessionDetail(id) {
     state.sessionDetail = detail;
     renderOrDefer('sessions', renderSessionDetail);
   }).catch(function (err) {
-    renderSessionDetailError(id, err.message);
+    // 離線快照沒有這場的明細（超出 --detail-months 等）不是錯誤，改顯示說明
+    renderSessionDetailError(id, err.message, isOfflineSnapshot());
   });
 }

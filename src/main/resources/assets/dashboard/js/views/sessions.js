@@ -250,8 +250,14 @@ var EXPAND_TABS = [
 ];
 var expandTab = 'chart';
 
-// 單場明細讀取失敗：{ id, message }，展開列的分頁顯示錯誤而不是一直轉圈
+// 單場明細讀取失敗：{ id, message, unavailable }，展開列的分頁顯示錯誤而不是一直轉圈。
+// unavailable＝離線快照沒收這場的明細：是說明而不是「讀取失敗」
 var detailError = null;
+
+function showDetailError(node, err) {
+  if (err.unavailable) showUnavailable(node, err.message);
+  else showError(node, err.message);
+}
 
 function filterDef(key) {
   for (var i = 0; i < TYPE_FILTERS.length; i += 1) {
@@ -458,7 +464,7 @@ function renderExpandPanel(panel) {
   }
   var detail = state.sessionDetail;
   if (!detail || detail.id !== state.selectedSessionId) {
-    if (detailError && detailError.id === state.selectedSessionId) showError(panel, detailError.message);
+    if (detailError && detailError.id === state.selectedSessionId) showDetailError(panel, detailError);
     else showLoading(panel, '載入單場資料');
     return;
   }
@@ -591,11 +597,18 @@ export function renderSessionFull() {
 }
 
 /** 明細讀取失敗：展開列顯示錯誤；完整單場的摘要區也顯示（不清掉其他區塊的骨架） */
-export function renderSessionDetailError(id, message) {
-  detailError = { id: id, message: message };
+export function renderSessionDetailError(id, message, unavailable) {
+  detailError = { id: id, message: message, unavailable: !!unavailable };
   var panel = document.querySelector('#session-list .slog-item.is-expanded .slog-tab-panel');
-  if (panel && id === state.selectedSessionId) showError(panel, message);
+  if (panel && id === state.selectedSessionId) showDetailError(panel, detailError);
   var summary = $('session-summary');
-  if (summary) showError(summary, message);
+  if (summary) showDetailError(summary, detailError);
+  if (unavailable) { // 沒有明細就不會有圖：收掉各圖的載入中，只留摘要區的說明
+    ['lap-chart', 'records-chart', 'hr-drift', 'hrzone-chart'].forEach(function (key) {
+      var n = $(key);
+      if (n) clear(n);
+    });
+    if ($('recovery-impact')) renderRecoveryImpact(); // 恢復關聯來自 /api/recovery-impact，不需要明細
+  }
 }
 

@@ -5,6 +5,7 @@
 import * as Theme from '../theme.js';
 import { state } from '../core/state.js';
 import { $, clear, h } from '../core/dom.js';
+import { isOfflineSnapshot } from '../core/api.js';
 import { syncCoachSettingToggle } from '../views/settings.js';
 import { renderDirtyView } from './router.js';
 import { runAnalysis, showAnalyses } from '../coach.js';
@@ -40,6 +41,8 @@ export function openCoachPanel() {
 }
 
 export function bindCoachPanel() {
+  // 離線快照：面板與開關都隱藏（[data-online-only]），維持收起，不綁任何開合事件
+  if (isOfflineSnapshot()) { setCoachPanel(false, false); return; }
   var settings = Theme.getSettings();
   // 桌機預設展開（三欄常駐是本次改版的重點之一），只有明確收合過才記住收合。
   // 平板／手機的面板是覆蓋在內容上的抽屜／全螢幕 sheet，預設展開會把整個

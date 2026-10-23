@@ -13,6 +13,21 @@ export var useMock = (function () {
 })();
 
 /**
+ * 是否為離線快照（scripts/build_dashboard_offline.py 產生的單一 HTML）。
+ * 離線時要連伺服器的功能（同步、AI 教練、寫入）一律隱藏，「今天」改用匯出日期——
+ * 各處都只問這一個函式，不各自讀 window.MOCK_API。
+ */
+export function isOfflineSnapshot() {
+  return !!(window.MOCK_API && window.MOCK_API.isOffline);
+}
+
+/** 離線快照的匯出資訊：{ at: 'YYYY-MM-DD HH:MM', today: 'YYYY-MM-DD' }；非離線回 null。 */
+export function offlineSnapshotInfo() {
+  if (!isOfflineSnapshot()) return null;
+  return { at: window.MOCK_API.snapshotAt, today: window.MOCK_API.today };
+}
+
+/**
  * 附加 athlete_id。尚未從 /api/meta 取得時不附加（後端預設取第一位學員）。
  * 所有請求（含 coach.js 的聊天與分析）都經過這裡，呼叫端不可自己再接一次。
  */
