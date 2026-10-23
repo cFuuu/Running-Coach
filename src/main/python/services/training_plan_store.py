@@ -313,7 +313,9 @@ def set_plan_link(
 ) -> dict[str, Any]:
     """把學員在行事曆確認的「這場是課表」寫入 `training_plan.linked_activity_id`。
 
-    `activity_id=None` 清除連結。**只寫這一欄**，不改課表內容、不動其他列——
+    `activity_id=None` 清除連結。課表**只寫這一欄**，不改課表內容、不動其他列；
+    寫入後對當天跑 `resolve_for_dates()` 重算生效課種（2026-10-24 Fu 決定），
+    有變動的場次放在回傳的 `reclassified`——
     這是 PLAN.md §1「課表配對歧義時由學員確認」唯一開放的寫入；啟發式配對的
     結果仍不落地（見 plan_reconciliation 原則 4）。
 
@@ -332,7 +334,7 @@ def set_plan_link(
     **不會**帶入這裡寫的連結，該天會退回啟發式配對。刻意不在本函式處理——
     連結要不要、怎麼跟著版本走，屬 N-7 版本化模型的範圍。
 
-    回傳 `{"plan_id", "linked_activity_id"}`。
+    回傳 `{"plan_id", "linked_activity_id", "reclassified"}`。
     """
     plan = conn.execute(
         "SELECT id, planned_date, workout_type, is_active FROM training_plan "
@@ -377,5 +379,11 @@ def set_plan_link(
         "UPDATE training_plan SET linked_activity_id = ? WHERE id = ?",
         (activity_id, plan_id),
     )
+    # 配對改變後重算當天生效課種（N-28 課表優先），否則要等課表重寫或同步才會跟上
+    reclassified = resolve_for_dates(conn, athlete_id, [plan["planned_date"]])
     conn.commit()
-    return {"plan_id": plan_id, "linked_activity_id": activity_id}
+    return {
+        "plan_id": plan_id,
+        "linked_activity_id": activity_id,
+        "reclassified": reclassified,
+    }

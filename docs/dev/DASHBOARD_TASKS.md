@@ -284,6 +284,7 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 - 回傳：`{"plan_id", "linked_activity_id", "plan_match"}`。`plan_match` 是該活動寫入後在 `/api/calendar` 會得到的 `{state, method, reason}`，連結成功時為 `{"state":"exact","method":"linked_activity_id","reason":null}`；取消時為 `null`。寫入後同一天競爭的另一場不再是 `ambiguous`（課表已確認給別場，變成 `none`）。
 - 404：課表或活動不存在，或不屬於這位學員。
 - 422：課表已被取代（`is_active=0`）、活動日期 ≠ `planned_date`、活動是已併入主課的暖身（請連主課）、運動種類不相容（`plan_reconciliation.is_compatible`）、該活動已連到另一份生效課表。`detail` 是可直接顯示的中文說明。
+- 寫入後重算當天生效課種（`resolve_for_dates`），回應附 `reclassified`：有變動的場次 `[{activity_id, date, old, new, basis, detected}]`。
 - 來源限制比照 `/api/daily-feel`：區網放行，不另設開關（2026-10-24 Fu 決定，手機上要能按「這場是課表」）。
 - 已知缺口：課表被 `superseded_by` 取代時，新的一列不帶入連結（N-7 處理）。寫入後**不**重算活動的生效課種（N-28 `workout_type`，只看外部課表）；已匯入的活動要等該日外部課表重寫或跑 `resolve_for_dates` 回填才會更新。
 

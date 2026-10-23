@@ -470,10 +470,27 @@ class TestSetPlanLink(unittest.TestCase):
         result = set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)
         after = self._plan_row()
 
-        self.assertEqual(result, {"plan_id": self.plan_id, "linked_activity_id": self.run_a})
+        self.assertEqual(result["plan_id"], self.plan_id)
+        self.assertEqual(result["linked_activity_id"], self.run_a)
         self.assertEqual(after.pop("linked_activity_id"), self.run_a)
         before.pop("linked_activity_id")
         self.assertEqual(after, before, "課表其餘欄位不得被改動")
+
+    def test_link_reclassifies_that_day_from_plan(self):
+        """同日兩場跑步時課表無法唯一對應，課種沿用分圈；確認配對後當天立即
+        改以課表為準（N-28），不必等課表重寫或下次同步。"""
+        self.conn.execute(
+            "UPDATE activities SET workout_type = 'tempo', detected_workout_type = 'tempo', "
+            "workout_type_basis = 'laps' WHERE id = ?",
+            (self.run_a,),
+        )
+        self.conn.commit()
+        result = set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)
+        row = self.conn.execute(
+            "SELECT workout_type, workout_type_basis FROM activities WHERE id = ?", (self.run_a,)
+        ).fetchone()
+        self.assertEqual((row["workout_type"], row["workout_type_basis"]), ("easy", "plan"))
+        self.assertIn(self.run_a, [c["activity_id"] for c in result["reclassified"]])
 
     def test_relink_to_another_activity(self):
         set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)

@@ -99,8 +99,11 @@ class TestLinkAndCalendar(PlanLinkRouteTestCase):
     def test_link_returns_exact_and_resolves_ambiguity(self):
         r = self.put_link(self.main_run)
         self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertIn("reclassified", body)
+        body.pop("reclassified")
         self.assertEqual(
-            r.json(),
+            body,
             {
                 "plan_id": self.plan_id,
                 "linked_activity_id": self.main_run,
@@ -128,8 +131,11 @@ class TestLinkAndCalendar(PlanLinkRouteTestCase):
         self.put_link(self.main_run)
         r = self.put_link(None)
         self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["reclassified"], [])
+        body.pop("reclassified")
         self.assertEqual(
-            r.json(), {"plan_id": self.plan_id, "linked_activity_id": None, "plan_match": None}
+            body, {"plan_id": self.plan_id, "linked_activity_id": None, "plan_match": None}
         )
         self.assertIsNone(self.linked_in_db())
         self.assertEqual(self.calendar_matches()[self.main_run]["state"], "ambiguous")
