@@ -42,10 +42,11 @@ export function syncRangeToUrl(range) {
 /**
  * 選定場次並重新載入該場詳細資料。
  * @param {number} id
+ * @param {boolean} [full] true＝開「完整單場」（#/sessions/<id>/full），否則在清單裡展開該列
  */
-export function selectSession(id) {
+export function selectSession(id, full) {
   if (id === null || id === undefined || isNaN(id)) return;
-  navigate('sessions', id);
+  navigate('sessions', full ? id + '/full' : id);
 }
 
 export function updateRangeButtons() {

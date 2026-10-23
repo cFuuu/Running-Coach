@@ -5,7 +5,7 @@
 import { state } from '../core/state.js';
 import { useMock, api } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
-import { renderSessionPicker, renderSessionDetail, renderSessionList } from '../views/sessions.js';
+import { renderSessionPicker, renderSessionDetail, renderSessionList, renderSessionDetailError } from '../views/sessions.js';
 import { loadLoadSeries } from '../views/load.js';
 import { loadOverview } from '../views/overview.js';
 import { renderOrDefer } from './router.js';
@@ -41,8 +41,6 @@ export function renderMeta() {
  * 這是「設定 range → 重抓 → 重繪」的單一路徑，未來加滑動手勢直接呼叫 setRange 即可。
  */
 export function loadRangeData() {
-  var sessionSection = $('session-body');
-
   showLoading($('session-picker'), '載入場次');
   showTrendsLoading();
   renderOrDefer('trends', renderTrendsPage); // 換範圍時各圖先顯示載入中
@@ -61,19 +59,16 @@ export function loadRangeData() {
     renderOrDefer('sessions', renderSessionList);
     renderOrDefer('trends', renderTrendsPage);
 
-    // 預設選最近一場（sessions 由新到舊）
-    var keep = state.sessions.some(function (s) { return s.id === state.selectedSessionId; });
-    if (!keep) {
-      state.selectedSessionId = state.sessions.length > 0 ? state.sessions[0].id : null;
-    }
-    if (state.selectedSessionId !== null) {
-      loadSessionDetail(state.selectedSessionId);
-    } else {
-      clear(sessionSection);
-      sessionSection.appendChild(h('div', 'state-msg state-unavailable', '此區間內沒有可分析的場次'));
+    // 訓練紀錄（E.3）預設全部收合，不再自動選最近一場；展開哪一場由網址
+    // #/sessions/<id> 決定（router.applySessionRouteArg）。換區間時展開中的
+    // 場次照樣保留，明細還沒抓過（或抓的是別場）才補抓。
+    var id = state.selectedSessionId;
+    if (id !== null && !(state.sessionDetail && state.sessionDetail.id === id)) {
+      loadSessionDetail(id);
     }
   }).catch(function (err) {
     showError($('session-picker'), err.message);
+    showError($('session-list'), err.message);
     showError($('trends-body'), err.message);
   });
 
@@ -99,7 +94,6 @@ export function loadRangeData() {
 }
 
 export function loadSessionDetail(id) {
-  var body = $('session-body');
   // 保留版面骨架，只在各子區塊顯示載入中
   ['session-summary', 'lap-chart', 'records-chart', 'hr-drift', 'hrzone-chart', 'recovery-impact']
     .forEach(function (key) {
@@ -108,13 +102,11 @@ export function loadSessionDetail(id) {
     });
 
   api('/api/sessions/' + id).then(function (detail) {
+    // 回來前使用者已改點別場（或收合）：丟掉這份，不蓋掉目前的展開列
+    if (state.selectedSessionId !== id) return;
     state.sessionDetail = detail;
-    renderOrDefer('sessions', function () {
-      renderSessionDetail();
-      renderSessionList(); // 更新選取樣式
-    });
+    renderOrDefer('sessions', renderSessionDetail);
   }).catch(function (err) {
-    clear(body);
-    showError(body, err.message);
+    renderSessionDetailError(id, err.message);
   });
 }

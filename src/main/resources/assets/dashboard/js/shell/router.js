@@ -5,7 +5,7 @@
 import { state, VIEWS, DEFAULT_VIEW, APP_NAME } from '../core/state.js';
 import { $ } from '../core/dom.js';
 import { todayISO } from '../core/format.js';
-import { renderSessionPicker, renderRecoveryImpact, renderSessionDetail, renderSessionList } from '../views/sessions.js';
+import { renderSessionList, renderSessionFull, scrollExpandedIntoView } from '../views/sessions.js';
 import { renderCalendarBody, loadCalendarBody } from '../views/calendar.js';
 import { loadSessionDetail } from './loader.js';
 import { renderTrendsPage } from '../views/trends.js';
@@ -13,7 +13,7 @@ import { renderToolsPage } from '../views/tools.js';
 
 // hash 路由 `#/view[/arg]`：
 //   #/home  #/calendar  #/calendar/2026-09  #/trends
-//   #/sessions  #/sessions/1083  #/tools  #/settings
+//   #/sessions  #/sessions/1083（展開該列）  #/sessions/1083/full（完整單場）  #/tools  #/settings
 // 每個 view 是 <section class="view" hidden>，切換只動 hidden——不重建 DOM，
 // 圖表與既有容器 id 都原地保留。
 //
@@ -32,8 +32,11 @@ export function parseHash() {
   if (raw.indexOf('/') !== 0) return { view: DEFAULT_VIEW, arg: null };
   var parts = raw.slice(1).split('/');
   var view = LEGACY_VIEWS[parts[0]] || parts[0];
-  if (!VIEWS[view]) return { view: DEFAULT_VIEW, arg: null };
-  return { view: view, arg: parts.length > 1 && parts[1] !== '' ? parts[1] : null };
+  if (!VIEWS[view]) return { view: DEFAULT_VIEW, arg: null, sub: null };
+  var arg = parts.length > 1 && parts[1] !== '' ? parts[1] : null;
+  // 第三段目前只有 #/sessions/<id>/full（完整單場）；其他一律忽略
+  var sub = view === 'sessions' && arg !== null && parts[2] === 'full' ? 'full' : null;
+  return { view: view, arg: arg, sub: sub };
 }
 
 /**
@@ -61,13 +64,14 @@ export function applyRoute() {
   // 位置——否則首頁複製出去的連結會失去 view，重新整理也回不到原處。
   // 用 replaceState 不留下多餘的上一頁紀錄；它不觸發 hashchange，
   // 所以下面照常繼續套用。
-  var canonical = '#/' + view + (route.arg ? '/' + route.arg : '');
+  var canonical = '#/' + view + (route.arg ? '/' + route.arg : '') + (route.sub ? '/' + route.sub : '');
   if (window.location.hash !== canonical && window.history && window.history.replaceState) {
     var url = new URL(window.location.href);
     url.hash = canonical;
     window.history.replaceState(null, '', url.toString());
   }
 
+  var prevView = state.view;
   state.view = view;
 
   // 只動 hidden，不重建 DOM
@@ -93,6 +97,20 @@ export function applyRoute() {
   if (controls) controls.hidden = !VIEWS[view].hasRange;
   document.title = VIEWS[view].title + '｜' + APP_NAME;
 
+  // 從別頁進來（含深連結）：內容捲回頂端；訓練紀錄頁內展開／收合不捲，
+  // 改由清單把展開列捲進畫面（從別頁進來對齊頂端，頁內點選只捲到看得見）。
+  // 必須在 applySessionRouteArg 之前，它可能立刻重畫清單並消耗 sessionScroll。
+  var viewChanged = prevView !== view;
+  if (view === 'sessions' && route.arg !== null && route.sub === null) {
+    state.sessionScroll = viewChanged ? 'start' : 'nearest';
+  }
+  var content = $('content');
+  if ((viewChanged || route.sub === 'full') && content && content.scrollTo) content.scrollTo(0, 0);
+
+  // 先切清單／完整單場，再處理參數——參數可能立刻重畫清單，清單得是可見的
+  // （隱藏容器量不到寬度，也捲不進畫面）
+  updateSessionsStage();
+
   // 路由參數
   if (view === 'sessions') {
     applySessionRouteArg(route.arg);
@@ -104,43 +122,38 @@ export function applyRoute() {
     }
   }
 
-  // 切 view 時內容區捲回頂端（各 view 是獨立畫面，不該沿用上一個的捲動位置）
-  var content = $('content');
-  if (content && content.scrollTo) content.scrollTo(0, 0);
-
   // 行事曆是唯一「進來才載入」的 view（月曆資料量大且與 range 無關），
   // 首次進入或換月時都由這裡觸發。
   if (view === 'calendar' && !state.calendarData) state.dirty.calendar = true;
 
   renderDirtyView(view);
-  updateSessionsMobileStage();
 }
 
 /**
- * `#/sessions/<id>` 的參數處理。深連結（重新整理後直接開這個網址）時
- * state.sessions 可能還沒回來，此時只先記住 id，等 loadRangeData 完成
- * 後的既有「保留已選場次」邏輯會接手載入明細。
+ * `#/sessions[/<id>]` 的參數處理：id＝要展開的那一列，沒有 id＝全部收合。
+ * 深連結（重新整理後直接開這個網址）時 state.sessions 可能還沒回來，
+ * 清單先顯示載入中，等 loadRangeData 回來重畫時就會展開並捲到該列。
  */
 export function applySessionRouteArg(arg) {
-  if (arg === null) return;
-  var id = parseInt(arg, 10);
-  if (isNaN(id)) return;
-  if (state.selectedSessionId === id && state.sessionDetail) return;
-  state.selectedSessionId = id;
-  if (state.sessions.length > 0) {
-    renderSessionPicker();
-    renderSessionList();
-    renderRecoveryImpact();
+  var id = arg === null ? null : parseInt(arg, 10);
+  if (id !== null && isNaN(id)) return;
+  if (id === state.selectedSessionId) {
+    // 同一場（例如從完整單場返回）：清單不必重畫，只把展開列捲進畫面
+    scrollExpandedIntoView();
+    return;
   }
-  loadSessionDetail(id);
+  state.selectedSessionId = id;
+  state.sessionDetail = null;
+  renderOrDefer('sessions', renderSessionList);
+  if (id !== null) loadSessionDetail(id);
 }
 
 /** 切到某 view 時，若它的圖表在隱藏期間被標髒就補畫。 */
 export function renderDirtyView(view) {
   if (view === 'sessions' && state.dirty.sessions) {
     state.dirty.sessions = false;
-    if (state.sessions.length > 0) renderSessionList();
-    if (state.sessionDetail) renderSessionDetail();
+    renderSessionList();
+    renderSessionFull();
   } else if (view === 'trends' && state.dirty.trends) {
     state.dirty.trends = false;
     renderTrendsPage();
@@ -165,27 +178,25 @@ export function renderOrDefer(key, renderFn) {
 }
 
 /**
- * 手機的訓練紀錄「清單 → 明細」兩段式：有選定場次時顯示明細、否則
- * 顯示清單。桌機兩欄並存，這個 class 在 CSS 的手機斷點才生效。
+ * 訓練紀錄的「清單 ↔ 完整單場」兩段式（E.3，所有寬度都一樣）：
+ * #/sessions/<id>/full 顯示完整單場（.stage-detail），其餘顯示清單（.stage-list）。
  */
-export function updateSessionsMobileStage() {
+export function updateSessionsStage() {
   var view = $('view-sessions');
   if (!view) return;
-  var route = parseHash();
-  var showDetail = state.view === 'sessions' && route.arg !== null;
-  var wasDetail = view.classList.contains('stage-detail');
-  view.classList.toggle('stage-detail', showDetail);
-  view.classList.toggle('stage-list', !showDetail);
+  var showFull = state.view === 'sessions' && parseHash().sub === 'full';
+  var wasFull = view.classList.contains('stage-detail');
+  view.classList.toggle('stage-detail', showFull);
+  view.classList.toggle('stage-list', !showFull);
 
-  // 手機清單階段時明細是 display:none，其中的圖表寬度為 0。切到明細
-  // 階段等於「容器從隱藏變可見」，和切 view 是同一種情況，必須重畫。
-  if (showDetail && !wasDetail && state.sessionDetail && window.innerWidth < 768) {
-    renderSessionDetail();
-  }
+  // 完整單場平時是 display:none，其中的圖表寬度為 0。切進來等於
+  // 「容器從隱藏變可見」，和切 view 是同一種情況，必須重畫。
+  if (showFull && !wasFull) renderSessionFull();
 }
 
 export function bindRouter() {
   window.addEventListener('hashchange', applyRoute);
   var back = $('session-back');
-  if (back) back.addEventListener('click', function () { navigate('sessions'); });
+  // 返回清單，並保持剛才那一列展開
+  if (back) back.addEventListener('click', function () { navigate('sessions', state.selectedSessionId); });
 }

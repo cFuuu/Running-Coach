@@ -8,8 +8,9 @@ export var state = {
   range: '30d',
   athleteId: null,       // 未指定時由後端取資料庫第一位
   sessions: [],
-  selectedSessionId: null,
+  selectedSessionId: null, // 訓練紀錄展開中的場次（null＝全部收合），由 #/sessions/<id> 決定
   sessionDetail: null,
+  sessionScroll: null,   // 下次畫清單時把展開列捲進畫面：'start'（從別頁／深連結進來）|'nearest'（頁內點選）
   wellness: null,
   garminCards: null,     // 趨勢頁「Garmin 數據」：/api/garmin-cards（吃 range）
   trainingDays: [],

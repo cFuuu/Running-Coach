@@ -336,19 +336,21 @@
       </section>
 
       <!-- ================================================== view：訓練紀錄 -->
-      <section class="view view-split" id="view-sessions" hidden aria-labelledby="h-session">
-        <!-- 左：場次清單（原本在訓練負荷面板內，D.2 要求搬來這裡） -->
+      <section class="view stage-list" id="view-sessions" hidden aria-labelledby="content-title">
+        <!-- 日誌列清單（E.3 C1）：按週分組、點列原地展開，見 js/views/sessions.js -->
         <section class="panel panel-session-list" id="panel-session-list" aria-labelledby="h-session-list">
-          <h2 class="panel-title" id="h-session-list">場次</h2>
+          <h2 class="panel-title" id="h-session-list">
+            場次<span class="panel-hint">點一列展開分析</span>
+          </h2>
+          <div id="session-filters"></div>
           <div id="session-list"></div>
         </section>
 
-        <!-- 右：單場明細 -->
+        <!-- 完整單場（#/sessions/<id>/full）：與清單二選一顯示，切換見 js/shell/router.js updateSessionsStage -->
         <section class="panel" id="panel-session" aria-labelledby="h-session">
-          <!-- 手機兩段式的返回鍵（桌機隱藏），S1 先接路由，清單→明細見 js/shell/router.js -->
-          <button type="button" class="detail-back" id="session-back">← 場次清單</button>
+          <button type="button" class="detail-back" id="session-back">← 訓練紀錄</button>
           <h2 class="panel-title" id="h-session">
-            單場分析<span class="panel-hint">預設為區間內最近一場，可切換</span>
+            單場分析<span class="panel-hint">可用下拉選單切換場次</span>
           </h2>
 
           <div id="session-picker"></div>
