@@ -1122,3 +1122,11 @@
   - [ ] ③ 離線模式隱藏線上功能（同步、分析、AI 教練、今日體感、自訂區間）；頁首顯示「資料截至」；「今天」改用匯出日期。
   - [ ] ④ Fu 在 iCloud for Windows 開啟 iCloud 雲碟（2026-10-24 檢查時找不到 `iCloudDrive` 資料夾），並把現有捷徑的第一步改成「取得檔案」。iOS 15 起只能匯入簽署過的捷徑，Windows 無法產生，所以要手動建立。
   - [ ] ⑤ 驗收：用 Playwright 以 `file://` 開啟測試，再由 Fu 用 iPhone 真機確認。
+
+- **🔐 N-31 個人識別資訊進入公開 repo 歷史（2026-10-24 發現並處理）**：W4a 合併時發現 `garmin_export_parser.py` 說明文字的檔名範例含真實 email 與 Garmin userProfileId（2026-08-17 起）。repo 為 **PUBLIC**；進一步盤點發現該 email 同時是 301 個 commit 的作者／提交者信箱。
+  - [x] 現行版本改用 `<email>`／`<userProfileId>` 佔位符
+  - [x] **改寫全部歷史並 force push（Fu 選擇徹底清除）**：`main`、`feat/n19-ui-blue-theme`、本機 `feature/frontend-redesign` 三個分支的說明文字與作者／提交者信箱，改為 GitHub noreply 信箱（`<id>+cFuuu@users.noreply.github.com`）；改寫前後 `main` 的檔案樹完全相同。改寫前的完整備份打包為 bundle（只存於本機 scratchpad）
+  - [x] 本 repo 的 `git config user.email` 改為 noreply
+  - [ ] **GitHub 端殘留**：`refs/pull/22/merge`（PR #22 的試合併 commit）仍指向舊 main，含舊信箱與 userProfileId。PR 與新 main 衝突，GitHub 不會自動重算。需 Fu 關閉或重開 PR #22，並依 GitHub「Removing sensitive data from a repository」流程聯絡 Support，清除舊 commit 的快取與 PR ref
+  - [ ] **另一台電腦**：本機舊歷史已無法 `pull`，需重新 clone，或執行 `git fetch origin && git reset --hard origin/main`（先確認沒有未推的變更）；該機的 `user.email` 也要改為 noreply
+  - [ ] 建議 Fu：全域 `git config --global user.email` 改為 noreply，並在 GitHub Settings → Emails 開啟「Keep my email addresses private」與「Block command line pushes that expose my email」
