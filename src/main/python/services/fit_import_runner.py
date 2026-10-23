@@ -30,6 +30,7 @@ from pathlib import Path
 from src.main.python.models.db import get_connection
 from src.main.python.services.activity_types import PACE_COMPARABLE_RUNNING_TYPES
 from src.main.python.services import fit_parser
+from src.main.python.services.warmup_links import link_warmups
 from src.main.python.services.workout_classifier import classify_workout
 
 # 預設匯入的 FIT sport 值。這是「目前預設只做跑步」，不是「只能做跑步」——
@@ -104,7 +105,11 @@ def _recent_averages(
     activity_id: int,
     comparison_activity_types: frozenset[str] = DEFAULT_COMPARISON_ACTIVITY_TYPES,
 ) -> tuple[float | None, int | None]:
-    """取這場活動之前的近期平均距離與配速，供訓練類型做相對判斷。"""
+    """取這場活動之前的近期平均距離與配速，供訓練類型做相對判斷。
+
+    已關聯為暖身的活動不計入（N-25）：1–2 km 的慢速暖身會拉低平均距離、
+    拉慢平均配速，間接讓 LSD 與 tempo 更容易被觸發。
+    """
     placeholders = ",".join("?" for _ in comparison_activity_types)
     row = conn.execute(
         f"""
@@ -116,6 +121,7 @@ def _recent_averages(
               AND activity_type IN ({placeholders})
               AND started_at < (SELECT started_at FROM activities WHERE id = ?)
               AND distance_km > 0
+              AND warmup_for_activity_id IS NULL
             ORDER BY started_at DESC
             LIMIT ?
         )
@@ -305,6 +311,11 @@ def import_fit_files(
         "workout_types": {},
     }
     started = time.time()
+
+    # 活動本身已由匯出包寫入；先關聯暖身，分類時的「近期平均」才不含暖身（N-25）
+    for (athlete_id,) in conn.execute("SELECT id FROM athlete_profile").fetchall():
+        link_warmups(conn, athlete_id)
+    conn.commit()
 
     for zip_path in zips:
         with zipfile.ZipFile(zip_path) as z:

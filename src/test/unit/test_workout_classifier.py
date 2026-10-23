@@ -147,6 +147,24 @@ class TestIntervalSegments(unittest.TestCase):
         """無近期平均就無從判斷「快」，不套分段規則。"""
         self.assertNotEqual(classify_workout(_auto_lapped_1000m_reps()), "interval")
 
+    def test_long_recovery_is_not_an_interval_rest(self):
+        """★ 長跑中途走路 9 分鐘：前後兩段都夠快，但那不是組間休息。"""
+        laps = [_lap(i, 357) for i in range(1, 5)] + [_lap(5, 547)] + [_lap(i, 349) for i in range(6, 11)]
+        self.assertNotEqual(
+            classify_workout(laps, total_distance_km=10.0, recent_avg_distance_km=8.0,
+                             recent_avg_pace_sec_per_km=379),
+            "interval",
+        )
+
+    def test_easy_run_with_walking_km_is_not_interval(self):
+        """★ 舊「標準差＋全距」規則會把夾一圈走路的輕鬆跑判成間歇；有近期平均時不再套用。"""
+        laps = [_lap(i, 360) for i in range(1, 6)] + [_lap(6, 576)] + [_lap(i, 364) for i in range(7, 11)]
+        self.assertEqual(
+            classify_workout(laps, total_distance_km=10.0, recent_avg_distance_km=8.0,
+                             recent_avg_pace_sec_per_km=377),
+            "easy",
+        )
+
     def test_button_press_lap_does_not_split_segment(self):
         """<20 秒的碎圈忽略，不會把一趟切成兩趟。"""
         laps = [_lap(1, 285, km=0.4), _lap(2, 600, km=0.02), _lap(3, 285, km=0.6),

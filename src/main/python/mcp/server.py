@@ -172,6 +172,9 @@ def list_running_sessions(
 
     range_key 合法值：'7d'／'30d'／'90d'／'1y'／'all'，或
     'custom:YYYY-MM-DD:YYYY-MM-DD' 自訂區間。
+
+    學員常把暖身和主課分開按錶。已辨識為暖身的那筆**不單獨列出**，改以
+    `warmup`（距離、時長、配速、心率）掛在主課上；計算跑量時要把暖身加回去。
     """
     return _serialize(dashboard_queries.list_sessions(_conn(ctx), athlete_id, range_key))
 

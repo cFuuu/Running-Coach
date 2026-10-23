@@ -58,6 +58,11 @@ INTERVAL_WORK_FASTER_THAN_AVG_SEC = 20
 # 至少要有幾趟快段才判為間歇。設 2 而非 3：課表 4000m＋休息＋2000m 也是間歇課
 MIN_FAST_WORK_SEGMENTS = 2
 
+# 快段之間的休息段最長秒數。長跑中途走路或停下 7–20 分鐘（例 2025-07-26：
+# 3.7km、走 9 分鐘、5.3km）前後兩段都可能「夠快」，但那不是組間休息；
+# Fu 的間歇課組間休息實測 2–4 分鐘（10/22 約 2 分鐘、10/15 為 3 分 49 秒）。
+MAX_RECOVERY_SEGMENT_SEC = 5 * 60
+
 
 def segment_laps(laps: list[dict]) -> list[dict]:
     """把分圈依配速切成 work／recovery 段，相鄰同角色的圈合併。
@@ -119,17 +124,23 @@ def work_segments(segments: list[dict]) -> list[dict]:
 
 
 def _has_interval_structure(laps: list[dict], recent_avg_pace_sec_per_km: int | None) -> bool:
-    """是否有 ≥2 趟明顯快於平常的 work 段、中間夾著 recovery。
+    """是否有 ≥2 趟明顯快於平常的 work 段、中間夾著不超過 5 分鐘的 recovery。
 
     沒有近期平均配速時不判（無從判斷「快」），交給後面的舊規則。
     """
     if not recent_avg_pace_sec_per_km:
         return False
+    segments = segment_laps(laps)
     fast = [
-        s for s in work_segments(segment_laps(laps))
+        s for s in work_segments(segments)
         if s["pace_sec_per_km"] <= recent_avg_pace_sec_per_km - INTERVAL_WORK_FASTER_THAN_AVG_SEC
     ]
-    return len(fast) >= MIN_FAST_WORK_SEGMENTS
+    if len(fast) < MIN_FAST_WORK_SEGMENTS:
+        return False
+    between = segments[segments.index(fast[0]):segments.index(fast[-1]) + 1]
+    return all(
+        s["duration_sec"] <= MAX_RECOVERY_SEGMENT_SEC for s in between if s["role"] == "recovery"
+    )
 
 
 def classify_workout(
@@ -168,7 +179,15 @@ def classify_workout(
     stdev = statistics.stdev(paces)
     spread = max(paces) - min(paces)
 
-    if stdev >= INTERVAL_PACE_STDEV_SEC and spread >= INTERVAL_PACE_SPREAD_SEC:
+    # 舊的「標準差＋全距」規則只在沒有近期平均（分段規則無法判「快」）時當備援。
+    # 有近期平均時改由分段規則全權判定間歇：舊規則會把「輕鬆跑中途走路一公里」
+    # 判成間歇——1km 自動分圈夾一圈 9:00/km 的走路，標準差就超標。2026-10-23
+    # 實測當時被判 interval 的場次中 18 場屬此情形（N-24）。
+    if (
+        not recent_avg_pace_sec_per_km
+        and stdev >= INTERVAL_PACE_STDEV_SEC
+        and spread >= INTERVAL_PACE_SPREAD_SEC
+    ):
         return "interval"
 
     if (

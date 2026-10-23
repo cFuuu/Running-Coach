@@ -115,6 +115,7 @@ from src.main.python.services.garmin_api_client import (
     GarminRateLimited,
 )
 from src.main.python.services.garmin_auth import GarminAuthError, GarminAuthRequired
+from src.main.python.services.warmup_links import link_warmups
 from src.main.python.services.fit_import_runner import (
     DEFAULT_CLASSIFIABLE_SPORTS,
     store_laps,
@@ -1397,6 +1398,8 @@ def sync(
     n_health = _upsert_health_status(conn, athlete_id, health_rows)
     n_status = _upsert_training_status(conn, athlete_id, training_status_rows)
     n_perf = _upsert_performance_metrics(conn, athlete_id, performance_row)
+    # 先關聯暖身再分類：分類器的「近期平均」會排除已關聯的暖身（N-25）
+    n_warmups = len(link_warmups(conn, athlete_id))
 
     n_laps = 0
     n_classified = 0
@@ -1426,6 +1429,7 @@ def sync(
         "metrics_coverage_updated": n_cov,
         "laps_synced": n_laps,
         "activities_classified": n_classified,
+        "warmup_links_changed": n_warmups,
         # HRmax／靜止心率有變動時列出新舊值：所有負荷與強度皆即時以新值重算。
         "hr_settings_changes": hr_settings_changes,
     }

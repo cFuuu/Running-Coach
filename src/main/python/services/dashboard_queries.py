@@ -339,12 +339,41 @@ def get_meta(conn: sqlite3.Connection, athlete_id: int | None = None) -> dict:
 # --------------------------------------------------------------------------
 
 
+def _fetch_warmups(conn: sqlite3.Connection, main_ids: list[int]) -> dict[int, dict]:
+    """主課 id → 其暖身摘要（N-25）。暖身是另存的獨立活動，見 warmup_links.py。"""
+    if not main_ids:
+        return {}
+    placeholders = ",".join("?" for _ in main_ids)
+    return {
+        row["warmup_for_activity_id"]: {
+            "id": row["id"],
+            "started_at": row["started_at"],
+            "distance_km": row["distance_km"],
+            "duration_sec": row["duration_sec"],
+            "avg_pace_sec_per_km": row["avg_pace_sec_per_km"],
+            "avg_hr_bpm": row["avg_hr_bpm"],
+        }
+        for row in conn.execute(
+            f"""
+            SELECT id, started_at, distance_km, duration_sec, avg_pace_sec_per_km,
+                   avg_hr_bpm, warmup_for_activity_id
+            FROM activities WHERE warmup_for_activity_id IN ({placeholders})
+            """,
+            main_ids,
+        )
+    }
+
+
 def list_sessions(
     conn: sqlite3.Connection,
     athlete_id: int | None = None,
     range_key: str = DEFAULT_RANGE,
 ) -> dict:
-    """列出 range 內的跑步類活動，依開始時間由新到舊。"""
+    """列出 range 內的跑步類活動，依開始時間由新到舊。
+
+    已關聯為暖身的活動不單獨列出，改以 `warmup` 摘要掛在主課上（N-25）——
+    否則每堂品質課都多一筆來路不明的短跑，場次數偏多。
+    """
     resolved = resolve_athlete_id(conn, athlete_id)
     window = resolve_range(conn, resolved, range_key)
     if resolved is None:
@@ -361,6 +390,7 @@ def list_sessions(
         WHERE athlete_id = ?
           AND activity_type IN ({type_placeholders})
           AND date(started_at) <= ?
+          AND warmup_for_activity_id IS NULL
     """
     params: list[Any] = [resolved, *running_types, window["end_date"]]
     if window["start_date"]:
@@ -368,8 +398,10 @@ def list_sessions(
         params.append(window["start_date"])
     sql += " ORDER BY started_at DESC"
 
+    rows = conn.execute(sql, params).fetchall()
+    warmups = _fetch_warmups(conn, [row["id"] for row in rows])
     sessions = []
-    for row in conn.execute(sql, params):
+    for row in rows:
         sessions.append(
             {
                 "id": row["id"],
@@ -386,6 +418,7 @@ def list_sessions(
                 "max_hr_bpm": row["max_hr_bpm"],
                 "avg_cadence_spm": row["avg_cadence_spm"],
                 "aerobic_te": row["aerobic_te"],
+                "warmup": warmups.get(row["id"]),
             }
         )
     return {**window, "sessions": sessions}
@@ -409,7 +442,7 @@ def get_session_detail(
         SELECT id, athlete_id, started_at, title, activity_type, workout_type, workout_type_source,
                distance_km, duration_sec, avg_pace_sec_per_km, avg_hr_bpm, max_hr_bpm,
                avg_cadence_spm, aerobic_te, elevation_gain_m, calories, raw_data_json,
-               source_version
+               source_version, warmup_for_activity_id
         FROM activities
         WHERE id = ?
     """
@@ -451,6 +484,9 @@ def get_session_detail(
             "elevation_gain_m": row["elevation_gain_m"],
             "calories": row["calories"],
         },
+        # N-25：本場的暖身（另存的獨立活動），以及本場若本身是暖身則指向哪場主課
+        "warmup": _fetch_warmups(conn, [session_id]).get(session_id),
+        "warmup_for_activity_id": row["warmup_for_activity_id"],
         "hr_zones": _build_hr_zones(
             row["raw_data_json"],
             is_api=row["source_version"] == API_SYNC_SOURCE_VERSION,

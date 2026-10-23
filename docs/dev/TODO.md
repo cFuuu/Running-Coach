@@ -1028,14 +1028,15 @@
   - **連帶問題（不一起修，判讀會用另一種方式繼續錯）**：改判成 `interval` 後，[`session_quality.assess_intensity_fit()`](../../src/main/python/services/session_quality.py) 會拿**整場平均心率**比 interval 的 85–95% HRR。#1109 整場平均 150 bpm ≈ 68.6% HRR，會被判「強度不足」——休息段把平均拉低，是課的結構不是沒練到（即 N-14 的問題）。
   - **修法**：
     - [x] ① **分圈合併成「段」**：[`workout_classifier.segment_laps()`](../../src/main/python/services/workout_classifier.py)。<20 秒的圈視為按錯錶忽略；快圈基準 = 較快一半圈數的配速中位數，比它慢 ≥35% 為 recovery；相鄰同角色合併。10/22 合併後正好是 1028／1010／1018／1023m 四趟，休息 121–123 秒
-    - [x] ② **間歇判定改看段**：≥2 趟 work（每趟 ≥30 秒）、且**每一趟都比近期平均配速快 20 秒以上**才判 `interval`（Fu 建議「速度有明顯快慢就是間歇」，但只看快慢會把 2025-11-25「5:51 暖身 1km、停頓 1km、5:00 跑 8km」誤判，故加上每趟都要夠快）。無近期平均時不套此規則。LSD 規則仍優先，舊「標準差＋全距」規則保留。門檻試算：休息段比例 0.25 有 24 場翻成間歇（含 LSD 中途停下），0.35 為 20 場，再加「每趟夠快」後剩 16 場、全為快慢交替結構。皆為 🔴 工程決策
+    - [x] ② **間歇判定改看段**：≥2 趟 work（每趟 ≥30 秒）、**每一趟都比近期平均配速快 20 秒以上**、且**快段之間的休息段都 ≤5 分鐘**才判 `interval`（Fu 建議「速度有明顯快慢就是間歇」，但只看快慢會把 2025-11-25「5:51 暖身 1km、停頓 1km、5:00 跑 8km」誤判，故加上每趟都要夠快；長跑中途走路 7–20 分鐘的前後兩段也可能都夠快，故加休息上限——Fu 的組間休息實測 2–4 分鐘）。LSD 規則仍優先。門檻試算：休息段比例 0.25 有 24 場翻成間歇（含 LSD 中途停下），0.35 為 20 場，再加「每趟夠快」後剩 16 場、全為快慢交替結構。皆為 🔴 工程決策
+    - [x] ②-2 **舊「標準差＋全距」規則降為備援**（N-25 預覽時發現）：只在沒有近期平均時使用。排除暖身後部分 10–12km 長跑不再觸發 LSD 規則，落到舊規則被判成間歇，追查發現舊規則本身就會把「輕鬆跑中途走路一公里」判成間歇（1km 自動分圈夾一圈 9:00/km，標準差即超標）——當時 DB 中被判 interval 的場次有 **18 場屬此情形**（例 2026-07-23：5km 6:00、走 1km、4km 6:04）
     - [x] ③ **改為查詢時即時分段、不存資料庫**（偏離原計畫的 `lap_role` 欄位）：分段是分圈的衍生資料，存表會在門檻調整時與分類結果脫節、需要同步重算——與 PLAN §1「訓練後恢復不另存資料表」同一理由。`assess_session_quality` 每次從 `activity_laps` 即時切
     - [x] ④ **間歇課的強度改看各趟配速**（Fu 2026-10-23 決定，取代原「work 段心率對 85–95% HRR」）：[`session_quality.assess_interval_pace()`](../../src/main/python/services/session_quality.py) 逐趟標示落在哪個 VDOT 區間（含 `between_interval_and_tempo` 這類區間空隙），**不判定達標**——課表要 T 還是 I 只有教練知道。間歇的 `intensity_fit` 改列 `not_assessed`：原計畫在真實資料上會得出「強度不足」，因為 10/22 各趟心率只有 65–76% HRR（5 分鐘反覆心率還在爬），而課表目標 4:50–4:55/km 本來就是 T 配速的巡航間歇，不是 VO2max 強度。各趟心率只列數值。新增偏誤 `interval_segments_from_laps`
-    - [ ] ⑤ **重分類歷史資料**：新增 [`fit_import_runner.reclassify_stored_activities()`](../../src/main/python/services/fit_import_runner.py) 與 CLI `--reclassify [--apply]`，`manual` 不動、預設只列差異。真實 DB 預覽：**16 場 → interval**（14 場 tempo、2 場 unknown），其餘課種無任何變動。**待 Fu 確認清單後 `--apply`**
+    - [ ] ⑤ **重分類歷史資料**：新增 [`fit_import_runner.reclassify_stored_activities()`](../../src/main/python/services/fit_import_runner.py) 與 CLI `--reclassify [--apply]`，`manual` 不動、預設只列差異。真實 DB 預覽（只套 N-24、未關聯暖身）：16 場 → interval。**與 N-25 合併預覽後（DB 副本上先關聯暖身再重分類）共 49 場**：tempo → interval 14、unknown → interval 2、interval → easy 18（②-2 的舊規則誤判）、lsd → easy 11、tempo → easy 3、lsd → tempo 1（後兩類是近期平均排除暖身後，約 10km 不再達「1.5 倍平均距離」、配速基準變快所致）。存疑：2025-04-24（#234）為有暖身的週四課，但各段比平常慢、休息 >5 分鐘，改判 easy。**待 Fu 確認清單後與 N-25 一起 `--apply`**
   - **驗收**：#1109 預覽合併出 4 趟約 1000m（4:39 I 區、4:53 T 區、4:49 與 4:45 落在 T 與 I 之間），強度不再以「整場平均 68.6%」判定；10/15（#1103）維持 `interval`；952 項測試通過。剩 ⑤ 寫入後對 #1109 實際呼叫 MCP 一次。
   - **不在範圍**：tempo 的暖身／緩和切分（N-14）、排程器主段結構（N-10）。
 
-- **📋 N-25 暖身被 Garmin 存成獨立活動、與主課沒有關聯（2026-10-23 實查，計畫待確認）**：
+- **🔵 N-25 暖身被 Garmin 存成獨立活動、與主課沒有關聯（2026-10-23 實查；程式已完成，寫入真實 DB 待 Fu 確認清單）**：
   - **現象**：Fu 的品質課習慣先跑約 10 分鐘暖身、停錶，再另外開一筆主課。真實 DB 中 2022-12 起有 40 組「同日、前一筆 ≤15 分鐘」的兩筆跑步，暖身那筆一律 `unknown`。
   - **真實分布（決定門檻用）**：
     - 暖身時長：35 組落在 6–14 分鐘（中位約 9.7 分鐘）
@@ -1046,12 +1047,13 @@
     - [`fit_import_runner._recent_averages()`](../../src/main/python/services/fit_import_runner.py) 取前 N 筆跑步的平均距離與配速時，把 1–2 km 的暖身也算進去，拉低平均距離、拉慢平均配速，間接讓 `lsd`（距離 ≥ 平均 × 1.5）與 `tempo`（配速快於平均 20 秒）更容易被觸發
     - 負荷與週跑量**不受影響**（兩筆本來就分別加總，這是對的）
   - **修法**：
-    - [ ] ① **schema**：`activities` 新增 `warmup_for_activity_id`（nullable，指向主課）與 `warmup_link_source`（`auto`／`manual`）。不另開群組表——目前只有「暖身附屬於主課」一種關係，緩和若之後出現同樣模式再沿用
-    - [ ] ② **純函式偵測**：新增 `detect_warmup_links(activities)`，三個條件同時成立即配對：同日兩筆跑步且前一筆時長 **5–15 分鐘**；前一筆開始到後一筆開始 **≤70 分鐘**（涵蓋賽事日）；前一筆平均配速**慢於**後一筆（排除上面那 5 組快的短段）。門檻集中在模組頂端，標 🔴 工程決策、依上方分布訂定。不覆寫 `manual`
-    - [ ] ③ **寫入路徑**：FIT 匯入與 Garmin 同步完成後各呼叫一次（同步的 3 天重疊範圍正好涵蓋「主課晚於暖身才上傳」的情況）；另附一次性回填，對 40 組歷史資料執行
-    - [ ] ④ **下游**：`_recent_averages()` 排除已連結的暖身；`list_running_sessions`／場次 API 把暖身摺進主課（主課帶 `warmup: {distance_km, duration_sec, avg_hr_bpm}`），不再獨立列出。暖身的 `workout_type` **維持 `unknown`、不改填 `recovery`**，角色由 `warmup_for_activity_id` 表達，避免 `workout_type` 混入第二種語意
-    - [ ] ⑤ 回填後依 N-24 ④ 的流程重跑分類（近期平均變了，部分場次課種可能改變），差異清單一併給 Fu 確認
-  - **驗收**：35 組配對、5 組快的短段不配對、無誤配（抽查非品質課日的同日兩筆）；#1110 → #1109 有連結；`list_running_sessions` 10/22 只列一筆並帶暖身摘要；測試通過。
+    - [x] ① **schema**：`activities` 新增 `warmup_for_activity_id`（nullable，指向主課）與 `warmup_link_source`（`auto`／`manual`；manual＋NULL＝人工確認不是暖身）。不另開群組表——目前只有「暖身附屬於主課」一種關係
+    - [x] ② **偵測**：新模組 [`warmup_links.py`](../../src/main/python/services/warmup_links.py)，`detect_warmup_links()` 純函式＋`link_warmups()` 讀寫。條件：前一筆 **5–15 分鐘**；主課 = 同日、開始時間 **≤70 分鐘**內、**比暖身長**的第一筆跑步（跳過中間夾的短段，實例 2025-09-04：暖身 → 2 分鐘短段 → 主課，若只取「緊接的下一筆」會配到短段）。**偏離原計畫：拿掉「暖身慢於主課」條件**——間歇日主課的整場平均含組間休息，反而比暖身慢，實測 11 組因此漏配（例 2025-10-30：暖身 5:48、間歇主課整場 6:26）；快的短段都只有約 2 分鐘，已由時長下限排除。不覆寫 `manual`
+    - [x] ③ **寫入路徑**：Garmin 同步在抓分圈與分類**之前**呼叫（新主課分類時近期平均已不含暖身），同步結果帶 `warmup_links_changed`；FIT 匯入在開始分類前呼叫。另附 CLI `python -m src.main.python.services.warmup_links --db-path ... [--apply]` 回填
+    - [x] ④ **下游**：`_recent_averages()` 排除暖身；`dashboard_queries.list_sessions()`（MCP `list_running_sessions` 與 `/api/sessions` 共用）不再單獨列出暖身，主課帶 `warmup` 摘要；`get_session_detail()` 帶 `warmup` 與 `warmup_for_activity_id`。前端只拿這份清單列場次與畫逐場趨勢、沒有加總跑量，故週跑量不受影響。暖身的 `workout_type` 維持原值
+    - [ ] ⑤ 回填後重跑分類：DB 副本預覽結果見 N-24 ⑤（合併共 49 場）。**待 Fu 確認後依序執行：`warmup_links --apply` → `fit_import_runner --reclassify --apply`**
+  - **真實 DB 預覽**：5–15 分鐘、同日後面還有跑步的候選共 31 筆（原寫「35 組」是把 3 天「暖身同時對短段與主課」重複計算），**配對 30 筆**；唯一未配的 2025-06-19 為 6.2 分＋6.0 分兩段短跑、後段不比前段長，不像暖身＋主課。#1110 → #1109、#1104 → #1103、#1099 → #1098 皆正確。
+  - **驗收**：16 項單元測試（偵測規則、manual 不動、冪等、場次清單摺疊、詳情、近期平均排除）＋全部 970 項通過。剩寫入真實 DB 後對 `list_running_sessions` 10/22 實際呼叫一次。
   - **前端**：場次清單與行事曆的呈現調整屬介面，不列入本計畫，後端欄位就緒後另行處理。
 
 - **✅ N-26 Garmin 的 HRmax 不會同步進 `athlete_profile`（2026-10-23 實查，同日完成）**：

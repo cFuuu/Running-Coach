@@ -87,6 +87,9 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("daily_wellness", "floors_ascended", "REAL"),
     ("daily_wellness", "floors_goal", "INTEGER"),
     ("daily_wellness", "steps_goal", "INTEGER"),
+    # 2026-10-23：暖身與主課的關聯（N-25，見 schema.sql 註解）
+    ("activities", "warmup_for_activity_id", "INTEGER"),
+    ("activities", "warmup_link_source", "TEXT"),
 ]
 
 

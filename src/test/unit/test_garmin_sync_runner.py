@@ -209,6 +209,7 @@ CREATE TABLE activities (
     reps INTEGER, sets INTEGER, source TEXT NOT NULL, source_version TEXT,
     fetched_at TEXT NOT NULL, has_wellness_data INTEGER NOT NULL DEFAULT 0,
     raw_data_json TEXT, workout_type TEXT, workout_type_source TEXT,
+    warmup_for_activity_id INTEGER, warmup_link_source TEXT,
     UNIQUE (athlete_id, started_at, activity_type, distance_km)
 );
 CREATE UNIQUE INDEX idx_activities_external_id ON activities (athlete_id, external_id);

@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS activities (
     -- 與 training_plan.workout_type（原本「計畫」練什麼）分開，兩者比對即可看出課表遵從度。
     workout_type            TEXT CHECK (workout_type IN ('easy', 'tempo', 'interval', 'lsd', 'race', 'recovery', 'unknown')),
     workout_type_source     TEXT CHECK (workout_type_source IN ('auto', 'manual')),
+    -- 這筆是哪一場主課的暖身（N-25）：學員常把暖身與主課分開按錶，形成同日兩筆。
+    -- 非 NULL 代表本筆為暖身，指向主課的 activities.id。偵測規則見 warmup_links.py。
+    -- 暖身的 workout_type 維持原值，角色只由本欄表達，不讓 workout_type 混入第二種語意。
+    warmup_for_activity_id  INTEGER REFERENCES activities(id),
+    -- 'auto'：偵測器寫入，每次重跑可覆寫；'manual'：人工指定，偵測器不動
+    -- （manual 且 warmup_for_activity_id 為 NULL＝人工確認「不是暖身」）。
+    warmup_link_source      TEXT CHECK (warmup_link_source IN ('auto', 'manual')),
     -- 比賽／測驗的官方成績（秒），僅 workout_type='race' 的場次需要時才人工填入。
     -- 手錶的 duration_sec 常與實際成績不同（忘了按停、起跑前就按開始），
     -- 但 duration_sec 是 Garmin 的原始紀錄、會被重新同步覆寫，且必須與該場
