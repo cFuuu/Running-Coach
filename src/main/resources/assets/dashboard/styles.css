@@ -1899,16 +1899,11 @@ body.coach-open .coach-fab {
   font-weight: 600;
 }
 
-/* 主要數字放大到 34px、用一般的黑色字（2026-10-23 Fu：先試過強調色，改回黑色）。
-   戰績卡的內部間距同步收緊，卡片高度不變 */
+/* 指標卡的主要數字（-9.7、44.9、35.3、40.2）放大到 32px、用一般黑色字（2026-10-23 Fu）。
+   戰績五格（半馬、全馬、3K、5K、10K）的時間維持原字級 28px，不放大 */
 #block-load .kpi-value,
-#block-ability .kpi-value,
-#block-ability .pb-time {
-  font-size: 34px;
-}
-
-#block-ability .pb-card {
-  gap: 0;
+#block-ability .kpi-value {
+  font-size: 32px;
 }
 
 /* 趨勢線上下各一條細虛線，把它與上方數字、下方灰字隔開 */
@@ -2808,7 +2803,7 @@ body.coach-open .coach-fab {
 .home-load-cards .kpi-spark,
 .ability-grid > .kpi-card .kpi-spark {
   position: relative;
-  flex: 0 0 52px; /* 趨勢線上下縮窄為固定 52px */
+  flex: 0 0 64px; /* 趨勢線高度固定 64px（比最初吃滿剩餘高度的約 78px 矮） */
 }
 
 /* 數字吃掉剩餘高度，在標題列與趨勢線之間水平、垂直置中 */
