@@ -3072,8 +3072,8 @@ body.coach-open .coach-fab {
 
 .recent-row {
   display: grid;
-  grid-template-columns: 5rem minmax(0, 1fr) 4.4rem 4.2rem 4rem;
-  align-items: center; /* 活動／實際有兩行，日期與課表單行，垂直置中才不會偏上 */
+  grid-template-columns: 5rem minmax(0, 1fr) 4.4rem 4rem 3.9rem 3.9rem;
+  align-items: center; /* 活動有兩行、日期單行，垂直置中才不會偏上 */
   gap: 8px;
   width: 100%;
   padding: 8px 12px 8px 6px;
@@ -3133,10 +3133,22 @@ button.recent-row:focus-visible {
   min-width: 0;
 }
 
-/* 實際：距離｜配速｜心率三個對齊的欄。.rc-actual／.rc-sub 用 display:contents，
-   讓裡面的節點直接成為格線的欄（每一列都是同樣的欄寬，數字上下對齊） */
-.rc-actual,
+.rc-main {
+  font-weight: 600;
+}
+
+/* 活動欄第二行（含暖身 x km） */
 .rc-sub {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+/* 數據：公里｜時間｜配速｜心率四個對齊的欄（全部靠左，與表頭「數據」同一條線）。
+   .rc-actual／.rc-meta 用 display:contents，讓裡面的節點直接成為格線的欄，
+   每一列欄寬相同，上下對齊。公里與時間是主要數字（大、粗），配速與心率灰色小字 */
+.rc-actual,
+.rc-meta {
   display: contents;
 }
 
@@ -3144,19 +3156,14 @@ button.recent-row:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.rc-main {
+.rc-dist,
+.rc-time {
   font-weight: 600;
-}
-
-button.recent-row .rc-actual .rc-main {
-  color: var(--accent-text);
-}
-
-.rc-actual .rc-main,
-.rc-pace,
-.rc-hr {
-  text-align: right;
   white-space: nowrap;
+}
+
+button.recent-row .rc-dist {
+  color: var(--accent-text);
 }
 
 .rc-pace,
@@ -3164,47 +3171,43 @@ button.recent-row .rc-actual .rc-main {
   color: var(--text-muted);
   font-size: var(--fs-sm);
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .rc-sep {
   display: none;
 }
 
-/* 表頭「實際」橫跨三欄，靠左放在實際資料的最左邊 */
+/* 表頭「數據」橫跨四欄，靠左放在數據最左邊 */
 .recent-head > :nth-child(3) {
-  grid-column: 3 / span 3;
+  grid-column: 3 / span 4;
   text-align: left;
 }
 
-/* 區塊窄（手機，或首頁排成半欄，約 480px 以下）時三欄放不下：改成兩行，
-   第一行 日期｜活動｜距離，第二行時長與「配速 · 心率」。依區塊寬度而非螢幕寬度判斷 */
-@container block (max-width: 480px) {
+/* 區塊窄（手機，或首頁排成半欄，約 520px 以下）時四欄放不下：改成兩行，
+   第一行 日期｜活動｜公里 時間，第二行 配速 · 心率。依區塊寬度而非螢幕寬度判斷 */
+@container block (max-width: 520px) {
   .recent-row {
-    grid-template-columns: 5rem minmax(0, 1fr) 7.6rem;
+    grid-template-columns: 5rem minmax(0, 1fr) auto;
     row-gap: 2px;
   }
 
   .rc-actual {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    min-width: 0;
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: end;
+    column-gap: 10px;
   }
 
-  .rc-sub {
+  .rc-meta {
     display: block;
+    grid-column: 1 / -1;
+    text-align: right;
     white-space: nowrap;
-    color: var(--text-muted);
-    font-size: var(--fs-xs);
   }
 
   .rc-sep {
     display: inline;
-  }
-
-  .rc-pace,
-  .rc-hr {
-    font-size: inherit;
   }
 
   .recent-head > :nth-child(3) {

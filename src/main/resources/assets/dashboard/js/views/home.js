@@ -1176,7 +1176,7 @@ export function renderRecentSessions() {
 
   var list = h('div', 'recent-list');
   var head = h('div', 'recent-row recent-head');
-  ['日期', '活動', '實際'].forEach(function (t) { head.appendChild(h('span', null, t)); });
+  ['日期', '活動', '數據'].forEach(function (t) { head.appendChild(h('span', null, t)); });
   list.appendChild(head);
 
   // 暖身是另存的獨立活動：不單獨成列，折進主課（主課的「活動」欄標「含暖身 x km」）
@@ -1198,29 +1198,21 @@ export function renderRecentSessions() {
     act.appendChild(h('span', 'rc-main', a.is_running
       ? (WORKOUT_TYPE_LABEL[a.workout_type] || a.workout_type || '未分類')
       : (ACTIVITY_TYPE_LABEL[a.activity_type] || a.activity_type)));
-    if (a.is_running && a.duration_sec) {
-      var actSub = C.formatDuration(a.duration_sec) + (item.warmup ? ' · ' + warmupLabel(item.warmup) : '');
-      act.appendChild(h('span', 'rc-sub', actSub));
-    }
+    // 活動欄第二行只放「含暖身 x km」；時間改放在數據欄
+    if (a.is_running && item.warmup) act.appendChild(h('span', 'rc-sub', warmupLabel(item.warmup)));
     row.appendChild(act);
 
-    // 實際：跑步以距離為主、配速與心率小字；其他活動以時長為主
+    // 數據：公里、時間（大字）｜配速、心率（灰色小字）。缺值一律顯示「—」，
+    // 每個節點都存在，寬版各自成欄、缺值也不會讓後面的欄位錯位；窄版收成兩行
     var actual = h('span', 'rc-actual');
-    var paceText = '';
-    if (a.is_running) {
-      actual.appendChild(h('span', 'rc-main', a.distance_km ? C.formatNumber(a.distance_km, 1) + ' km' : '—'));
-      if (a.distance_km && a.duration_sec) paceText = C.formatPace(a.duration_sec / a.distance_km) + '/km';
-    } else {
-      actual.appendChild(h('span', 'rc-main', a.duration_sec ? Math.round(a.duration_sec / 60) + ' 分' : '—'));
-    }
-    var hrText = a.avg_hr_bpm ? Math.round(a.avg_hr_bpm) + ' bpm' : '';
-    // 配速與心率各自一個節點（缺的留空殼）：中寬度時拆成獨立欄，缺值也不會讓後面的欄位錯位；
-    // 其他寬度當一行小字「配速 · 心率」
-    var sub = h('span', 'rc-sub');
-    sub.appendChild(h('span', 'rc-pace', paceText));
-    if (paceText && hrText) sub.appendChild(h('span', 'rc-sep', ' · '));
-    sub.appendChild(h('span', 'rc-hr', hrText));
-    actual.appendChild(sub);
+    actual.appendChild(h('span', 'rc-dist', a.is_running && a.distance_km ? C.formatNumber(a.distance_km, 1) + ' km' : '—'));
+    actual.appendChild(h('span', 'rc-time', a.duration_sec ? C.formatDuration(a.duration_sec) : '—'));
+    var meta = h('span', 'rc-meta');
+    var hasPace = a.is_running && a.distance_km && a.duration_sec;
+    meta.appendChild(h('span', 'rc-pace', hasPace ? C.formatPace(a.duration_sec / a.distance_km) + '/km' : '—'));
+    meta.appendChild(h('span', 'rc-sep', ' · '));
+    meta.appendChild(h('span', 'rc-hr', a.avg_hr_bpm ? Math.round(a.avg_hr_bpm) + ' bpm' : '—'));
+    actual.appendChild(meta);
     row.appendChild(actual);
 
     list.appendChild(row);
