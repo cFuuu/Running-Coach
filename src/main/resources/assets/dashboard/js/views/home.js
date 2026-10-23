@@ -1176,7 +1176,12 @@ export function renderRecentSessions() {
 
   var list = h('div', 'recent-list');
   var head = h('div', 'recent-row recent-head');
-  ['日期', '活動', '數據'].forEach(function (t) { head.appendChild(h('span', null, t)); });
+  ['日期', '活動', '距離', '時間', '配速', '心率'].forEach(function (t) {
+    var cell = h('span', null, t);
+    // 窄版數據收成兩行（距離 時間／配速 · 心率），表頭只剩一格，補上「／時間」
+    if (t === '距離') cell.appendChild(h('span', 'rc-head-extra', '／時間'));
+    head.appendChild(cell);
+  });
   list.appendChild(head);
 
   // 暖身是另存的獨立活動：不單獨成列，折進主課（主課的「活動」欄標「含暖身 x km」）

@@ -3178,10 +3178,13 @@ button.recent-row .rc-dist {
   display: none;
 }
 
-/* 表頭「數據」橫跨四欄，靠左放在數據最左邊 */
-.recent-head > :nth-child(3) {
-  grid-column: 3 / span 4;
+/* 表頭：距離｜時間｜配速｜心率各在自己那一欄的最左邊，與資料同一條線 */
+.recent-head > :nth-child(n + 3) {
   text-align: left;
+}
+
+.rc-head-extra {
+  display: none;
 }
 
 /* 區塊窄（手機，或首頁排成半欄，約 520px 以下）時四欄放不下：改成兩行，
@@ -3210,9 +3213,17 @@ button.recent-row .rc-dist {
     display: inline;
   }
 
+  /* 表頭只剩「距離／時間」一格（右對齊），配速、心率的表頭收掉 */
+  .recent-head > :nth-child(n + 4) {
+    display: none;
+  }
+
   .recent-head > :nth-child(3) {
-    grid-column: auto;
     text-align: right;
+  }
+
+  .rc-head-extra {
+    display: inline;
   }
 }
 
