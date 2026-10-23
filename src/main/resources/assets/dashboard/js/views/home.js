@@ -269,7 +269,8 @@ function garminHrvRow() {
   var status = ref && ref.status;
   var row = h('div', 'wt-row rd-row');
   row.appendChild(h('span', 'wt-row-label', 'HRV 狀態'));
-  var val = h('span', 'wt-row-value');
+  // 圖示與文字以中線對齊（其他列的數值是以基線對齊）
+  var val = h('span', 'wt-row-value is-centered');
   var mark = hrvStatusMark(status);
   if (mark) val.appendChild(mark);
   val.appendChild(h('span', 'rd-value', status ? (HRV_STATUS_LABEL[status] || status) : '—'));
@@ -368,11 +369,33 @@ function renderFeelBlock(dateStr) {
   return block;
 }
 
-/** 右側的判定圖示：實心圓＋符號，下方寫判定文字。 */
+// 判定圖示：形狀＋單色線條圖示（與 HRV 狀態的綠圓／橘方／紅三角同一套語言，色盲也分得出來）。
+// 良好＝圓＋勾、注意＝圓角方＋驚嘆號、低落＝三角＋向下箭頭、未評＝虛線圓＋橫線。
+// 內容是固定字面值，不含外部資料；圖示畫在 24×24，再平移縮放到 60×60 的形狀中央。
+var RD_ICON = {
+  check: '<path d="M6 12.5l4.2 4.2L18 8"/>',
+  bang: '<path d="M12 6.5v7"/><circle class="rd-dot" cx="12" cy="17.6" r="1.3"/>',
+  down: '<path d="M12 6v11.5"/><path d="M6.8 12.6L12 17.8l5.2-5.2"/>',
+  dash: '<path d="M7.5 12h9"/>'
+};
+var RD_SHAPE = {
+  ok: '<circle class="rd-shape" cx="30" cy="30" r="27"/>'
+    + '<g class="rd-ico" transform="translate(15 15) scale(1.25)">' + RD_ICON.check + '</g>',
+  caution: '<rect class="rd-shape" x="3" y="3" width="54" height="54" rx="12"/>'
+    + '<g class="rd-ico" transform="translate(15 15) scale(1.25)">' + RD_ICON.bang + '</g>',
+  low: '<path class="rd-shape" d="M30 4 L57 52 H3 Z"/>'
+    + '<g class="rd-ico" transform="translate(18 21)">' + RD_ICON.down + '</g>',
+  none: '<circle class="rd-shape rd-shape-dashed" cx="30" cy="30" r="27"/>'
+    + '<g class="rd-ico" transform="translate(15 15) scale(1.25)">' + RD_ICON.dash + '</g>'
+};
+
+/** 右側的判定圖示：形狀＋圖示，下方一行判定文字。 */
 function readinessStatus(value) {
   var s = readinessStateOf(value);
-  // 狀態文字（兩個字）直接放在圓裡，圓下方不再多佔一行
-  var badge = h('span', 'rd-status-icon readiness-' + s.cls, s.text);
+  var badge = h('span', 'rd-status rd-' + s.cls);
+  badge.innerHTML = '<svg viewBox="0 0 60 60" width="60" height="60" aria-hidden="true">'
+    + RD_SHAPE[s.cls] + '</svg>';
+  badge.appendChild(h('span', 'rd-status-label', s.text));
   if (s.cls === 'none') badge.title = '各維度都缺資料，無法評估（不等於良好）';
   else if (s.cls === 'caution') badge.title = '本專案規則都沒觸發，但 Garmin 健康狀態有指標在範圍外：' + garminOutlierText(garminHealthOutliers());
   else badge.title = '綜合整備狀態：' + s.text;

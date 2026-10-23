@@ -2063,6 +2063,12 @@ body.coach-open .coach-fab {
   display: inline-flex;
   align-self: center;
   flex-shrink: 0;
+  /* 中文字形的視覺中心比行框中心略低，圖示往下微調才會與文字水平對齊 */
+  transform: translateY(1px);
+}
+
+.wt-row-value.is-centered {
+  align-items: center;
 }
 
 .hrv-mark svg {
@@ -3587,10 +3593,13 @@ button.recent-row .rc-actual .rc-main {
     font-size: 11px;
   }
 
-  .fig-block .rd-status-icon {
+  .fig-block .rd-status svg {
     width: 44px;
     height: 44px;
-    font-size: 14px;
+  }
+
+  .fig-block .rd-status-label {
+    font-size: var(--fs-xs);
   }
 }
 
@@ -3726,17 +3735,54 @@ button.recent-row .rc-actual .rc-main {
 .feel-btn.feel-normal.is-active { background: var(--pct-yellow); border-color: var(--pct-yellow); }
 .feel-btn.feel-energetic.is-active { background: var(--pct-green); border-color: var(--pct-green); }
 
-.rd-status-icon {
+/* 判定圖示：形狀（圓／圓角方／三角／虛線圓）＋單色線條圖示，下方一行文字。
+   顏色由狀態 class 帶入三個變數：底色、邊線、前景 */
+.rd-status {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
+  gap: 4px;
   flex-shrink: 0;
-  border: 2px solid;
-  font-size: 17px;
+  color: var(--st-fg);
+}
+
+.rd-ok { --st-bg: var(--ready-ok-bg); --st-bd: var(--ready-ok-border); --st-fg: var(--ready-ok-text); }
+.rd-caution { --st-bg: var(--ready-caution-bg); --st-bd: var(--ready-caution-border); --st-fg: var(--ready-caution-text); }
+.rd-low { --st-bg: var(--ready-low-bg); --st-bd: var(--ready-low-border); --st-fg: var(--ready-low-text); }
+.rd-none { --st-bg: var(--conf-none-bg); --st-bd: var(--conf-none-border); --st-fg: var(--conf-none-text); }
+
+.rd-status svg {
+  display: block;
+}
+
+.rd-shape {
+  fill: var(--st-bg);
+  stroke: var(--st-bd);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.rd-shape-dashed {
+  stroke-dasharray: 5 4;
+}
+
+.rd-ico {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rd-ico .rd-dot {
+  fill: currentColor;
+  stroke: none;
+}
+
+.rd-status-label {
+  font-size: var(--fs-sm);
   font-weight: 700;
+  line-height: 1.2;
 }
 
 
