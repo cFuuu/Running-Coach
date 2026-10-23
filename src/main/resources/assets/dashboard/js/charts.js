@@ -19,17 +19,22 @@
 
 var SVG_NS = 'http://www.w3.org/2000/svg';
 
-// 內部繪圖座標系（viewBox 單位），實際顯示尺寸由 CSS 決定
+// 內部繪圖座標系（viewBox 單位），實際顯示尺寸由 CSS 決定。
+// 未提供容器寬度時的預設值；有容器寬度時一律 1:1（見 vbWidthFor）。
 var VB_WIDTH = 720;
 // 窄容器（手機）時 viewBox 寬度跟著容器走，讓 1 單位＝1px：文字維持真實字級
 // （否則 390px 手機上會被縮成 0.46 倍，13 的刻度字只剩 6px），刻度數也隨之變少。
 // 下限避免極窄時版面座標（左側 Y 軸寬度等固定邊距）擠成一團。
 var MIN_VB_WIDTH = 300;
+// 2026-10-24：寬螢幕也改為 1:1。原本寬螢幕固定 720 再等比放大，訓練紀錄改單欄、
+// 趨勢頁全寬後，圖內文字被放大到 1.3–1.6 倍，與周圍文字比例不符（Fu 回饋）。
+// 上限只防極寬螢幕的座標失控。
+var MAX_VB_WIDTH = 1600;
 
-/** 依容器像素寬決定 viewBox 寬度：寬螢幕固定 VB_WIDTH 等比放大，窄螢幕 1:1。 */
+/** 依容器像素寬決定 viewBox 寬度：一律 1:1，讓圖內文字維持真實字級。 */
 function vbWidthFor(containerPx) {
   if (!containerPx) return VB_WIDTH;
-  return Math.max(MIN_VB_WIDTH, Math.min(VB_WIDTH, Math.round(containerPx)));
+  return Math.max(MIN_VB_WIDTH, Math.min(MAX_VB_WIDTH, Math.round(containerPx)));
 }
 
 // ---------------------------------------------------------------- 基礎工具
@@ -299,11 +304,22 @@ function lapPaceChart(laps, opts) {
   if (valid.length === 0) return svg;
 
   var paces = valid.map(function (l) { return l.pace_sec_per_km; });
-  var maxPace = Math.max.apply(null, paces);
-  var minPace = Math.min.apply(null, paces);
-  // 基準線比最慢圈再慢一點，讓最慢的圈仍看得到長條
-  var baseline = maxPace + Math.max((maxPace - minPace) * 0.25, 10);
-  var top = minPace - Math.max((maxPace - minPace) * 0.1, 5);
+  // 2026-10-24：尺度只依「主要圈」決定。明顯慢於中位數 30% 以上的圈（間歇的
+  // 恢復段、中途走路）不參與，否則一圈 9 分速就把軸拉到 10 分速，快圈之間
+  // 十幾秒的差異被壓扁看不出來（Fu 回饋）。被排除的圈畫成淡色短柱貼底。
+  var sorted = paces.slice().sort(function (a, b) { return a - b; });
+  var median = sorted[Math.floor(sorted.length / 2)];
+  var isSlowOutlier = function (p) { return p > median * 1.3; };
+  var mainPaces = paces.filter(function (p) { return !isSlowOutlier(p); });
+  if (mainPaces.length === 0) mainPaces = paces;
+  var maxPace = Math.max.apply(null, mainPaces);
+  var minPace = Math.min.apply(null, mainPaces);
+  var span = maxPace - minPace;
+  // 基準線比最慢的主要圈再慢一點，最慢的主要圈仍有可見長條；上緣留空間給數值標籤
+  var baseline = maxPace + Math.max(span * 0.5, 12);
+  var top = minPace - Math.max(span * 0.25, 6);
+  var showValues = (box.width / valid.length) >= 30;
+  var avgMain = mainPaces.reduce(function (s, p) { return s + p; }, 0) / mainPaces.length;
 
   drawAxes(svg, box);
   // Y 軸：配速（上快下慢）
@@ -324,8 +340,9 @@ function lapPaceChart(laps, opts) {
 
   valid.forEach(function (lap, i) {
     var cx = box.left + slot * (i + 0.5);
+    var outlier = isSlowOutlier(lap.pace_sec_per_km) || lap.pace_sec_per_km > baseline;
     var ratio = (baseline - lap.pace_sec_per_km) / (baseline - top);
-    var h = Math.max(ratio * box.height, 1);
+    var h = outlier ? Math.max(box.height * 0.06, 4) : Math.max(ratio * box.height, 2);
     var barY = box.top + box.height - h;
     var bar = el('rect', {
       x: cx - barWidth / 2,
@@ -333,9 +350,14 @@ function lapPaceChart(laps, opts) {
       width: barWidth,
       height: h,
       rx: 2,
-      class: 'bar bar-pace'
+      class: outlier ? 'bar bar-pace bar-pace-slow' : 'bar bar-pace'
     });
     svg.appendChild(bar);
+    if (showValues) {
+      svg.appendChild(text(formatPace(lap.pace_sec_per_km), {
+        x: cx, y: barY - 5, class: 'bar-value', 'text-anchor': 'middle'
+      }));
+    }
     // 只有「最後一圈」不足 1km 才用不同樣式標示。間歇跑每一圈本來就短於 1km，
     // 若不限定最後一圈，整張圖的長條都會被蓋上半透明白色遮罩而顯得偏淡
     if (i === valid.length - 1 && typeof lap.distance_km === 'number' && lap.distance_km < 0.95) {
@@ -366,6 +388,15 @@ function lapPaceChart(laps, opts) {
     lapYs.push(barY);
     cumulativeSec += dur;
   });
+
+  // 主要圈的平均配速參考線
+  var avgY = box.top + box.height - ((baseline - avgMain) / (baseline - top)) * box.height;
+  svg.appendChild(el('line', {
+    x1: box.left, y1: avgY, x2: box.left + box.width, y2: avgY, class: 'pace-avg-line'
+  }));
+  svg.appendChild(text('平均 ' + formatPace(avgMain), {
+    x: box.left + box.width - 2, y: avgY - 4, class: 'pace-avg-label', 'text-anchor': 'end'
+  }));
 
   svg.appendChild(text('圈數（km）', {
     x: box.left + box.width / 2, y: height - 6, class: 'axis-title', 'text-anchor': 'middle'

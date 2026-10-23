@@ -4714,6 +4714,11 @@ button.recent-row .rc-dist {
 
 /* 分圈配速長條用主題色（強調色），不另用綠色；折線與圖例的配速色 --c-pace 不變 */
 .bar-pace { fill: var(--accent); }
+/* 分圈配速：恢復／走路等明顯慢圈畫成淡色短柱；柱頂標配速；主要圈平均線（2026-10-24） */
+.bar-pace-slow { fill: var(--accent); opacity: 0.35; }
+.bar-value { font-size: 11px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pace-avg-line { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.pace-avg-label { font-size: 11px; fill: var(--text-muted); }
 .bar-volume { fill: var(--c-volume); }
 
 /* 不足 1km 的最後一圈：用半透明條紋區隔，避免誤讀為完整一圈 */
