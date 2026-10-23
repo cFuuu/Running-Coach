@@ -2632,13 +2632,14 @@ body.coach-open .coach-fab {
   gap: 2px;
 }
 
-/* 負荷焦點：標題列與第一條之間的空白收小（10px→4px），省下的高度分給下面各列的間距 */
-.home-load-cards .gc-card-load_focus > .gc-head {
-  margin-bottom: 4px;
+/* 負荷焦點：標題列與第一條之間的空白收小（10px→2px），省下的高度分給下面各列的間距。
+   要用 ID 選擇器才蓋得過 `#block-load .gc-card > .gc-head` 的 margin（沿用它的負 margin 貼齊卡片邊） */
+#block-load .gc-card-load_focus > .gc-head {
+  margin: -12px -12px 2px;
 }
 
 .home-load-cards .gc-card-load_focus .gc-body {
-  gap: 2.5px;
+  gap: 4px;
 }
 
 .gc-focus-legend {
