@@ -3144,7 +3144,7 @@ button.recent-row:focus-visible {
   font-weight: 400;
 }
 
-/* 數據：公里｜時間｜配速｜心率四個對齊的欄（全部靠左，與表頭「數據」同一條線）。
+/* 數據：公里｜時間｜配速｜心率四個對齊的欄（各欄置中，表頭同）。
    .rc-actual／.rc-meta 用 display:contents，讓裡面的節點直接成為格線的欄，
    每一列欄寬相同，上下對齊。公里與時間是主要數字（大、粗），配速與心率灰色小字 */
 .rc-actual,
@@ -3178,9 +3178,13 @@ button.recent-row .rc-dist {
   display: none;
 }
 
-/* 表頭：距離｜時間｜配速｜心率各在自己那一欄的最左邊，與資料同一條線 */
-.recent-head > :nth-child(n + 3) {
-  text-align: left;
+/* 表頭與資料：距離｜時間｜配速｜心率都在各自的欄裡置中 */
+.recent-head > :nth-child(n + 3),
+.rc-dist,
+.rc-time,
+.rc-pace,
+.rc-hr {
+  text-align: center;
 }
 
 .rc-head-extra {
