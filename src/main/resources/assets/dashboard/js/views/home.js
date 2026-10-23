@@ -707,7 +707,7 @@ export function renderHomeLoad() {
     label: '狀態平衡',
     abbr: 'TSB',
     value: typeof tsb === 'number' ? (tsb > 0 ? '+' : '') + C.formatNumber(tsb, 1) : '—',
-    note: ctl ? '佔 CTL ' + (tsb > 0 ? '+' : '−') + Math.abs(tsb / ctl * 100).toFixed(0) + '%，近 30 天走勢' : '近 30 天走勢',
+    note: ctl ? '佔 CTL ' + (tsb > 0 ? '+' : '−') + Math.abs(tsb / ctl * 100).toFixed(0) + '%' : null,
     series: rows.map(function (r) { return r.tsb ? r.tsb.value : null; }),
     tip: LOAD_TIPS.tsb.concat(confidenceTip(load.tsb))
   }));
@@ -715,7 +715,7 @@ export function renderHomeLoad() {
     label: '近期疲勞',
     abbr: 'ATL',
     value: load.atl ? C.formatNumber(load.atl.value, 1) : '—',
-    note: '7 日指數加權，近 30 天走勢',
+    note: '7 日指數加權',
     series: rows.map(function (r) { return r.atl ? r.atl.value : null; }),
     tip: LOAD_TIPS.atl.concat(confidenceTip(load.atl))
   }));
@@ -723,7 +723,7 @@ export function renderHomeLoad() {
     label: '長期體能',
     abbr: 'CTL',
     value: load.ctl ? C.formatNumber(load.ctl.value, 1) : '—',
-    note: '42 日指數加權，近 30 天走勢',
+    note: '42 日指數加權',
     series: rows.map(function (r) { return r.ctl ? r.ctl.value : null; }),
     tip: LOAD_TIPS.ctl.concat(confidenceTip(load.ctl))
   }));
