@@ -2918,6 +2918,8 @@ body.coach-open .coach-fab {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  /* 窄版排列看表格自身寬度：行事曆寬版時表格在右欄，螢幕寬但表格窄 */
+  container: wplist / inline-size;
 }
 
 /* ---- 課表週（js/views/plan-week.js）：摘要列＋每日執行表 ---- */
@@ -3209,8 +3211,8 @@ body.coach-open .coach-fab {
   font-variant-numeric: tabular-nums;
 }
 
-/* 手機：欄位太多會擠成一團，改成兩行流式排列 */
-@media (max-width: 560px) {
+/* 窄（手機、行事曆右欄）：欄位太多會擠成一團，改成兩行流式排列 */
+@container wplist (max-width: 520px) {
   .wp-row {
     grid-template-columns: 6.2rem minmax(0, 1fr) auto;
     row-gap: 2px;
@@ -6940,12 +6942,47 @@ button.recent-row .rc-dist {
   border-color: var(--accent);
 }
 
+/* 選取：課表週 7 格淡灰底＋頂端藍線；選取日 2px 藍框＋淡藍底。
+   週底刻意用灰不用藍，避免和選取日混在一起。格子底色已不承載課表狀態
+   （改由膠囊外框），所以淡底不會蓋掉資訊。 */
 .calendar-cell.cal-cell.in-plan-week {
   border-color: var(--accent-border);
+  background: var(--bg);
+  box-shadow: inset 0 3px 0 var(--accent);
 }
 
 .calendar-cell.cal-cell.is-selected {
   border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* 寬版（L2）：月曆左、當日／課表週右。用 flex-wrap 而非斷點，
+   主欄（扣掉側邊列與 AI 面板後）不夠兩欄時自然疊回上下。 */
+#view-calendar:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+#view-calendar > #panel-calendar {
+  flex: 1.5 1 560px;
+  min-width: 0;
+}
+
+#view-calendar > .calendar-day-panel {
+  flex: 1 1 340px;
+  min-width: 0;
+  margin-top: 0;
+}
+
+@media (min-width: 1100px) {
+  #view-calendar > .calendar-day-panel {
+    position: sticky;
+    top: var(--gap);
+    max-height: calc(100vh - 2 * var(--gap));
+    overflow-y: auto;
+  }
 }
 
 .cal-date {
