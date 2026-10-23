@@ -284,8 +284,6 @@ function renderFeelBlock(dateStr) {
   var block = h('div', 'today-block feel-block');
   var title = h('div', 'today-block-title');
   title.appendChild(h('span', null, '自評今日體感狀態'));
-  var status = h('span', 'feel-status');
-  title.appendChild(status);
   title.appendChild(infoTip('自評今日體感狀態', FEEL_TIPS));
   block.appendChild(title);
 
@@ -306,6 +304,9 @@ function renderFeelBlock(dateStr) {
     return btn;
   });
   block.appendChild(group);
+  // 狀態文字在圖示下方，永遠佔一行高度，記錄／取消時圖示不會跳動
+  var status = h('span', 'feel-status');
+  block.appendChild(status);
 
   function paint() {
     FEEL_OPTIONS.forEach(function (opt, i) {
