@@ -706,6 +706,11 @@ export function renderCalendarDay() {
       row.appendChild(info);
       var actions = linkActions(day, entry);
       if (actions) row.appendChild(actions);
+      // 開始時間（started_at 為 ISO 當地時間，取 HH:MM）
+      var startedAt = entry.act.started_at;
+      if (startedAt && startedAt.length >= 16) {
+        row.appendChild(h('span', 'cal-act-time', startedAt.slice(11, 16)));
+      }
       // 跑步才有單場明細可看：其餘類型（健走、重訓）在訓練紀錄裡沒有對應頁面
       if (entry.act.is_running) {
         var link = h('a', 'cal-act-link', '看單場 ›');

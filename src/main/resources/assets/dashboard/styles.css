@@ -7119,6 +7119,14 @@ button.recent-row .rc-dist {
   border-bottom: 1px dashed var(--border);
 }
 
+/* 開始時間：靠右、等寬數字，與預覽稿 v5_ovf 一致 */
+.cal-act-time {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .cal-act-chip {
   flex: none;
   display: inline-flex;

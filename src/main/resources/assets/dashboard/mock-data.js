@@ -630,9 +630,8 @@
         plan_match: x.plan_match
       });
     });
-    // 與後端相同依開始時間排序；started_at 只是排序用，回傳前拿掉（契約沒有這個欄位）
+    // 與後端相同依開始時間排序；started_at 也是契約欄位（當日明細顯示開始時間）
     activities.sort(function (a, b) { return a.started_at < b.started_at ? -1 : 1; });
-    activities.forEach(function (a) { delete a.started_at; });
     var hasRunningPlan = workoutType !== 'rest';
     // 與後端相同：同日多場搶同一份課表（ambiguous）仍算當天有執行
     var anyMatched = activities.some(function (a) { return a.plan_match.state !== 'none'; });

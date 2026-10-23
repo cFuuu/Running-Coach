@@ -774,7 +774,7 @@ event: error        data: {"message": "..."}      ← 之後串流結束；該�
 
 **2026-10-24 盤點現有程式後的三個前提**
 - **行事曆幾乎不用改後端**：`/api/calendar` 每筆活動已經帶以下資料，`activities` 也包含非跑步活動：
-  - `activity_type`、`distance_km`、`duration_sec`、`title`
+  - `activity_type`、`distance_km`、`duration_sec`、`title`、`started_at`（2026-10-24 新增，當日明細顯示開始時間）
   - `warmup_for_activity_id`
   - `plan_match.state`（`exact`／`inferred`／`ambiguous`／`none`）
 - **趨勢數字卡的「與前一期比較」不用改後端**：所有趨勢端點都接受 `range=custom:YYYY-MM-DD:YYYY-MM-DD`（`dashboard_queries.parse_range`），前端用前一期的起訖日再抓一次即可。選「全部」時沒有前一期，▲▼ 不顯示。

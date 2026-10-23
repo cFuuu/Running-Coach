@@ -1596,7 +1596,7 @@ def get_calendar(
 
     activity_rows = conn.execute(
         """
-        SELECT id, date(started_at) AS d, activity_type, workout_type,
+        SELECT id, date(started_at) AS d, started_at, activity_type, workout_type,
                title, distance_km, duration_sec, avg_hr_bpm, warmup_for_activity_id
         FROM activities
         WHERE athlete_id = ? AND date(started_at) >= ? AND date(started_at) <= ?
@@ -1655,6 +1655,8 @@ def get_calendar(
                     "duration_sec": activity_row["duration_sec"],
                     "avg_hr_bpm": activity_row["avg_hr_bpm"],
                     "title": activity_row["title"],
+                    # 當日明細顯示開始時間（N-29，2026-10-24 Fu 要求）；ISO 當地時間
+                    "started_at": activity_row["started_at"],
                     # N-25：非 NULL 代表這筆是暖身，值為主課的 activity id
                     "warmup_for_activity_id": activity_row["warmup_for_activity_id"],
                     "plan_match": {

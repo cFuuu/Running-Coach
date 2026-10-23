@@ -1035,6 +1035,8 @@ class TestCalendar(DashboardQueryTestCase):
         self.assertEqual(day["day_state"], "planned_done")
         self.assertEqual(len(day["activities"]), 1)
         self.assertEqual(day["activities"][0]["plan_match"]["state"], "inferred")
+        # 當日明細要顯示開始時間（N-29）
+        self.assertTrue(day["activities"][0]["started_at"].startswith("2026-03-09T"))
 
     def test_two_runs_on_planned_day_is_planned_done_not_missed(self):
         """熱身另存一場活動時，單場配對是 ambiguous，但「當天有沒有執行」不需
