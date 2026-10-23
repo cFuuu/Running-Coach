@@ -26,7 +26,6 @@ import { $, clear, h } from './core/dom.js';
 import { bindInfoTipDismiss } from './core/facts.js';
 import { bindTooltipDelegation } from './core/tooltip.js';
 import { loadHome, initHomeLayout } from './views/home.js';
-import { renderCalendarLegend } from './views/calendar.js';
 import { bindCoachSetting } from './views/settings.js';
 import { renderMeta, loadRangeData } from './shell/loader.js';
 import { renderRangeButtons, bindCustomRangePanel } from './shell/range.js';
@@ -69,7 +68,6 @@ function init() {
   bindCoachSetting();
   bindSyncButtons();
   bindRouter();
-  renderCalendarLegend();
   initHomeLayout();
 
   // 先套路由再發請求：資料回來時 state.view 已經正確，render-on-activate

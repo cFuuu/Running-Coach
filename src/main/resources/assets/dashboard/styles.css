@@ -6820,3 +6820,493 @@ button.recent-row .rc-dist {
   /* 已執行外框：深色模式一律白框（E.1 配色定案），不用各色的 fg（黑字色在深底看不見） */
   --sport-done-ring: #ffffff;
 }
+
+/* === E.1 行事曆 === */
+/* 月曆格＋運動膠囊（.sport-chip，W0）、外框表示課表狀態、ⓘ 圖例、頂部三數字、
+   底部各運動合計、當日明細（含「這場是課表」確認）。只用既有 token，不新增色票。 */
+:root {
+  /* 待確認（ambiguous）虛線色 */
+  --cal-pending-line: var(--notice-text);
+}
+
+:root[data-theme="dark"] {
+  /* 深色底上 notice 字色太暗，改用飽和黃（W0 自行車色 token） */
+  --cal-pending-line: var(--sport-bike-bg);
+}
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cal-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-nav {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.cal-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 28px;
+  margin-bottom: 12px;
+}
+
+.cal-stat-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.cal-stat-value {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-stat-unit {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* 格子：底色一律卡片色——課表狀態改由膠囊外框表示，不再用格子底色 */
+.calendar-cell.cal-cell {
+  align-items: stretch;
+  justify-content: flex-start;
+  min-height: 92px;
+  padding: 4px 3px 5px;
+  background: var(--surface);
+  border-color: var(--border);
+  gap: 3px;
+}
+
+.calendar-cell.cal-cell.is-clickable:hover {
+  border-color: var(--accent);
+}
+
+.calendar-cell.cal-cell.in-plan-week {
+  border-color: var(--accent-border);
+}
+
+.calendar-cell.cal-cell.is-selected {
+  border-color: var(--accent);
+}
+
+.cal-date {
+  align-self: center;
+  min-width: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.cal-date.is-today {
+  background: var(--text);
+  color: var(--surface);
+}
+
+.cal-chips {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  min-width: 0;
+  --sport-chip-gap: var(--surface);
+}
+
+.cal-chips .sport-chip {
+  justify-content: flex-start;
+}
+
+.cal-chip-text,
+.cal-ghost-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 空的課表膠囊：文字置中 */
+.sport-chip.cal-ghost {
+  justify-content: center;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.cal-chips .sport-chip.cal-ghost {
+  justify-content: center;
+}
+
+/* 賽事膠囊在淺色是白字（fg），已執行外框若沿用 fg 會變成白框看不見，改用紫色底色 */
+:root:not([data-theme="dark"]) .sport-chip--race.is-done {
+  --sport-done-ring: var(--sport-race-bg);
+}
+
+/* 待確認（plan_match = ambiguous）：保留運動色實心，外圍一圈黃色虛線，與「已執行」的實線框區分 */
+.sport-chip.cal-pending {
+  outline: 2px dashed var(--cal-pending-line);
+  outline-offset: 1.5px;
+  margin: 3.5px;
+}
+
+/* 一天超過上限的收合：中性灰，避免被誤認成某種運動 */
+.cal-more {
+  align-self: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.cal-hide-desk,
+.cal-more--phone {
+  display: none !important;
+}
+
+/* 底部：當月各運動合計 */
+.cal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 20px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.cal-foot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cal-foot-item .sport-chip {
+  padding: 1px 6px;
+}
+
+.cal-foot-val {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-foot-empty {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* ⓘ 圖例（放在 .info-popover 內） */
+.cal-legend-head {
+  margin: 4px 0 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-legend-sports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  --sport-chip-gap: var(--surface);
+}
+
+.cal-legend-states {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  --sport-chip-gap: var(--surface);
+}
+
+.cal-legend-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.cal-legend-chip {
+  display: flex;
+}
+
+.cal-legend-chip .sport-chip {
+  min-width: 64px;
+  justify-content: center;
+}
+
+.cal-legend-chip .sport-chip.is-done,
+.cal-legend-chip .sport-chip.cal-pending {
+  min-width: 57px;
+}
+
+.cal-legend-text {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.cal-legend-note {
+  margin: 4px 0 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ---- 當日明細 ---- */
+.cal-day-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 14px 20px;
+  --sport-chip-gap: var(--surface);
+}
+
+.cal-day-none {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.cal-plan-row + .cal-plan-row {
+  margin-top: 8px;
+}
+
+.cal-plan-sum {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-plan-notes {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cal-plan-race {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-act-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.cal-act-chip {
+  flex: none;
+  display: inline-flex;
+  min-width: 72px;
+}
+
+.cal-act-info {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.cal-act-sum {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.cal-act-title {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.cal-act-link {
+  margin-left: auto;
+  color: var(--accent-text);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cal-act-link:hover {
+  text-decoration: underline;
+}
+
+.cal-act-link:focus-visible,
+.cal-link-btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.cal-link-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cal-link-state {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.cal-link-state.is-pending {
+  padding: 0 6px;
+  border: 1.5px dashed var(--cal-pending-line);
+  border-radius: 999px;
+  color: var(--text);
+}
+
+.cal-link-btn {
+  min-height: 32px;
+  padding: 3px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.cal-link-btn--cancel {
+  background: transparent;
+  color: var(--accent-text);
+}
+
+.cal-link-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.cal-link-msg {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-sm);
+}
+
+.cal-link-msg--ok {
+  color: var(--accent-text);
+}
+
+.cal-link-msg--error {
+  color: var(--error-text);
+}
+
+/* 課表週放在當日明細之後 */
+.calendar-week.cal-week {
+  margin: var(--gap) 0 0;
+  padding: var(--gap) 0 0;
+  border-bottom: 0;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 767px) {
+  .cal-day-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 手機：格子結構同桌機，膠囊縮小、最多 2 筆＋「+N」、空的課表膠囊只留外框 */
+@media (max-width: 600px) {
+  .cal-stats {
+    gap: 4px 18px;
+  }
+
+  .cal-stat-value {
+    font-size: var(--fs-lg);
+  }
+
+  .cal-dow-head,
+  .cal-grid {
+    gap: 2px;
+  }
+
+  .calendar-cell.cal-cell {
+    min-height: 64px;
+    padding: 3px 1px 4px;
+    gap: 2px;
+  }
+
+  .cal-chips {
+    gap: 2px;
+  }
+
+  .cal-chips .sport-chip {
+    gap: 1px;
+    min-width: 0;
+    min-height: 16px;
+    padding: 0 3px 0 2px;
+    font-size: 10.5px;
+    letter-spacing: -0.2px;
+  }
+
+  .cal-chips .sport-icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  .cal-chips .sport-chip.is-done {
+    box-shadow:
+      0 0 0 1px var(--sport-chip-gap, var(--bg)),
+      0 0 0 2.5px var(--sport-done-ring, var(--sport-chip-fg));
+    margin: 2.5px;
+  }
+
+  .cal-chips .sport-chip.cal-pending {
+    outline-width: 1.5px;
+    outline-offset: 1px;
+    margin: 2.5px;
+  }
+
+  .cal-chips .sport-chip.cal-ghost {
+    min-height: 14px;
+    padding: 0;
+  }
+
+  .cal-chips .sport-chip.cal-ghost .sport-icon {
+    display: none;
+  }
+
+  .cal-chips .cal-ghost-text,
+  .cal-hide-phone,
+  .cal-more--desk {
+    display: none !important;
+  }
+
+  .cal-more--phone {
+    display: inline-block !important;
+    padding: 0 5px;
+    font-size: 10.5px;
+  }
+
+  .cal-foot {
+    gap: 6px 14px;
+  }
+}
