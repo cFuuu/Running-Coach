@@ -179,6 +179,9 @@
   --ready-low-bg: #fbe0dc;
   --ready-low-border: #eaa89f;
   --ready-low-text: #a12a1c;
+  --ready-caution-bg: #fdebd3;
+  --ready-caution-border: #efc088;
+  --ready-caution-text: #8a4a06;
 
   /* 行事曆／週條的日狀態底色——刻意用低飽和度，因為 day_state 是狀態
      分類不是評價（見 dashboard_queries.get_calendar 說明），配色不該
@@ -3440,6 +3443,12 @@ button.recent-row .rc-actual .rc-main {
   color: var(--ready-low-text);
 }
 
+.readiness-caution {
+  background: var(--ready-caution-bg);
+  border-color: var(--ready-caution-border);
+  color: var(--ready-caution-text);
+}
+
 .readiness-none {
   background: var(--conf-none-bg);
   border-color: var(--conf-none-border);
@@ -6322,6 +6331,9 @@ button.recent-row .rc-actual .rc-main {
   --ready-low-bg: #3d2420;
   --ready-low-border: #6a3a33;
   --ready-low-text: #f0a08c;
+  --ready-caution-bg: #3a2a17;
+  --ready-caution-border: #6b4a22;
+  --ready-caution-text: #f2b97a;
 
   --tag-interval-bg: #3a2620;
   --tag-interval-border: #5c3a2e;

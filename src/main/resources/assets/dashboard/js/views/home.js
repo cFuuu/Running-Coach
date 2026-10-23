@@ -132,11 +132,20 @@ function planBlockTitle(planned) {
 var READINESS_STATE = {
   normal: { cls: 'ok', icon: '✓', text: '良好' },
   low: { cls: 'low', icon: '▼', text: '低落' },
+  // 只有 Garmin 的 HRV 狀態異常、本專案規則都沒觸發時，前端才顯示（後端判定仍是 normal）
+  caution: { cls: 'caution', icon: '!', text: '注意' },
   none: { cls: 'none', icon: '–', text: '未評' }
 };
 
 function readinessStateOf(value) {
-  return READINESS_STATE[value === 'low' || value === 'normal' ? value : 'none'];
+  return READINESS_STATE[value === 'low' || value === 'normal' || value === 'caution' ? value : 'none'];
+}
+
+/** Garmin 的 HRV 狀態是否異常（不平衡／偏低／不佳）。資料不足或沒資料不算異常。 */
+function garminHrvAbnormal() {
+  var hrv = state.today && state.today.hrv;
+  var status = hrv && hrv.garmin_reference && hrv.garmin_reference.status;
+  return status === 'UNBALANCED' || status === 'LOW' || status === 'POOR';
 }
 
 function readinessPill(value) {
@@ -151,6 +160,7 @@ var READINESS_TIPS = [
   '綜合整備狀態是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
     + '對「今天身體恢復得夠不夠完備」的判定。顏色一看就懂：'
     + '綠色 ✓ 良好（查過了，沒有異常訊號）；紅色 ▼ 低落（至少一個維度觸發）；'
+    + '橘色 ! 注意（本專案的規則都沒觸發，但 Garmin 的 HRV 狀態不是「平衡」）；'
     + '灰色 – 未評（維度都缺資料、無法評估，不等於良好）。',
   '兩個維度，任一觸發就判為「低落」：①TSB 低於你自己歷史分布的第 10 百分位；'
     + '②當日 HRV 較 7 日均值下降 15% 以上（這個 7 日均值是 Garmin 提供的，不是本專案算的）。'
@@ -163,7 +173,9 @@ var READINESS_TIPS = [
     + '滑鼠移到 HRV 變化列上可看趨勢的數字。',
   '「HRV 狀態」是 Garmin 手錶（Firstbeat）給的 HRV 分類（平衡／不平衡／偏低／不佳）：'
     + '把你的 HRV 7 日均值，對照手錶自己算出的個人平衡區間所得到的結果。'
-    + '演算法未公開，只是參考資訊，不計入上面的判定，也不會變紅。滑鼠移上去可看 7 日均值與平衡區間。',
+    + '演算法未公開，不屬於本專案的規則，也不會讓狀態變「低落」。'
+    + '唯一的影響是：其他規則都沒觸發時，它的異常（不平衡／偏低／不佳）會讓狀態從「良好」改顯示「注意」，'
+    + '只改畫面，AI 教練讀到的判定仍是良好。滑鼠移上去可看 7 日均值與平衡區間。',
   '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
     + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
 ];
@@ -248,7 +260,7 @@ function garminHrvRow() {
   val.appendChild(h('span', 'rd-value', status ? (HRV_STATUS_LABEL[status] || status) : '—'));
   row.appendChild(val);
 
-  var tips = ['Garmin（Firstbeat）判定的 HRV 狀態，演算法未公開，僅供參考，不計入判定'];
+  var tips = ['Garmin（Firstbeat）判定的 HRV 狀態，演算法未公開，不屬於本專案的判定規則'];
   var avg = hrv && hrv.weekly_avg_ms && hrv.weekly_avg_ms.value;
   if (avg !== null && avg !== undefined) tips.push('7 日均值 ' + C.formatNumber(avg, 1) + ' ms');
   if (ref && ref.baseline_balanced_low && ref.baseline_balanced_upper) {
@@ -346,7 +358,9 @@ function readinessStatus(value) {
   var s = readinessStateOf(value);
   // 狀態文字（兩個字）直接放在圓裡，圓下方不再多佔一行
   var badge = h('span', 'rd-status-icon readiness-' + s.cls, s.text);
-  badge.title = s.cls === 'none' ? '各維度都缺資料，無法評估（不等於良好）' : '綜合整備狀態：' + s.text;
+  if (s.cls === 'none') badge.title = '各維度都缺資料，無法評估（不等於良好）';
+  else if (s.cls === 'caution') badge.title = '本專案規則都沒觸發，但 Garmin 的 HRV 狀態不是「平衡」';
+  else badge.title = '綜合整備狀態：' + s.text;
   return badge;
 }
 
@@ -382,7 +396,10 @@ export function renderTodayReadinessBlock(readiness) {
   READINESS_ROWS.forEach(function (def) { rows.appendChild(readinessRow(def, shown)); });
   rows.appendChild(garminHrvRow());
   card.appendChild(rows);
-  card.appendChild(readinessStatus(todayMissing ? null : entry.readiness));
+  // 本專案規則都沒觸發（良好）、卻只有 Garmin 的 HRV 狀態異常時，改顯示橘色「注意」
+  var shownState = todayMissing ? null : entry.readiness;
+  if (shownState === 'normal' && garminHrvAbnormal()) shownState = 'caution';
+  card.appendChild(readinessStatus(shownState));
   block.appendChild(card);
 
   if (unsynced) block.appendChild(h('div', 'sync-fallback-note', '今日資料尚未同步'));
