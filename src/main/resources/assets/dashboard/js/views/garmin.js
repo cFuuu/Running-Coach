@@ -562,7 +562,7 @@ GARMIN_CARD_DEFS.forEach(function (d) { DEF_BY_KEY[d.key] = d; });
 export function renderGarminCard(key, cardData, node) {
   var def = DEF_BY_KEY[key];
   clear(node);
-  node.classList.add('gc-card');
+  node.classList.add('gc-card', 'gc-card-' + key);
   var head = h('div', 'gc-head');
   head.appendChild(h('span', 'gc-title', def.label));
   if (def.tip) head.appendChild(infoTip(def.label, def.tip));

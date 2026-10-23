@@ -2428,6 +2428,21 @@ body.coach-open .coach-fab {
   height: 64px;
 }
 
+/* 睡眠卡：卡片被同列較高的鄰居撐高時，階段圖（可任意垂直拉伸）吃掉多出來的高度，
+   不在主數字與圖之間留空白；最少仍是 64px */
+.gc-card-sleep .gc-intraday-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+
+.gc-card-sleep .gc-hypnogram {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 64px;
+}
+
 .gc-intraday-line {
   fill: none;
   stroke: var(--pct-blue);
