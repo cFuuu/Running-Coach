@@ -857,8 +857,8 @@ export function renderWeekStrip() {
       var wt = day.planned[0].workout_type;
       cell.appendChild(h('span', 'week-cell-workout', WORKOUT_TYPE_LABEL[wt] || wt));
     }
-    // 當週課表只看跑步；健走等其他活動不在這裡標點
-    var runs = day.activities.filter(function (act) { return act.is_running; });
+    // 當週課表只看跑步；健走等其他活動不在這裡標點。暖身已併入主課，不另標一點
+    var runs = day.activities.filter(function (act) { return act.is_running && !act.warmup_for_activity_id; });
     if (runs.length > 0) cell.appendChild(activityDots(runs));
     cell.title = day.date + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
     grid.appendChild(cell);

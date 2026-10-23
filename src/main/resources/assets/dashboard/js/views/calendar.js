@@ -36,11 +36,16 @@ export function activityDots(activities) {
   return wrap;
 }
 
+/** 當天第一場跑步主課；另存的暖身（N-25）排在主課前面，但點擊目標要是主課。 */
 export function firstRunningActivity(activities) {
+  var fallback = null;
   for (var i = 0; i < activities.length; i += 1) {
-    if (activities[i].is_running) return activities[i];
+    var a = activities[i];
+    if (!a.is_running) continue;
+    if (!a.warmup_for_activity_id) return a;
+    if (!fallback) fallback = a;
   }
-  return null;
+  return fallback;
 }
 
 /** 行事曆展開時用的月份邊界（YYYY-MM 的第一天所在週日 ~ 最後一天所在週六）。 */
