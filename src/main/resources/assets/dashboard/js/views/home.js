@@ -229,15 +229,15 @@ function hrvTrendRow(entry) {
 }
 
 // 每日自評體感（3 級，由累到好），值對應後端 daily_feel_store.FEEL_LEVELS
-// icon 是單色線條臉（currentColor，選中時跟著變白）：疲憊＝嘴角向下、普通＝嘴角微微向上、充沛＝張嘴笑。
+// icon 是單色線條臉（currentColor，選中時跟著變白）：疲憊＝嘴角向下、普通＝嘴角平、充沛＝嘴角向上。
 // 文字只放在滑鼠提示與 aria-label，按鈕本身不佔字寬。內容是固定字面值，不含外部資料。
 var FEEL_EYES = '<circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/>'
   + '<circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>';
 var FEEL_OPTIONS = [
   { value: 'tired', label: '疲憊', icon: FEEL_EYES + '<path d="M8.5 16.5c1-1.6 2.2-2.3 3.5-2.3s2.5.7 3.5 2.3"/>' },
-  { value: 'normal', label: '普通', icon: FEEL_EYES + '<path d="M8.5 14c1 1.1 2.2 1.6 3.5 1.6s2.5-.5 3.5-1.6"/>' },
+  { value: 'normal', label: '普通', icon: FEEL_EYES + '<path d="M8.5 15.5h7"/>' },
   { value: 'energetic', label: '充沛',
-    icon: FEEL_EYES + '<path d="M7.5 13.2c.5 3 2.4 4.8 4.5 4.8s4-1.8 4.5-4.8z"/>' }
+    icon: FEEL_EYES + '<path d="M8 14c1 1.8 2.3 2.7 4 2.7s3-.9 4-2.7"/>' }
 ];
 
 var FEEL_TIPS = [
