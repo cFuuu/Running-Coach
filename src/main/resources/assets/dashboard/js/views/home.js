@@ -445,7 +445,7 @@ export function renderTodayReadinessBlock(readiness) {
     block.appendChild(h('div', 'sync-fallback-note', 'Garmin 健康狀態：' + garminOutlierText(outliers)));
   }
 
-  if (unsynced) block.appendChild(h('div', 'sync-fallback-note', '今日資料尚未同步'));
+  if (unsynced) block.appendChild(h('div', 'sync-fallback-note is-muted', '今日資料尚未同步'));
   if (todayMissing) {
     var reasons = (entry && entry.not_assessed || []).map(function (na) { return na.reason; });
     block.appendChild(h('div', 'today-note wt-note', reasons.length ? reasons[0] : '今日尚無足夠資料可評估'));
@@ -698,7 +698,7 @@ export function renderHomeLoad() {
   var kpi = state.todayKpi;
   if (!state.today || !kpi) { showLoading(node, '載入訓練負荷'); return; }
   if (!load) { showUnavailable(node, '今日尚無訓練負荷資料'); return; }
-  if (load.as_of) node.appendChild(h('div', 'sync-fallback-note', unsyncedNote(load.as_of)));
+  if (load.as_of) node.appendChild(h('div', 'sync-fallback-note is-muted', unsyncedNote(load.as_of)));
 
   var rows = kpi.loadSeries || [];
   var cards = h('div', 'home-cards home-load-cards');

@@ -3709,6 +3709,13 @@ button.recent-row .rc-dist {
   border-radius: 4px;
 }
 
+/* 單純「尚未同步」的狀態說明不是警示，用灰色；黃色留給 Garmin 異常提醒 */
+.sync-fallback-note.is-muted {
+  border-left-color: var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
 /* 綜合整備狀態區塊收小：字級降一階、列距收緊，讓課表與賽事倒數是視覺主體 */
 .readiness-block {
   font-size: var(--fs-sm);
@@ -6871,6 +6878,12 @@ button.recent-row .rc-dist {
   /* 待確認（ambiguous）虛線色：淺色、深色用同一個琥珀色（2026-10-24 Fu：顏色要一致）。
      對白底 3.35、淺灰底 3.13、深色底 4.83，都達非文字元素 3:1 */
   --cal-pending-line: #bb810f;
+  /* 課表週格子底：淺色介於 surface-sunken 與 bg 之間（bg 太灰，2026-10-24 Fu） */
+  --cal-week-bg: #f2f4f7;
+}
+
+:root[data-theme="dark"] {
+  --cal-week-bg: var(--bg);
 }
 
 .cal-head {
@@ -6947,8 +6960,16 @@ button.recent-row .rc-dist {
    （改由膠囊外框），所以淡底不會蓋掉資訊。 */
 .calendar-cell.cal-cell.in-plan-week {
   border-color: var(--accent-border);
-  background: var(--bg);
+  background: var(--cal-week-bg);
   box-shadow: inset 0 3px 0 var(--accent);
+}
+
+/* 深色模式非本月：只降透明度時，深底上的格框和淡字跟本月格差不多，
+   拿掉格底改虛線框，讓本月格「浮起來」 */
+:root[data-theme="dark"] .calendar-cell.cal-cell.is-outside-month {
+  opacity: 0.3;
+  background: transparent;
+  border-style: dashed;
 }
 
 .calendar-cell.cal-cell.is-selected {

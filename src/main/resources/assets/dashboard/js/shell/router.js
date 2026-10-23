@@ -25,6 +25,9 @@ import { renderToolsPage } from '../views/tools.js';
 // applyRoute 會把網址改寫成新的正規形式。
 var LEGACY_VIEWS = { load: 'trends', wellness: 'trends', today: 'home', overview: 'home' };
 
+// 進系統設定前最後所在的位置（完整 hash）。齒輪是開關：在設定頁再按一次就回這裡。
+var lastNonSettingsHash = null;
+
 
 /** 解析 location.hash → {view, arg}。無效或空的 hash 一律回預設 view。 */
 export function parseHash() {
@@ -73,6 +76,7 @@ export function applyRoute() {
 
   var prevView = state.view;
   state.view = view;
+  if (view !== 'settings') lastNonSettingsHash = canonical;
 
   // 只動 hidden，不重建 DOM
   Object.keys(VIEWS).forEach(function (key) {
@@ -199,4 +203,10 @@ export function bindRouter() {
   var back = $('session-back');
   // 返回清單，並保持剛才那一列展開
   if (back) back.addEventListener('click', function () { navigate('sessions', state.selectedSessionId); });
+  var settingsBtn = $('settings-btn');
+  if (settingsBtn) settingsBtn.addEventListener('click', function (e) {
+    if (state.view !== 'settings') return; // 不在設定頁：照 href 進去
+    e.preventDefault();
+    window.location.hash = lastNonSettingsHash || '#/' + DEFAULT_VIEW;
+  });
 }
