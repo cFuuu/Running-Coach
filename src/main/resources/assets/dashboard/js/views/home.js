@@ -1220,11 +1220,7 @@ export function renderRecentSessions() {
 
     // 課表：同一天多場對到同一份課表時只列在第一場，其餘與沒對到課表的一律「—」
     var plan = item.plan && !(prev && prev.date === item.date && prev.plan === item.plan) ? item.plan : null;
-    var planCell = h('span', 'rc-plan' + (plan ? '' : ' is-none'));
-    // 窄版沒有「課表」欄，課表是接在活動下面的一行，前面標「課表」才分得出來（寬版由表頭負責，隱藏）
-    planCell.appendChild(h('span', 'rc-plan-label', '課表'));
-    planCell.appendChild(document.createTextNode(plan ? planSummary(plan) : '—'));
-    row.appendChild(planCell);
+    row.appendChild(h('span', 'rc-plan' + (plan ? '' : ' is-none'), plan ? planSummary(plan) : '—'));
 
     list.appendChild(row);
     prev = item;

@@ -3167,12 +3167,6 @@ button.recent-row .rc-actual .rc-main {
 .rc-plan.is-none {
   color: var(--text-muted);
 }
-
-/* 「課表」行首標籤只在窄版出現（見下方 container query） */
-.rc-plan-label {
-  display: none;
-}
-
 /* 區塊窄（手機，或首頁排成半欄）時兩行：第一行 日期｜活動｜實際，第二行課表。
    依區塊寬度而非螢幕寬度判斷 */
 @container block (max-width: 600px) {
@@ -3188,25 +3182,14 @@ button.recent-row .rc-actual .rc-main {
     text-align: right;
   }
 
-  /* 表頭保留：日期｜活動｜實際（課表欄不存在，改成活動下方一行並在行首標「課表」） */
-  .recent-head > :nth-child(4) {
+  /* 窄版只留日期｜活動｜實際：課表欄與其表頭都不顯示（課表看「當週課表」區塊或寬版） */
+  .recent-head > :nth-child(4),
+  .rc-plan {
     display: none;
   }
 
   .recent-head > :nth-child(3) {
     text-align: right;
-  }
-
-  .rc-plan {
-    grid-column: 2 / -1;
-    font-size: var(--fs-xs);
-  }
-
-  .rc-plan-label {
-    display: inline;
-    margin-right: 6px;
-    color: var(--text-muted);
-    font-weight: 400;
   }
 }
 
