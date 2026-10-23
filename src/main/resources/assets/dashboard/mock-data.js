@@ -460,6 +460,40 @@
     return CALENDAR_PLAN_CYCLE[dow] || 'rest';
   }
 
+  // N-29 B2：示範「待確認」（ambiguous）——在最近一個排了跑步課的過去日子補兩場
+  // 跑步，讓行事曆在 mock 模式也有兩場搶同一份課表的情況，可做確認 UI。
+  (function addAmbiguousDemoDay() {
+    for (var off = 1; off < 14; off += 1) {
+      var d = dateMinus(off);
+      if (plannedWorkoutTypeFor(d) === 'rest') continue;
+      [[950, '06:10:00', '早晨跑步', 6.2], [951, '18:30:00', '傍晚跑步', 3.1]].forEach(function (x) {
+        ALL_SESSIONS.push({
+          id: x[0], started_at: d + 'T' + x[1], date: d, title: x[2],
+          activity_type: 'running', workout_type: 'easy', workout_type_source: 'auto',
+          distance_km: x[3], duration_sec: Math.round(x[3] * 360), avg_pace_sec_per_km: 360,
+          avg_hr_bpm: 142, max_hr_bpm: 155, avg_cadence_spm: 170, aerobic_te: 2.6
+        });
+      });
+      ALL_SESSIONS.sort(function (a, b) { return a.started_at < b.started_at ? 1 : -1; });
+      break;
+    }
+  })();
+
+  // PUT /api/plan/{id}/link 的假狀態：plan id（mock 用日期字串）→ 已確認的 activity id
+  var MOCK_PLAN_LINKS = {};
+
+  function mockPlanMatch(planned, activity, runningCount) {
+    if (planned.length === 0) return { state: 'none', method: null, reason: 'no_compatible_plan' };
+    var linked = MOCK_PLAN_LINKS[planned[0].id];
+    if (linked !== undefined) {
+      return linked === activity.id
+        ? { state: 'exact', method: 'linked_activity_id', reason: null }
+        : { state: 'none', method: null, reason: 'no_compatible_plan' };
+    }
+    if (runningCount > 1) return { state: 'ambiguous', method: null, reason: 'multiple_activities_for_one_plan' };
+    return { state: 'inferred', method: 'date_and_sport', reason: null };
+  }
+
   function buildCalendarDay(dateStr) {
     var sessionsThatDay = ALL_SESSIONS.filter(function (s) { return s.date === dateStr; });
     var workoutType = plannedWorkoutTypeFor(dateStr);
@@ -472,13 +506,12 @@
         id: s.id, activity_type: s.activity_type, is_running: true,
         workout_type: s.workout_type, distance_km: s.distance_km, duration_sec: s.duration_sec,
         title: s.title,
-        plan_match: planned.length > 0
-          ? { state: 'inferred', method: 'date_and_sport', reason: null }
-          : { state: 'none', method: null, reason: 'no_compatible_plan' }
+        plan_match: mockPlanMatch(planned, s, sessionsThatDay.length)
       };
     });
     var hasRunningPlan = workoutType !== 'rest';
-    var anyMatched = activities.some(function (a) { return a.plan_match.state === 'inferred' || a.plan_match.state === 'exact'; });
+    // 與後端相同：同日多場搶同一份課表（ambiguous）仍算當天有執行
+    var anyMatched = activities.some(function (a) { return a.plan_match.state !== 'none'; });
     var isToday = dateStr === BASE_DATE;
     var isFuture = dateStr > BASE_DATE;
     var dayState;
@@ -582,13 +615,13 @@
      * @returns {Promise<Object>}
      */
     request: function (path, body) {
-      // body 只有 POST 端點（/api/sync）會帶；假資料一律回固定結果，
-      // 故不需要依 body 分歧，收下只是為了與 app.js 的 apiPost 簽章一致。
+      // body 只有寫入端點會帶（api.js 的 apiSend 不傳 method，故以路徑區分）。
+      // /api/sync 一律回固定結果；/api/plan/{id}/link 需要 body 才能記住連結。
       return new Promise(function (resolve, reject) {
         // 模擬網路延遲，讓載入中狀態看得見
         setTimeout(function () {
           try {
-            resolve(route(path));
+            resolve(route(path, body));
           } catch (err) {
             reject(err);
           }
@@ -750,7 +783,7 @@
     throw new Error('假資料未實作此聊天路徑：' + pathname);
   }
 
-  function route(path) {
+  function route(path, body) {
     var qIndex = path.indexOf('?');
     var pathname = qIndex === -1 ? path : path.slice(0, qIndex);
     var params = new URLSearchParams(qIndex === -1 ? '' : path.slice(qIndex + 1));
@@ -775,6 +808,21 @@
     }
     if (pathname === '/api/sync') {
       return { available: false, reason: '假資料模式（?mock=1）不提供資料同步' };
+    }
+
+    // PUT /api/plan/{id}/link：照單全收（不做後端的日期／運動種類檢查），
+    // 記下連結讓之後的 /api/calendar 回 exact；activity_id 為 null 時取消。
+    var link = pathname.match(/^\/api\/plan\/([^/]+)\/link$/);
+    if (link) {
+      var planId = decodeURIComponent(link[1]);
+      var activityId = body && body.activity_id != null ? body.activity_id : null;
+      if (activityId === null) delete MOCK_PLAN_LINKS[planId];
+      else MOCK_PLAN_LINKS[planId] = activityId;
+      return {
+        plan_id: planId,
+        linked_activity_id: activityId,
+        plan_match: activityId === null ? null : { state: 'exact', method: 'linked_activity_id', reason: null }
+      };
     }
 
     var m = pathname.match(/^\/api\/sessions\/(\d+)$/);

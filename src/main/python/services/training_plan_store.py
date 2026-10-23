@@ -34,6 +34,7 @@ import datetime
 import sqlite3
 from typing import Any
 
+from src.main.python.services.plan_reconciliation import is_compatible
 from src.main.python.services.workout_type_resolution import resolve_for_dates
 
 
@@ -289,3 +290,92 @@ def save_external_workouts(
 
     conn.commit()
     return new_ids
+
+
+# --------------------------------------------------------------------------
+# 學員確認的課表配對（PLAN.md §1 2026-10-24／N-29）
+# --------------------------------------------------------------------------
+
+
+class PlanLinkNotFoundError(LookupError):
+    """課表或活動不存在（或不屬於這位學員）。路由層轉 404。"""
+
+
+class PlanLinkRejectedError(ValueError):
+    """課表與活動都存在，但這個連結不合法。路由層轉 422。"""
+
+
+def set_plan_link(
+    conn: sqlite3.Connection,
+    athlete_id: int,
+    plan_id: int,
+    activity_id: int | None,
+) -> dict[str, Any]:
+    """把學員在行事曆確認的「這場是課表」寫入 `training_plan.linked_activity_id`。
+
+    `activity_id=None` 清除連結。**只寫這一欄**，不改課表內容、不動其他列——
+    這是 PLAN.md §1「課表配對歧義時由學員確認」唯一開放的寫入；啟發式配對的
+    結果仍不落地（見 plan_reconciliation 原則 4）。
+
+    檢查（任一不過就不寫）：
+        - 課表存在、屬於這位學員（否則 PlanLinkNotFoundError——不區分「不存在」
+          與「是別人的」，避免透露其他學員的資料是否存在）
+        - 課表 `is_active=1`：已被取代的舊版本不接受新連結
+        - 活動存在、屬於這位學員（同上）
+        - 活動日期 `date(started_at)` 等於 `planned_date`（與行事曆
+          `dashboard_queries.get_calendar()` 同一種日期口徑）
+        - 活動不是已併入主課的暖身（`warmup_for_activity_id` 非空）——要連的是主課
+        - 運動種類相容（`plan_reconciliation.is_compatible`，與配對規則同一份判斷）
+        - 該活動沒有已連結到另一份生效課表：否則兩份課表都會宣稱被同一場執行
+
+    ⚠️ 已知缺口（N-7 處理）：課表日後被 `superseded_by` 取代時，新的那一列
+    **不會**帶入這裡寫的連結，該天會退回啟發式配對。刻意不在本函式處理——
+    連結要不要、怎麼跟著版本走，屬 N-7 版本化模型的範圍。
+
+    回傳 `{"plan_id", "linked_activity_id"}`。
+    """
+    plan = conn.execute(
+        "SELECT id, planned_date, workout_type, is_active FROM training_plan "
+        "WHERE id = ? AND athlete_id = ?",
+        (plan_id, athlete_id),
+    ).fetchone()
+    if plan is None:
+        raise PlanLinkNotFoundError(f"找不到課表 id={plan_id}")
+    if not plan["is_active"]:
+        raise PlanLinkRejectedError("這份課表已被新版本取代，不能再連結活動")
+
+    if activity_id is not None:
+        activity = conn.execute(
+            "SELECT id, activity_type, date(started_at) AS d, warmup_for_activity_id "
+            "FROM activities WHERE id = ? AND athlete_id = ?",
+            (activity_id, athlete_id),
+        ).fetchone()
+        if activity is None:
+            raise PlanLinkNotFoundError(f"找不到活動 id={activity_id}")
+        if activity["d"] != plan["planned_date"]:
+            raise PlanLinkRejectedError(
+                f"活動日期（{activity['d']}）與課表日期（{plan['planned_date']}）不同"
+            )
+        if activity["warmup_for_activity_id"] is not None:
+            raise PlanLinkRejectedError("這場是已併入主課的暖身，請改連結主課")
+        if not is_compatible(plan["workout_type"], activity["activity_type"]):
+            raise PlanLinkRejectedError(
+                f"運動種類不相容：課表是 {plan['workout_type']}，"
+                f"活動是 {activity['activity_type']}"
+            )
+        other = conn.execute(
+            "SELECT id FROM training_plan WHERE athlete_id = ? AND linked_activity_id = ? "
+            "AND is_active = 1 AND id != ?",
+            (athlete_id, activity_id, plan_id),
+        ).fetchone()
+        if other is not None:
+            raise PlanLinkRejectedError(
+                f"這場活動已連結到另一份課表（id={other['id']}），請先取消那份的連結"
+            )
+
+    conn.execute(
+        "UPDATE training_plan SET linked_activity_id = ? WHERE id = ?",
+        (activity_id, plan_id),
+    )
+    conn.commit()
+    return {"plan_id": plan_id, "linked_activity_id": activity_id}

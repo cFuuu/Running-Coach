@@ -31,7 +31,10 @@
                        rate limit 並把帳號推向被鎖。
                        放行私有網段須設 `RC_SYNC_ALLOW_PRIVATE_NETWORK=1`。
 
-    兩者共用同一份來源判斷（見 api/client_access.py）。
+    另外，`PUT /api/plan/{id}/link`（學員確認課表配對，會改變配對與課種判讀）
+    同樣預設只接受本機，放行私有網段須設 `RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK=1`。
+
+    以上共用同一份來源判斷（見 api/client_access.py）。
     上面「不可對外網開放」的紅線不因此改變。
 
     唯一的區網可寫端點是 `/api/daily-feel`（每日體感）：只寫本機資料庫、

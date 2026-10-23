@@ -14,12 +14,14 @@ import sqlite3
 from pathlib import Path
 from typing import Callable, Iterator
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 
+from src.main.python.api import client_access
 from src.main.python.services import daily_feel_store
 from src.main.python.services import dashboard_queries as queries
 from src.main.python.services import garmin_cards
 from src.main.python.services import race_names
+from src.main.python.services import training_plan_store
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -258,7 +260,8 @@ def read_overview(
 # --------------------------------------------------------------------------
 # /api/daily-feel：每日體感（首頁卡片的按鈕）
 # --------------------------------------------------------------------------
-# ⚠️ 這是 dashboard 唯一的寫入端點，刻意**不加**來源限制、與唯讀端點同樣區網放行：
+# ⚠️ 這是 dashboard 唯一區網放行的寫入端點（/api/plan/{id}/link 另加來源限制，見下方），
+# 刻意**不加**來源限制、與唯讀端點同樣區網放行：
 # 主要情境就是早上在手機上點一下。代價只是「區網內有人可以改你的體感紀錄」，
 # 不花錢、不打外部 API（與 /api/chat、/api/sync 的「被觸發」代價不同）。
 
@@ -310,3 +313,67 @@ def remove_daily_feel(
     day = _parse_date_param(date, "date")
     resolved = _resolve_athlete_id(conn, athlete_id)
     return {"deleted": daily_feel_store.delete_feel(conn, resolved, day)}
+
+
+# --------------------------------------------------------------------------
+# PUT /api/plan/{plan_id}/link：學員確認「這場是課表」（N-29 B2）
+# --------------------------------------------------------------------------
+# PLAN.md §1 2026-10-24：配對歧義時由學員確認，結果寫入 training_plan.linked_activity_id。
+# 驗證與寫入都在 training_plan_store.set_plan_link()，這裡只做來源限制與錯誤轉換。
+#
+# 來源限制沿用 client_access（DASHBOARD_TASKS.md E.1 定案），預設只接受本機：
+# 這一欄會改變配對、進而影響課種判讀與教練看到的「課表執行情形」，比體感紀錄的
+# 影響範圍大。放行私有網段需設 RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK=1。
+
+_PLAN_LINK_FORBIDDEN_DETAIL = (
+    "課表配對確認僅限本機使用。要讓區網裝置使用，"
+    "請在啟動 server 的環境設定 RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK=1。"
+)
+
+
+def allow_plan_link_private_network() -> bool:
+    """做成 dependency 而非模組層常數：測試才能覆寫，也不會在 import 時凍住環境變數。"""
+    return client_access.env_flag("RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK")
+
+
+def require_plan_link_client(
+    request: Request, allowed: bool = Depends(allow_plan_link_private_network)
+) -> None:
+    client_access.require_client(request, allowed, _PLAN_LINK_FORBIDDEN_DETAIL)
+
+
+@router.put("/plan/{plan_id}/link", dependencies=[Depends(require_plan_link_client)])
+def write_plan_link(
+    plan_id: int,
+    payload: dict = Body(default_factory=dict),
+    athlete_id: int | None = AthleteParam,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """body：{"activity_id": int | null}，null＝取消連結。`activity_id` 必須明確給，
+    漏給不當成取消（避免前端少帶欄位就把確認過的連結清掉）。
+
+    回傳 `{plan_id, linked_activity_id, plan_match}`：`plan_match` 是該活動寫入後
+    在行事曆會得到的 `{state, method, reason}`（連結成功時為 exact）；取消時為 null。
+    """
+    if "activity_id" not in payload:
+        raise HTTPException(status_code=422, detail="缺少 activity_id（取消連結請傳 null）")
+    activity_id = payload["activity_id"]
+    if activity_id is not None and (
+        not isinstance(activity_id, int) or isinstance(activity_id, bool)
+    ):
+        raise HTTPException(status_code=422, detail="activity_id 必須是整數或 null")
+
+    resolved = _resolve_athlete_id(conn, athlete_id)
+    try:
+        result = training_plan_store.set_plan_link(conn, resolved, plan_id, activity_id)
+    except training_plan_store.PlanLinkNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except training_plan_store.PlanLinkRejectedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    result["plan_match"] = (
+        None
+        if activity_id is None
+        else queries.get_activity_plan_match(conn, resolved, activity_id)
+    )
+    return result

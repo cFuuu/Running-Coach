@@ -264,6 +264,16 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 - 結果顯示在 AI 面板的「分析報告」畫面（D.1：解讀只出現在面板，2026-10-14 Fu 確認），可下拉回看過去的報告；分析無法在面板追問，追問請用 Claude Code
 - 設定（皆可不設）：`RC_ANALYSIS_CLAUDE_BIN`、`RC_ANALYSIS_MCP_CONFIG`、`RC_ANALYSIS_TIMEOUT_SEC`（預設 300）、`RC_ANALYSIS_MODEL`
 
+### `PUT /api/plan/{plan_id}/link?athlete_id=1`（2026-10-24 新增：行事曆「這場是課表」，N-29 B2）
+
+學員確認課表配對，只寫 `training_plan.linked_activity_id` 這一欄（決策見 PLAN §1）。body：`{"activity_id": 123}`，`null`＝取消連結；**必須明確帶 `activity_id`**，漏帶回 422（不當成取消）。
+
+- 回傳：`{"plan_id", "linked_activity_id", "plan_match"}`。`plan_match` 是該活動寫入後在 `/api/calendar` 會得到的 `{state, method, reason}`，連結成功時為 `{"state":"exact","method":"linked_activity_id","reason":null}`；取消時為 `null`。寫入後同一天競爭的另一場不再是 `ambiguous`（課表已確認給別場，變成 `none`）。
+- 404：課表或活動不存在，或不屬於這位學員。
+- 422：課表已被取代（`is_active=0`）、活動日期 ≠ `planned_date`、活動是已併入主課的暖身（請連主課）、運動種類不相容（`plan_reconciliation.is_compatible`）、該活動已連到另一份生效課表。`detail` 是可直接顯示的中文說明。
+- 403：來源限制沿用 `client_access`，預設只接受本機；放行私有網段須設 `RC_PLAN_LINK_ALLOW_PRIVATE_NETWORK=1`。
+- 已知缺口：課表被 `superseded_by` 取代時，新的一列不帶入連結（N-7 處理）。寫入後**不**重算活動的生效課種（N-28 `workout_type`，只看外部課表）；已匯入的活動要等該日外部課表重寫或跑 `resolve_for_dates` 回填才會更新。
+
 ---
 
 ## Task A：後端查詢層 + FastAPI

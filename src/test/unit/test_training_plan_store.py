@@ -5,10 +5,13 @@ import unittest
 
 from src.main.python.models.db import get_connection
 from src.main.python.services.training_plan_store import (
+    PlanLinkNotFoundError,
+    PlanLinkRejectedError,
     get_active_schedule,
     get_plan_history_for_date,
     save_external_workouts,
     save_schedule,
+    set_plan_link,
 )
 
 START = datetime.date(2026, 8, 1)
@@ -424,3 +427,119 @@ class TestSaveExternalWorkoutsClearsGaps(unittest.TestCase):
         kept = [r for r in active if r["planned_date"] == (START + datetime.timedelta(days=2)).isoformat()]
         self.assertEqual(len(kept), 1)
         self.assertEqual(kept[0]["workout_type"], "interval")
+
+
+def _insert_activity(conn, athlete_id, started_at, activity_type="running", warmup_for=None):
+    cursor = conn.execute(
+        "INSERT INTO activities (athlete_id, source, fetched_at, activity_type, started_at, "
+        "distance_km, duration_sec, warmup_for_activity_id) "
+        "VALUES (?, 'garmin_mcp', '2026-08-01T00:00:00', ?, ?, 5.0, 1800, ?)",
+        (athlete_id, activity_type, started_at, warmup_for),
+    )
+    return cursor.lastrowid
+
+
+def _linked(conn, plan_id):
+    return conn.execute(
+        "SELECT linked_activity_id FROM training_plan WHERE id = ?", (plan_id,)
+    ).fetchone()["linked_activity_id"]
+
+
+class TestSetPlanLink(unittest.TestCase):
+    """PLAN.md §1 2026-10-24：學員確認的配對只寫 linked_activity_id 這一欄。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        self.athlete_id = _build_athlete(self.conn)
+        [self.plan_id] = save_external_workouts(
+            self.conn,
+            self.athlete_id,
+            [{"planned_date": "2026-08-03", "workout_type": "easy", "planned_distance_km": 8.0}],
+        )
+        self.run_a = _insert_activity(self.conn, self.athlete_id, "2026-08-03T06:00:00")
+        self.run_b = _insert_activity(self.conn, self.athlete_id, "2026-08-03T18:00:00")
+        self.conn.commit()
+
+    def _plan_row(self):
+        return dict(
+            self.conn.execute("SELECT * FROM training_plan WHERE id = ?", (self.plan_id,)).fetchone()
+        )
+
+    def test_link_writes_only_linked_activity_id(self):
+        before = self._plan_row()
+        result = set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)
+        after = self._plan_row()
+
+        self.assertEqual(result, {"plan_id": self.plan_id, "linked_activity_id": self.run_a})
+        self.assertEqual(after.pop("linked_activity_id"), self.run_a)
+        before.pop("linked_activity_id")
+        self.assertEqual(after, before, "課表其餘欄位不得被改動")
+
+    def test_relink_to_another_activity(self):
+        set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)
+        set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_b)
+        self.assertEqual(_linked(self.conn, self.plan_id), self.run_b)
+
+    def test_none_clears_link(self):
+        set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)
+        result = set_plan_link(self.conn, self.athlete_id, self.plan_id, None)
+        self.assertIsNone(result["linked_activity_id"])
+        self.assertIsNone(_linked(self.conn, self.plan_id))
+
+    def test_rejects_activity_on_another_date(self):
+        other_day = _insert_activity(self.conn, self.athlete_id, "2026-08-04T06:00:00")
+        with self.assertRaises(PlanLinkRejectedError):
+            set_plan_link(self.conn, self.athlete_id, self.plan_id, other_day)
+        self.assertIsNone(_linked(self.conn, self.plan_id))
+
+    def test_rejects_incompatible_sport(self):
+        walk = _insert_activity(self.conn, self.athlete_id, "2026-08-03T12:00:00", "walking")
+        with self.assertRaises(PlanLinkRejectedError):
+            set_plan_link(self.conn, self.athlete_id, self.plan_id, walk)
+        self.assertIsNone(_linked(self.conn, self.plan_id))
+
+    def test_rejects_warmup(self):
+        warmup = _insert_activity(
+            self.conn, self.athlete_id, "2026-08-03T05:40:00", warmup_for=self.run_a
+        )
+        with self.assertRaises(PlanLinkRejectedError) as ctx:
+            set_plan_link(self.conn, self.athlete_id, self.plan_id, warmup)
+        self.assertIn("暖身", str(ctx.exception))
+
+    def test_rejects_missing_plan(self):
+        with self.assertRaises(PlanLinkNotFoundError):
+            set_plan_link(self.conn, self.athlete_id, 9999, self.run_a)
+
+    def test_rejects_missing_activity(self):
+        with self.assertRaises(PlanLinkNotFoundError):
+            set_plan_link(self.conn, self.athlete_id, self.plan_id, 9999)
+
+    def test_rejects_inactive_plan(self):
+        save_external_workouts(
+            self.conn, self.athlete_id, [{"planned_date": "2026-08-03", "workout_type": "tempo"}]
+        )  # 同日新版本取代 self.plan_id
+        with self.assertRaises(PlanLinkRejectedError):
+            set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)
+        self.assertIsNone(_linked(self.conn, self.plan_id))
+
+    def test_rejects_other_athletes_plan_and_activity(self):
+        other_athlete = _build_athlete(self.conn)
+        other_run = _insert_activity(self.conn, other_athlete, "2026-08-03T07:00:00")
+        with self.assertRaises(PlanLinkNotFoundError):
+            set_plan_link(self.conn, other_athlete, self.plan_id, other_run)
+        with self.assertRaises(PlanLinkNotFoundError):
+            set_plan_link(self.conn, self.athlete_id, self.plan_id, other_run)
+        self.assertIsNone(_linked(self.conn, self.plan_id))
+
+    def test_rejects_activity_already_linked_to_another_plan(self):
+        # 同一天另一份生效課表（generated 不會取代 external，兩列並存）
+        self.conn.execute(
+            "INSERT INTO training_plan (athlete_id, planned_date, workout_type, plan_source, "
+            "is_active, linked_activity_id, created_at) "
+            "VALUES (?, '2026-08-03', 'easy', 'generated', 1, ?, '2026-08-01T00:00:00')",
+            (self.athlete_id, self.run_a),
+        )
+        self.conn.commit()
+        with self.assertRaises(PlanLinkRejectedError):
+            set_plan_link(self.conn, self.athlete_id, self.plan_id, self.run_a)
+        self.assertIsNone(_linked(self.conn, self.plan_id))
