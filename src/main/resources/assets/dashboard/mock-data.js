@@ -611,6 +611,147 @@
     };
   }
 
+  // ---- /api/overview（E.2 趨勢頁：區間摘要、週跑量、心率區間、VDOT 歷史）----
+  // 只產生前端用到的欄位；心率區間由每場平均心率粗估，數字皆為虛構。
+  var MOCK_ZONE_NAMES = [['熱身', 'Warm Up'], ['輕鬆', 'Easy'], ['有氧', 'Aerobic'], ['閾值', 'Threshold'], ['最大', 'Maximum']];
+
+  function mondayISO(iso) {
+    var ms = Date.parse(iso + 'T00:00:00Z');
+    var dow = new Date(ms).getUTCDay();
+    return toISODate(new Date(ms - ((dow + 6) % 7) * 86400000));
+  }
+
+  function buildOverview(range) {
+    var window = resolveWindow(range);
+    var runs = ALL_SESSIONS.filter(function (s) { return s.date >= window.start && s.date <= window.end; });
+    var weeks = {};
+    var zoneSec = [0, 0, 0, 0, 0];
+    var counted = 0;
+    var totalKm = 0;
+    var totalSec = 0;
+    runs.forEach(function (s) {
+      totalKm += s.distance_km;
+      totalSec += s.duration_sec;
+      var wk = mondayISO(s.date);
+      if (!weeks[wk]) weeks[wk] = { low_km: 0, mid_km: 0, high_km: 0, unknown_km: 0 };
+      var z = mockZone(s.avg_hr_bpm);
+      if (z === null) { weeks[wk].unknown_km += s.distance_km; return; }
+      counted += 1;
+      var tier = z <= 2 ? 'low_km' : (z === 3 ? 'mid_km' : 'high_km');
+      weeks[wk][tier] += s.distance_km;
+      zoneSec[Math.max(z, 1) - 1] += s.duration_sec * 0.8;
+      zoneSec[Math.min(Math.max(z, 1), 4)] += s.duration_sec * 0.2;
+    });
+    var zoneTotal = zoneSec.reduce(function (a, b) { return a + b; }, 0);
+    var weekList = Object.keys(weeks).sort().map(function (wk) {
+      var w = weeks[wk];
+      var endMs = Date.parse(wk + 'T00:00:00Z') + 6 * 86400000;
+      var r1 = function (v) { return Math.round(v * 10) / 10; };
+      return {
+        week_start: wk,
+        partial: wk < window.start || toISODate(new Date(endMs)) > window.end,
+        low_km: r1(w.low_km), mid_km: r1(w.mid_km), high_km: r1(w.high_km), unknown_km: r1(w.unknown_km),
+        total_km: r1(w.low_km + w.mid_km + w.high_km + w.unknown_km)
+      };
+    });
+    var races = ALL_SESSIONS.filter(function (s) { return s.workout_type === 'race'; }).slice().reverse();
+    return {
+      range: range,
+      start_date: window.start,
+      end_date: window.end,
+      available: true,
+      sessions: {
+        total: runs.length, total_km: Math.round(totalKm * 10) / 10, total_sec: totalSec,
+        effective: runs.filter(function (s) { return s.avg_hr_bpm !== null; }).length,
+        criteria: { min_duration_sec: 600, min_distance_km: 1.0, requires_hr: true }
+      },
+      this_week: {
+        week_start: mondayISO(BASE_DATE), planned_km: 30,
+        zone_seconds: [1, 2, 3, 4, 5].map(function (z) { return { zone: z, seconds: z === 2 ? 5400 : 600 }; })
+      },
+      recent_volume: { days: 7, start: dateMinus(6), end: BASE_DATE, km: 24.6,
+        previous_start: dateMinus(13), previous_end: dateMinus(7), previous_km: 31.2 },
+      weekly_intensity: { tiers: { low: [0, 1, 2], mid: [3], high: [4, 5] }, weeks: weekList },
+      hr_zones: counted === 0 ? { available: false, reason: '此區間內沒有心率區間資料' } : {
+        available: true, sessions_counted: counted, total_seconds: Math.round(zoneTotal),
+        zones: zoneSec.map(function (sec, i) {
+          return { zone: i + 1, seconds: Math.round(sec), pct: Math.round(sec / zoneTotal * 1000) / 10 };
+        })
+      },
+      hr_zone_bounds: {
+        available: true, resting_hr_bpm: 48, max_hr: { value: 190 },
+        zones: MOCK_ZONE_BPM_LOW.map(function (low, i) {
+          return { zone: i + 1, name: MOCK_ZONE_NAMES[i][0], name_en: MOCK_ZONE_NAMES[i][1], bpm_low: low,
+            bpm_high: i < 4 ? MOCK_ZONE_BPM_LOW[i + 1] - 1 : 190 };
+        })
+      },
+      vdot: {
+        race: { value: null, basis: null, reason: '假資料不計算比賽 VDOT' },
+        garmin_reference: null,
+        history: races.map(function (s, i) {
+          return { date: s.date, distance: '5K', vdot: Math.round((38 + (i % 5) * 0.6) * 10) / 10 };
+        })
+      },
+      personal_bests: []
+    };
+  }
+
+  // ---- /api/garmin-cards（E.2 趨勢頁 Garmin 數據）：沿用每日身體指標的假序列 ----
+  function buildGarminCards(range) {
+    var w = buildWellness(range);
+    var m = w.metrics;
+    function series(key, field) {
+      return (m[key] ? m[key].points : []).map(function (p) { var o = { date: p.date }; o[field] = p.value; return o; });
+    }
+    function last(key) {
+      var pts = m[key] ? m[key].points : [];
+      return pts.length ? pts[pts.length - 1] : null;
+    }
+    var cards = {};
+    var rd = last('training_readiness_score');
+    if (rd) cards.training_readiness = { date: rd.date, score: rd.value, level: 'MODERATE',
+      series: series('training_readiness_score', 'training_readiness_score') };
+    var hv = last('hrv_weekly_avg_ms');
+    if (hv) cards.hrv = { date: hv.date, status: 'BALANCED', weekly_avg_ms: hv.value, last_night_ms: hv.value,
+      last_night_5min_high_ms: null, baseline_balanced_low: 40, baseline_balanced_upper: 55,
+      series: series('hrv_weekly_avg_ms', 'hrv_weekly_avg_ms') };
+    var sl = last('sleep_score');
+    if (sl) cards.sleep = { date: sl.date, score: sl.value, duration_sec: 25200, levels: null,
+      series: series('sleep_score', 'sleep_score') };
+    var st = last('steps');
+    if (st) cards.steps = { date: st.date, value: st.value, goal: 8000,
+      series: series('steps', 'steps').map(function (p) { p.steps_goal = 8000; return p; }) };
+    var rhr = last('resting_hr_bpm');
+    if (rhr) cards.heart_rate = { date: rhr.date, resting: rhr.value, resting_7day_avg: rhr.value, intraday: null,
+      series: series('resting_hr_bpm', 'resting_hr_bpm') };
+    var ss = last('all_day_stress_avg');
+    if (ss) cards.stress = { date: ss.date, avg: ss.value, intraday: null,
+      series: series('all_day_stress_avg', 'all_day_stress_avg') };
+    var sp = last('spo2_pct');
+    if (sp) cards.spo2 = { date: sp.date, avg: sp.value, lowest: sp.value - 3, latest: sp.value,
+      series: series('spo2_pct', 'spo2_pct') };
+    var bb = series('sleep_score', 'body_battery_max').map(function (p) {
+      return { date: p.date, body_battery_max: Math.min(100, p.body_battery_max + 10), body_battery_min: Math.max(5, p.body_battery_max - 60) };
+    });
+    if (bb.length) {
+      var lb = bb[bb.length - 1];
+      cards.body_battery = { date: lb.date, latest: lb.body_battery_max - 20, high: lb.body_battery_max, low: lb.body_battery_min,
+        charged: 50, drained: 40, intraday: null, series: bb };
+    }
+    var acute = series('recovery_time_hours', 'acute_load').map(function (p) {
+      return { date: p.date, acute_load: Math.round(p.acute_load * 15), chronic_load: 300 };
+    });
+    if (acute.length) {
+      var la = acute[acute.length - 1];
+      cards.training_load = { date: la.date, acute: la.acute_load, chronic: 300, ratio: Math.round(la.acute_load / 30) / 10,
+        ratio_status: 'OPTIMAL', series: acute };
+      cards.training_status = { date: la.date, status: 'PRODUCTIVE', since: dateMinus(10),
+        series: acute.map(function (p) { return { date: p.date, status: 'PRODUCTIVE' }; }) };
+    }
+    return { range: range, start_date: w.start_date, end_date: w.end_date,
+      note: 'Garmin 數據（假資料）', cards: cards };
+  }
+
   var META = {
     athlete: { id: 1, name: '示範跑者' }, // 虛構名稱，非真實使用者
     metric_coverage: {
@@ -840,6 +981,8 @@
       return buildCalendar(start, end);
     }
     if (pathname === '/api/training-load') return buildTrainingLoad(range);
+    if (pathname === '/api/overview') return buildOverview(range);
+    if (pathname === '/api/garmin-cards') return buildGarminCards(range);
     // 假資料模式沒有 Garmin token，同步永遠不可用——回 client_allowed:false
     // 讓按鈕維持停用，而不是讓人在 demo 模式按下去打真的 API。
     if (pathname === '/api/sync/status') {

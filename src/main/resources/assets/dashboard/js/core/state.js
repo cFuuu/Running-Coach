@@ -28,6 +28,7 @@ export var state = {
   todayKpi: null,        // { loadSeries, garminCards }（首頁固定近 30 天）
   recentActivities: null, // 近 30 天所有活動 { date, activity, warmup }，由新到舊（取前 8 筆顯示）
   overview: null,        // 趨勢頁區間摘要用的 /api/overview（吃 range）
+  trendsPrev: null,      // 趨勢頁數字卡的前一段等長期間 { range, start, end, loadSeries, wellness, sessions, overview }
 
   homeOverview: null,    // 首頁用的 /api/overview（固定 30d，只取 VDOT、最佳成績、本週 Zone 2 等不受範圍影響的欄位）
 

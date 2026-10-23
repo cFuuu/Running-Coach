@@ -614,6 +614,91 @@ export var GARMIN_CARD_DEFS = [
 var DEF_BY_KEY = {};
 GARMIN_CARD_DEFS.forEach(function (d) { DEF_BY_KEY[d.key] = d; });
 
+// ------------------------------------------------------------ 趨勢頁 Garmin 區（E.2）
+
+/**
+ * 小格子分數一覽：每張卡濃縮成一行字（主數值＋必要的單位或分級）。
+ * 與卡片同一份資料、同一組標籤對照，只是不畫圖。沒有資料回 null。
+ */
+var GARMIN_TILE_VALUE = {
+  hrv: function (c) { return (HRV_STATUS_LABEL[c.status] || c.status || '') + ' ' + num(c.weekly_avg_ms) + ' ms'; },
+  training_readiness: function (c) { return num(c.score) + (c.level ? ' ' + (READINESS_LEVEL_LABEL[c.level] || c.level) : ''); },
+  sleep: function (c) { return num(c.score) + '（' + hm(c.duration_sec) + '）'; },
+  steps: function (c) { return num(c.value); },
+  training_status: function (c) { return GARMIN_TRAINING_STATUS_LABEL[c.status] || c.status || '—'; },
+  body_battery: function (c) { return num(c.latest !== null ? c.latest : c.high); },
+  heart_rate: function (c) { return num(c.resting) + ' bpm'; },
+  calories: function (c) { return num((c.active || 0) + (c.resting || 0)) + ' kcal'; },
+  health_status: function (c) { return c.outliers ? c.outliers + ' 項超出範圍' : '範圍內'; },
+  stress: function (c) { return num(c.avg); },
+  intensity_minutes: function (c) { return num(c.week_total) + ' 分（本週）'; },
+  floors: function (c) { return num(Math.floor(c.value)); },
+  spo2: function (c) { return num(c.latest !== null ? c.latest : c.avg) + '%'; },
+  vo2max: function (c) { return num(c.value, 1) + (c.rating ? ' ' + c.rating.label : ''); },
+  respiration: function (c) { return num(c.waking_avg) + ' brpm'; },
+  lactate_threshold: function (c) { return c.hr_bpm !== null ? num(c.hr_bpm) + ' bpm' : '—'; },
+  endurance_score: function (c) { return num(c.score); },
+  training_load: function (c) { return num(c.acute) + '/' + num(c.chronic); },
+  load_focus: function (c) {
+    var low = (c.categories || []).filter(function (x) { return x.key === 'aerobic_low'; })[0];
+    return LOAD_FOCUS_FEEDBACK_LABEL[c.feedback] || (low ? '低強度有氧 ' + num(low.value) : '—');
+  }
+};
+
+/**
+ * 分數一覽格線：GARMIN_CARD_DEFS 的每張卡一格（標籤＋一行數值），沒資料的卡顯示「—」。
+ * @param {Object} data /api/garmin-cards 的回傳
+ */
+export function garminScoreTiles(data) {
+  var cards = (data && data.cards) || {};
+  var grid = h('div', 'gc-tiles');
+  GARMIN_CARD_DEFS.forEach(function (d) {
+    var c = cards[d.key];
+    var tile = h('div', 'gc-tile' + (c ? '' : ' is-empty'));
+    tile.appendChild(h('div', 'gc-tile-label', d.label));
+    tile.appendChild(h('div', 'gc-tile-value', c ? GARMIN_TILE_VALUE[d.key](c) : '—'));
+    if (c && c.date) tile.title = d.label + '：' + c.date + ' 的資料';
+    grid.appendChild(tile);
+  });
+  return grid;
+}
+
+/**
+ * 趨勢頁 Garmin 大折線圖可勾選的每日指標：card 是 /api/garmin-cards 的卡片 key，
+ * field 是該卡 series 的欄位名（見 services/garmin_cards.py 的 _series）。
+ * unit 決定共用哪個 Y 軸（同單位同軸）；★ 預設開啟。
+ */
+export var GARMIN_SERIES_DEFS = [
+  { key: 'readiness', label: '訓練準備度', card: 'training_readiness', field: 'training_readiness_score', unit: '分數', color: 'var(--c-metric-training_readiness_score)', on: true },
+  { key: 'bb_high', label: '身體能量（最高）', card: 'body_battery', field: 'body_battery_max', unit: '分數', color: 'var(--c-distance)', on: true },
+  { key: 'bb_low', label: '身體能量（最低）', card: 'body_battery', field: 'body_battery_min', unit: '分數', color: 'var(--c-volume)' },
+  { key: 'endurance', label: '耐力分數', card: 'endurance_score', field: 'endurance_score', unit: '耐力分數', color: 'var(--cat-ability-strong)' },
+  { key: 'vo2max', label: '跑步最大攝氧量', card: 'vo2max', field: 'vo2max_precise', unit: 'ml/kg/min', color: 'var(--c-te)', decimals: 1 },
+  { key: 'acute', label: '短期負荷', card: 'training_load', field: 'acute_load', unit: 'Garmin 負荷', color: 'var(--cat-load-strong)' },
+  { key: 'chronic', label: '長期負荷', card: 'training_load', field: 'chronic_load', unit: 'Garmin 負荷', color: 'var(--c-pace)' },
+  { key: 'hrv_weekly', label: 'HRV 7 天平均', card: 'hrv', field: 'hrv_weekly_avg_ms', unit: 'ms', color: 'var(--c-metric-hrv_weekly_avg_ms)' },
+  { key: 'hrv_night', label: 'HRV 夜間平均', card: 'hrv', field: 'hrv_ms', unit: 'ms', color: 'var(--c-metric-hrv_ms)' },
+  { key: 'sleep', label: '睡眠分數', card: 'sleep', field: 'sleep_score', unit: '分數', color: 'var(--c-metric-sleep_score)' },
+  { key: 'stress', label: '壓力（全天）', card: 'stress', field: 'all_day_stress_avg', unit: '分數', color: 'var(--c-metric-all_day_stress_avg)' },
+  { key: 'resting_hr', label: '靜止心率', card: 'heart_rate', field: 'resting_hr_bpm', unit: 'bpm', color: 'var(--c-metric-resting_hr_bpm)' },
+  { key: 'steps', label: '步數', card: 'steps', field: 'steps', unit: '步', color: 'var(--c-metric-steps)' },
+  { key: 'floors', label: '樓層', card: 'floors', field: 'floors_ascended', unit: '層', color: 'var(--c-metric-acwr)' },
+  { key: 'calories_active', label: '活躍卡路里', card: 'calories', field: 'calories_active', unit: 'kcal', color: 'var(--c-hr)' },
+  { key: 'calories_resting', label: '靜態卡路里', card: 'calories', field: 'calories_resting', unit: 'kcal', color: 'var(--c-metric-recovery_time_hours)' },
+  { key: 'spo2', label: '脈搏血氧', card: 'spo2', field: 'spo2_pct', unit: '%', color: 'var(--c-metric-spo2_pct)' },
+  { key: 'resp_waking', label: '呼吸（清醒）', card: 'respiration', field: 'respiration_rate', unit: 'brpm', color: 'var(--c-metric-respiration_rate)', decimals: 1 },
+  { key: 'resp_sleep', label: '呼吸（睡眠）', card: 'respiration', field: 'respiration_sleep_avg', unit: 'brpm', color: 'var(--c-metric-stress_avg)', decimals: 1 }
+];
+
+/** GARMIN_SERIES_DEFS 一筆 → [{date, value}]（卡片不存在時為空陣列）。 */
+export function garminSeriesPoints(data, def) {
+  var card = data && data.cards && data.cards[def.card];
+  return ((card && card.series) || []).map(function (p) {
+    var v = p[def.field];
+    return { date: p.date, value: typeof v === 'number' && isFinite(v) ? v : null };
+  });
+}
+
 /**
  * 畫一張 Garmin 卡片到 node。cardData 為 /api/garmin-cards 的 cards[key]；沒有資料時顯示無資料。
  */

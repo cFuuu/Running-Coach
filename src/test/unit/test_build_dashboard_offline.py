@@ -204,6 +204,16 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(len(urls), len(set(urls)))
         self.assertIn("/api/sessions/7", urls)
 
+    def test_previous_range_and_prev_requests(self):
+        # 30 天（9/24–10/23）的前一段等長期間是 8/25–9/23；range=all 沒有起日 → 無前期
+        self.assertEqual(offline.previous_range("2026-09-24", "2026-10-23"), "custom:2026-08-25:2026-09-23")
+        self.assertIsNone(offline.previous_range(None, "2026-10-23"))
+        ctx = offline.SnapshotContext(FIXTURE_TODAY, ("30d",), (), FIXTURE_TODAY, FIXTURE_TODAY,
+                                      ("custom:2026-08-25:2026-09-23",))
+        urls = offline.snapshot_requests(ctx)
+        for endpoint in offline.PREV_ENDPOINTS:
+            self.assertIn(f"{endpoint}?range=custom:2026-08-25:2026-09-23", urls)
+
     def test_month_grid(self):
         # 2026-03：1 號是週日、31 號是週二 → 3/1 ~ 4/4
         self.assertEqual(offline._month_grid(datetime.date(2026, 3, 15)),
