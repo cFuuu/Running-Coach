@@ -1,12 +1,14 @@
 /**
- * sessions.js — 訓練紀錄 view：場次清單、單場分析（分圈、紀錄、心率漂移、心率區間、隔天恢復）
+ * sessions.js — 訓練紀錄 view：按週分組的日誌列清單（E.3 C1，點列原地展開）、
+ * 單場分析元件（分圈、紀錄、心率漂移、心率區間、隔天恢復；展開列與完整單場共用）
  */
 
 import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, SOURCE_LABEL } from '../core/state.js';
-import { $, clear, h, showUnavailable, statCard, widthOf, wrapChart } from '../core/dom.js';
-import { fmtDelta, deltaClass } from '../core/format.js';
+import { $, clear, h, showError, showLoading, showUnavailable, statCard, widthOf, wrapChart } from '../core/dom.js';
+import { fmtDelta, deltaClass, mondayOf, addDaysISO, dowLabel } from '../core/format.js';
 import { selectSession } from '../shell/range.js';
+import { navigate } from '../shell/router.js';
 
 export function renderSessionPicker() {
   var node = $('session-picker');
@@ -25,8 +27,9 @@ export function renderSessionPicker() {
     if (s.id === state.selectedSessionId) opt.selected = true;
     select.appendChild(opt);
   });
+  // 這個下拉選單在「完整單場」畫面裡，換場後留在完整單場
   select.addEventListener('change', function () {
-    selectSession(parseInt(select.value, 10));
+    selectSession(parseInt(select.value, 10), true);
   });
   node.appendChild(select);
 }
@@ -99,8 +102,8 @@ export function renderHrDrift(detail) {
   node.appendChild(grid);
 }
 
-export function renderLaps(detail) {
-  var node = $('lap-chart');
+export function renderLaps(detail, target) {
+  var node = target || $('lap-chart');
   clear(node);
   var laps = detail.laps;
   if (!laps || laps.available === false) {
@@ -120,8 +123,8 @@ export function renderLaps(detail) {
   node.appendChild(wrapChart(C.lapPaceChart(list, { containerWidth: widthOf(node) })));
 }
 
-export function renderRecords(detail) {
-  var node = $('records-chart');
+export function renderRecords(detail, target) {
+  var node = target || $('records-chart');
   clear(node);
   var records = detail.records;
   if (!records || records.available === false) {
@@ -155,8 +158,8 @@ export function renderRecords(detail) {
  * 不因某場強度較低就少幾列。below_zone_1（低於 Z1 的暖身時間）同樣固定
  * 顯示在圖表下方，沒有暖身時間就顯示 0，而不是整行隱藏。
  */
-export function renderHrZones(detail) {
-  var node = $('hrzone-chart');
+export function renderHrZones(detail, target) {
+  var node = target || $('hrzone-chart');
   clear(node);
   var zones = detail.hr_zones;
   if (!zones || zones.available === false) {
@@ -173,8 +176,8 @@ export function renderHrZones(detail) {
 }
 
 /** 該場的隔天恢復影響：只顯示數字卡，不畫圖、不做解讀 */
-export function renderRecoveryImpact() {
-  var node = $('recovery-impact');
+export function renderRecoveryImpact(target) {
+  var node = target || $('recovery-impact');
   clear(node);
   if (state.selectedSessionId === null) {
     showUnavailable(node, '尚未選擇場次');
@@ -220,9 +223,365 @@ export function renderRecoveryImpact() {
   node.appendChild(grid);
 }
 
+// ------------------------------------------------------------ E.3 訓練紀錄：C1 日誌列
+//
+// 清單按週（週一～週日）分組；點一列在原地展開（大數字列＋圖表／分圈／心率區間／
+// 隔天恢復分頁），展開內容沿用上方的單場元件。展開哪一列由網址決定：
+//   #/sessions           全部收合
+//   #/sessions/<id>      清單、該列展開並捲到畫面內
+//   #/sessions/<id>/full 「完整單場」（#panel-session，所有單場元件一次列出）
+// 狀態：state.selectedSessionId＝展開中的場次（null＝全部收合）。
+
+// 課種篩選。品質課＝節奏跑＋間歇跑；輕鬆跑、恢復跑、未分類只在「全部」出現。
+var TYPE_FILTERS = [
+  { key: 'all', label: '全部', types: null },
+  { key: 'quality', label: '品質課', types: ['tempo', 'interval'] },
+  { key: 'lsd', label: 'LSD', types: ['lsd'] },
+  { key: 'race', label: '比賽', types: ['race'] }
+];
+var typeFilter = 'all';
+
+// 展開列的分頁；換列時沿用（看完一場的分圈，點下一場仍停在分圈）
+var EXPAND_TABS = [
+  { key: 'chart', label: '圖表' },
+  { key: 'laps', label: '分圈' },
+  { key: 'zones', label: '心率區間' },
+  { key: 'recovery', label: '隔天恢復' }
+];
+var expandTab = 'chart';
+
+// 單場明細讀取失敗：{ id, message }，展開列的分頁顯示錯誤而不是一直轉圈
+var detailError = null;
+
+function filterDef(key) {
+  for (var i = 0; i < TYPE_FILTERS.length; i += 1) {
+    if (TYPE_FILTERS[i].key === key) return TYPE_FILTERS[i];
+  }
+  return TYPE_FILTERS[0];
+}
+
+function matchesFilter(s, key) {
+  var types = filterDef(key).types;
+  return types === null || types.indexOf(s.workout_type) !== -1;
+}
+
+function typeKey(s) { return s.workout_type || 'unknown'; }
+
+function typeLabel(s) {
+  return s.workout_type ? (WORKOUT_TYPE_LABEL[s.workout_type] || s.workout_type) : '未標記';
+}
+
+/** 「完整單場」畫面是否開著（router.updateSessionsStage 切換 .stage-detail） */
+function isFullMode() {
+  var view = $('view-sessions');
+  return !!view && view.classList.contains('stage-detail');
+}
+
+/** 依所在週的週一分組；sessions 已由新到舊，分組後順序不變 */
+function groupByWeek(sessions) {
+  var weeks = [];
+  var byStart = {};
+  sessions.forEach(function (s) {
+    var start = mondayOf(s.date).toISOString().slice(0, 10);
+    if (!byStart[start]) {
+      byStart[start] = { start: start, sessions: [] };
+      weeks.push(byStart[start]);
+    }
+    byStart[start].sessions.push(s);
+  });
+  return weeks;
+}
+
+/** 週標題列：日期區間＋場數・距離・時間（距離與時間含併入主課的暖身，與行事曆合計一致） */
+function weekHeader(week) {
+  var dist = 0;
+  var sec = 0;
+  var hasWarmup = false;
+  week.sessions.forEach(function (s) {
+    dist += s.distance_km || 0;
+    sec += s.duration_sec || 0;
+    if (s.warmup) {
+      hasWarmup = true;
+      dist += s.warmup.distance_km || 0;
+      sec += s.warmup.duration_sec || 0;
+    }
+  });
+  var head = h('div', 'slog-week');
+  head.setAttribute('role', 'heading');
+  head.setAttribute('aria-level', '3');
+  head.appendChild(h('span', 'slog-week-range',
+    C.shortDate(week.start) + ' – ' + C.shortDate(addDaysISO(week.start, 6))));
+  var totals = h('span', 'slog-week-totals',
+    week.sessions.length + ' 場 · ' + C.formatNumber(dist, 1) + ' km · ' + C.formatDuration(sec));
+  if (hasWarmup) totals.title = '距離與時間含併入主課的暖身';
+  head.appendChild(totals);
+  return head;
+}
+
+function numCell(cls, value, unit) {
+  var cell = h('span', 'slog-num ' + cls);
+  cell.appendChild(h('span', 'slog-num-val', value));
+  cell.appendChild(h('span', 'slog-num-unit', unit));
+  return cell;
+}
+
+/** 分圈小圖；沒有 FIT 分圈（lap_strip 為 []）時顯示淡淡的佔位 */
+function lapStripCell(s) {
+  var cell = h('span', 'slog-strip');
+  var laps = s.lap_strip || [];
+  if (laps.length === 0) {
+    cell.classList.add('is-empty');
+    cell.title = '此場沒有 FIT 分圈';
+    cell.appendChild(h('span', 'slog-strip-none', '無分圈'));
+    return cell;
+  }
+  // 圈數少時不把柱子拉得很寬：容器最寬 = 圈數 × 固定寬（見 CSS --slog-laps）
+  cell.style.setProperty('--slog-laps', String(laps.length));
+  cell.appendChild(C.lapStrip(laps, {
+    height: 28,
+    tooltip: true,
+    label: laps.length + ' 圈分圈小圖：高度為配速，顏色為該圈平均心率區間'
+  }));
+  return cell;
+}
+
+function sessionRow(s, expanded) {
+  var item = h('div', 'slog-item slog-wt-' + typeKey(s) + (expanded ? ' is-expanded' : ''));
+  item.setAttribute('data-session-id', String(s.id));
+
+  var row = h('button', 'slog-row');
+  row.type = 'button';
+  row.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  row.setAttribute('aria-controls', 'slog-expand-' + s.id);
+
+  row.appendChild(h('span', 'slog-stripe'));
+
+  var date = h('span', 'slog-date');
+  date.appendChild(h('span', 'slog-date-md', C.shortDate(s.date)));
+  date.appendChild(h('span', 'slog-date-dow', '週' + dowLabel(s.date)));
+  row.appendChild(date);
+
+  var what = h('span', 'slog-what');
+  what.appendChild(h('span', 'tag tag-type tag-type-' + typeKey(s) + ' slog-type', typeLabel(s)));
+  var sub = h('span', 'slog-sub');
+  sub.appendChild(h('span', 'slog-title', s.title || '（無標題）'));
+  if (s.warmup) {
+    sub.appendChild(h('span', 'slog-warmup', '＋暖身 ' + C.formatNumber(s.warmup.distance_km || 0, 1) + ' km'));
+  }
+  what.appendChild(sub);
+  row.appendChild(what);
+
+  row.appendChild(numCell('slog-dist', C.formatNumber(s.distance_km, 2), 'km'));
+  row.appendChild(numCell('slog-time', C.formatDuration(s.duration_sec), '時間'));
+  row.appendChild(numCell('slog-pace', C.formatPace(s.avg_pace_sec_per_km), '/km'));
+  row.appendChild(lapStripCell(s));
+
+  var chevron = h('span', 'slog-chevron', '▾');
+  chevron.setAttribute('aria-hidden', 'true');
+  row.appendChild(chevron);
+
+  row.addEventListener('click', function () {
+    if (expanded) navigate('sessions'); // 再點一次收合
+    else selectSession(s.id);
+  });
+  item.appendChild(row);
+
+  if (expanded) item.appendChild(expandBody(s));
+  return item;
+}
+
+function bigNumber(label, value, unit) {
+  var item = h('div', 'slog-big-item');
+  var val = h('span', 'slog-big-val', value);
+  if (unit && value !== '—') val.appendChild(h('span', 'slog-big-unit', unit));
+  item.appendChild(val);
+  item.appendChild(h('span', 'slog-big-label', label));
+  return item;
+}
+
+/** 展開區：大數字列（清單資料，不必等明細）＋分頁＋「開啟完整單場」 */
+function expandBody(s) {
+  var body = h('div', 'slog-expand');
+  body.id = 'slog-expand-' + s.id;
+
+  var top = h('div', 'slog-big-row');
+  var big = h('div', 'slog-big');
+  big.appendChild(bigNumber('距離', C.formatNumber(s.distance_km, 2), 'km'));
+  big.appendChild(bigNumber('時間', C.formatDuration(s.duration_sec), ''));
+  big.appendChild(bigNumber('平均配速', C.formatPace(s.avg_pace_sec_per_km), '/km'));
+  big.appendChild(bigNumber('平均心率', C.formatNumber(s.avg_hr_bpm, 0), 'bpm'));
+  big.appendChild(bigNumber('有氧 TE', C.formatNumber(s.aerobic_te, 1), ''));
+  top.appendChild(big);
+  var link = h('a', 'slog-full-link', '開啟完整單場 ›');
+  link.href = '#/sessions/' + s.id + '/full';
+  top.appendChild(link);
+  body.appendChild(top);
+
+  if (s.warmup) {
+    var w = s.warmup;
+    var parts = [C.formatNumber(w.distance_km || 0, 2) + ' km', C.formatDuration(w.duration_sec)];
+    if (w.avg_pace_sec_per_km) parts.push(C.formatPace(w.avg_pace_sec_per_km) + '/km');
+    body.appendChild(h('div', 'chart-note slog-warmup-note',
+      '暖身另計：' + parts.join('・') + '（另存的獨立活動，不含在上方數字內）'));
+  }
+
+  var tabs = h('div', 'slog-tabs');
+  tabs.setAttribute('role', 'tablist');
+  var panel = h('div', 'slog-tab-panel');
+  panel.setAttribute('role', 'tabpanel');
+  EXPAND_TABS.forEach(function (tab) {
+    var btn = h('button', 'slog-tab' + (tab.key === expandTab ? ' is-active' : ''), tab.label);
+    btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', tab.key === expandTab ? 'true' : 'false');
+    btn.addEventListener('click', function () {
+      expandTab = tab.key;
+      Array.prototype.forEach.call(tabs.children, function (b, i) {
+        var on = EXPAND_TABS[i].key === expandTab;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      renderExpandPanel(panel);
+    });
+    tabs.appendChild(btn);
+  });
+  body.appendChild(tabs);
+  body.appendChild(panel);
+  return body;
+}
+
+/** 依目前分頁畫展開區內容。必須在 panel 已插入 DOM 後呼叫（圖表要量容器寬）。 */
+function renderExpandPanel(panel) {
+  if (expandTab === 'recovery') { // 恢復資料來自 /api/recovery-impact，不必等明細
+    renderRecoveryImpact(panel);
+    return;
+  }
+  var detail = state.sessionDetail;
+  if (!detail || detail.id !== state.selectedSessionId) {
+    if (detailError && detailError.id === state.selectedSessionId) showError(panel, detailError.message);
+    else showLoading(panel, '載入單場資料');
+    return;
+  }
+  if (expandTab === 'chart') {
+    renderRecords(detail, panel);
+    // 沒有逐秒資料（近期活動常見）時，圖表分頁不留一片空白：說明下方接著畫分圈配速
+    var hasRecords = detail.records && detail.records.available !== false
+      && (detail.records.points || []).length > 0;
+    var hasLaps = detail.laps && detail.laps.available !== false && (detail.laps.laps || []).length > 0;
+    if (!hasRecords && hasLaps) {
+      var lapBox = h('div', 'slog-chart-fallback');
+      panel.appendChild(lapBox);
+      renderLaps(detail, lapBox);
+    }
+  } else if (expandTab === 'laps') renderLaps(detail, panel);
+  else renderHrZones(detail, panel);
+}
+
+function renderTypeFilters() {
+  var node = $('session-filters');
+  if (!node) return;
+  var bar = h('div', 'slog-filters');
+  bar.setAttribute('role', 'group');
+  bar.setAttribute('aria-label', '課種篩選');
+  TYPE_FILTERS.forEach(function (f) {
+    var count = state.sessions.filter(function (s) { return matchesFilter(s, f.key); }).length;
+    var btn = h('button', 'slog-filter' + (f.key === typeFilter ? ' is-active' : ''));
+    btn.type = 'button';
+    btn.setAttribute('aria-pressed', f.key === typeFilter ? 'true' : 'false');
+    btn.appendChild(h('span', null, f.label));
+    btn.appendChild(h('span', 'slog-filter-count', String(count)));
+    btn.addEventListener('click', function () {
+      if (typeFilter === f.key) return;
+      typeFilter = f.key;
+      renderSessionList();
+    });
+    bar.appendChild(btn);
+  });
+  node.replaceChildren(bar);
+}
+
+/**
+ * 訓練紀錄清單（C1 日誌列）。整份清單先在記憶體建好再一次替換，
+ * 不先清空——清空的瞬間頁面變矮，捲動位置會被瀏覽器夾回頂端。
+ */
+export function renderSessionList() {
+  var node = $('session-list');
+  if (!node) return;
+  renderTypeFilters();
+
+  var wrap = h('div', 'slog');
+  if (!state.sessionsReady) {
+    wrap.appendChild(h('div', 'state-msg state-loading', '載入場次…'));
+    node.replaceChildren(wrap);
+    return;
+  }
+  if (state.sessions.length === 0) {
+    wrap.appendChild(h('div', 'state-msg state-unavailable', '此區間內沒有跑步場次'));
+    node.replaceChildren(wrap);
+    return;
+  }
+
+  var shown = state.sessions.filter(function (s) { return matchesFilter(s, typeFilter); });
+  var selected = state.selectedSessionId;
+  if (selected !== null && !shown.some(function (s) { return s.id === selected; })) {
+    // 深連結到區間外（或被篩選掉）的場次：清單沒有這列可以展開，給一個直達完整單場的入口
+    var miss = h('div', 'slog-miss');
+    miss.appendChild(h('span', null, '選取的場次不在目前的區間或篩選內。'));
+    var link = h('a', 'slog-full-link', '開啟完整單場 ›');
+    link.href = '#/sessions/' + selected + '/full';
+    miss.appendChild(link);
+    wrap.appendChild(miss);
+  }
+
+  if (shown.length === 0) {
+    wrap.appendChild(h('div', 'state-msg state-unavailable',
+      '此區間內沒有「' + filterDef(typeFilter).label + '」場次'));
+  }
+  groupByWeek(shown).forEach(function (week) {
+    var group = h('section', 'slog-group');
+    group.appendChild(weekHeader(week));
+    week.sessions.forEach(function (s) {
+      group.appendChild(sessionRow(s, s.id === selected));
+    });
+    wrap.appendChild(group);
+  });
+  node.replaceChildren(wrap);
+
+  var item = node.querySelector('.slog-item.is-expanded');
+  if (item) renderExpandPanel(item.querySelector('.slog-tab-panel'));
+  scrollExpandedIntoView();
+}
+
+/**
+ * 依 state.sessionScroll 把展開列捲進畫面（一次性）。清單還沒載入時保留
+ * 這個要求，等清單畫出來再捲；清單已載入但沒有這列（區間外）就放棄。
+ */
+export function scrollExpandedIntoView() {
+  if (!state.sessionScroll) return;
+  var item = document.querySelector('#session-list .slog-item.is-expanded');
+  if (item && item.offsetParent !== null) {
+    item.scrollIntoView({ block: state.sessionScroll });
+    state.sessionScroll = null;
+  } else if (state.sessionsReady) {
+    state.sessionScroll = null;
+  }
+}
+
+/** 明細回來：更新展開列的分頁與（開著時的）完整單場 */
 export function renderSessionDetail() {
   var detail = state.sessionDetail;
   if (!detail) return;
+  detailError = null;
+  var panel = document.querySelector('#session-list .slog-item.is-expanded .slog-tab-panel');
+  if (panel) renderExpandPanel(panel);
+  renderSessionFull();
+}
+
+/** 完整單場（#/sessions/<id>/full）：沿用原本所有單場元件。畫面沒開時不畫（容器寬為 0）。 */
+export function renderSessionFull() {
+  var detail = state.sessionDetail;
+  if (!detail || !isFullMode()) return;
+  renderSessionPicker();
   renderSessionSummary(detail);
   renderLaps(detail);
   renderRecords(detail);
@@ -231,51 +590,12 @@ export function renderSessionDetail() {
   renderRecoveryImpact();
 }
 
-/**
- * 場次列表：桌機為表格，手機（<768px）由 CSS 改為卡片式堆疊，
- * 不使用橫向捲動的多欄表格。
- */
-export function renderSessionList() {
-  var node = $('session-list');
-  clear(node);
-  if (state.sessions.length === 0) return;
-
-  node.appendChild(h('h3', 'chart-title', '場次列表'));
-  var list = h('div', 'session-cards');
-  state.sessions.forEach(function (s) {
-    var row = h('button', 'session-card' + (s.id === state.selectedSessionId ? ' is-selected' : ''));
-    row.type = 'button';
-    row.setAttribute('aria-label', '檢視 ' + s.date + ' 的場次');
-
-    var c1 = h('span', 'sc-cell sc-date');
-    c1.appendChild(h('span', 'sc-key', '日期'));
-    c1.appendChild(h('span', 'sc-val', s.date));
-
-    var c2 = h('span', 'sc-cell');
-    c2.appendChild(h('span', 'sc-key', '類型'));
-    c2.appendChild(h('span', 'sc-val',
-      s.workout_type ? (WORKOUT_TYPE_LABEL[s.workout_type] || s.workout_type) : '未標記'));
-
-    var c3 = h('span', 'sc-cell');
-    c3.appendChild(h('span', 'sc-key', '距離'));
-    c3.appendChild(h('span', 'sc-val', C.formatNumber(s.distance_km, 2) + ' km'));
-
-    var c4 = h('span', 'sc-cell');
-    c4.appendChild(h('span', 'sc-key', '配速'));
-    c4.appendChild(h('span', 'sc-val', C.formatPace(s.avg_pace_sec_per_km) + '/km'));
-
-    var c5 = h('span', 'sc-cell');
-    c5.appendChild(h('span', 'sc-key', '平均心率'));
-    c5.appendChild(h('span', 'sc-val',
-      s.avg_hr_bpm === null || s.avg_hr_bpm === undefined ? '—' : s.avg_hr_bpm + ' bpm'));
-
-    var c6 = h('span', 'sc-cell');
-    c6.appendChild(h('span', 'sc-key', '時間'));
-    c6.appendChild(h('span', 'sc-val', C.formatDuration(s.duration_sec)));
-
-    [c1, c2, c3, c4, c5, c6].forEach(function (c) { row.appendChild(c); });
-    row.addEventListener('click', function () { selectSession(s.id); });
-    list.appendChild(row);
-  });
-  node.appendChild(list);
+/** 明細讀取失敗：展開列顯示錯誤；完整單場的摘要區也顯示（不清掉其他區塊的骨架） */
+export function renderSessionDetailError(id, message) {
+  detailError = { id: id, message: message };
+  var panel = document.querySelector('#session-list .slog-item.is-expanded .slog-tab-panel');
+  if (panel && id === state.selectedSessionId) showError(panel, message);
+  var summary = $('session-summary');
+  if (summary) showError(summary, message);
 }
+

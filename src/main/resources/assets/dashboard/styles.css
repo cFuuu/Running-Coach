@@ -7572,3 +7572,415 @@ button.recent-row .rc-dist {
 .trend-gc-head .customize {
   margin-bottom: 0;
 }
+
+/* === E.3 訓練紀錄 === */
+/* C1 日誌列（js/views/sessions.js）：按週分組、點列原地展開。
+   課種色條與課種標籤都吃 --slog-wt（由 .slog-wt-<workout_type> 設定，沿用既有 --pct-* 等 token）。
+   窄版版面由清單自己的寬度決定（container query），AI 面板開著把內容擠窄時也會切換。 */
+
+/* 清單 ↔ 完整單場二選一（所有寬度），切換見 router.updateSessionsStage */
+#view-sessions.stage-list #panel-session,
+#view-sessions.stage-detail #panel-session-list {
+  display: none;
+}
+
+#view-sessions .detail-back {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---- 課種篩選 ---- */
+.slog-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.slog-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.slog-filter:hover {
+  border-color: var(--accent-border);
+}
+
+.slog-filter.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.slog-filter-count {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* ---- 清單與週標題 ---- */
+.slog {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.slog-group + .slog-group {
+  margin-top: 18px;
+}
+
+.slog-week {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 4px 4px 6px;
+  border-bottom: 2px solid var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.slog-week-totals {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.slog-miss {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--notice-border);
+  border-radius: var(--radius);
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  font-size: var(--fs-sm);
+}
+
+/* ---- 每一列 ---- */
+.slog-item {
+  --slog-wt: var(--c-axis);
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 12px;
+}
+
+.slog-wt-easy { --slog-wt: var(--pct-green); }
+.slog-wt-recovery { --slog-wt: var(--c-zone-1); }
+.slog-wt-tempo { --slog-wt: var(--pct-yellow); }
+.slog-wt-interval { --slog-wt: var(--pct-red); }
+.slog-wt-lsd { --slog-wt: var(--pct-blue); }
+.slog-wt-race { --slog-wt: var(--tag-race-text); }
+
+.slog-item.is-expanded {
+  margin: 4px 0;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.slog-row {
+  display: grid;
+  grid-template-columns: 4px 50px minmax(0, 1fr) 64px 72px 60px minmax(88px, 180px) 14px;
+  grid-template-areas: "stripe date what dist time pace strip chev";
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  padding: 8px 8px 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.slog-row:hover {
+  background: var(--surface-sunken);
+}
+
+.slog-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.slog-item.is-expanded .slog-row {
+  background: var(--accent-soft);
+}
+
+.slog-stripe {
+  grid-area: stripe;
+  align-self: stretch;
+  min-height: 34px;
+  border-radius: 0 2px 2px 0;
+  background: var(--slog-wt);
+}
+
+.slog-date {
+  grid-area: date;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.slog-date-md {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.slog-date-dow,
+.slog-sub,
+.slog-num-unit {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.slog-what {
+  grid-area: what;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.slog-type {
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+/* 輕鬆跑／恢復跑／LSD 沒有既有的 .tag-type-* 色，用課種色調出淡底深字 */
+.slog-item .tag-type-easy,
+.slog-item .tag-type-recovery,
+.slog-item .tag-type-lsd {
+  background: color-mix(in srgb, var(--slog-wt) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--slog-wt) 40%, var(--surface));
+  color: color-mix(in srgb, var(--slog-wt) 65%, var(--text));
+}
+
+/* 窄欄放不下「標題＋暖身」時換行，不把標題擠成只剩省略號 */
+.slog-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.slog-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slog-warmup {
+  flex: none;
+  white-space: nowrap;
+}
+
+.slog-num {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.slog-num-val {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.slog-dist { grid-area: dist; }
+.slog-time { grid-area: time; }
+.slog-pace { grid-area: pace; }
+
+/* 圈數少時柱子不拉寬：最寬 = 圈數 × 16px（--slog-laps 由 JS 設定） */
+.slog-strip {
+  grid-area: strip;
+  display: block;
+  width: 100%;
+  max-width: calc(var(--slog-laps, 12) * 16px);
+  min-width: 0;
+}
+
+.slog-strip.is-empty {
+  display: flex;
+  align-items: flex-end;
+  max-width: none;
+  height: 28px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.slog-strip-none {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.slog-chevron {
+  grid-area: chev;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  transition: transform 0.15s ease;
+}
+
+.slog-item.is-expanded .slog-chevron {
+  transform: rotate(180deg);
+}
+
+/* ---- 展開區 ---- */
+.slog-expand {
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--accent-border);
+}
+
+.slog-big-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.slog-big {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+
+.slog-big-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.slog-big-val {
+  font-size: var(--fs-2xl);
+  font-weight: 400;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.slog-big-unit {
+  margin-left: 3px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.slog-big-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.slog-full-link {
+  color: var(--accent-text);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.slog-full-link:hover {
+  text-decoration: underline;
+}
+
+.slog-warmup-note {
+  margin-top: 8px;
+}
+
+.slog-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.slog-tab {
+  min-height: 38px;
+  margin-bottom: -1px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.slog-tab:hover {
+  color: var(--text);
+}
+
+.slog-tab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.slog-tab-panel {
+  min-width: 0;
+  min-height: 120px;
+}
+
+.slog-chart-fallback {
+  margin-top: 10px;
+}
+
+/* ---- 窄版（手機，或平板開著 AI 面板）：第一行 日期・課種・距離・配速，分圈小圖移到第二行 ---- */
+@container (max-width: 559px) {
+  .slog-row {
+    grid-template-columns: 4px 44px minmax(0, 1fr) auto auto 12px;
+    grid-template-areas:
+      "stripe date what dist pace chev"
+      "stripe strip strip strip strip strip";
+    column-gap: 10px;
+    row-gap: 6px;
+  }
+
+  .slog-time,
+  .slog-sub {
+    display: none;
+  }
+
+  .slog-strip.is-empty {
+    height: 14px;
+  }
+
+  .slog-expand {
+    padding: 10px 10px 12px;
+  }
+
+  .slog-big {
+    gap: 6px 18px;
+  }
+
+  .slog-big-val {
+    font-size: var(--fs-xl);
+  }
+
+  .slog-tab {
+    padding: 0 8px;
+  }
+}

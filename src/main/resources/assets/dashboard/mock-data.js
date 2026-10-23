@@ -145,6 +145,25 @@
   var ALL_SESSIONS = buildSessions();
   ALL_SESSIONS.forEach(function (s) { s.lap_strip = buildLapStrip(s); });
 
+  /**
+   * /api/sessions 的 warmup（N-25 暖身併入主課的摘要，E.3 訓練紀錄列顯示「＋暖身」）。
+   * 間歇與節奏跑中 id 為偶數的場次掛一段 1.2～1.5 km 的暖身；其餘為 null（同後端）。
+   */
+  ALL_SESSIONS.forEach(function (s) {
+    var quality = s.workout_type === 'interval' || s.workout_type === 'tempo';
+    if (!quality || s.id % 2 !== 0) { s.warmup = null; return; }
+    var dist = 1.2 + (s.id % 4) * 0.1;
+    var pace = 450;
+    s.warmup = {
+      id: s.id + 100000,
+      started_at: s.started_at,
+      distance_km: Math.round(dist * 100) / 100,
+      duration_sec: Math.round(dist * pace),
+      avg_pace_sec_per_km: pace,
+      avg_hr_bpm: s.avg_hr_bpm === null ? null : s.avg_hr_bpm - 20
+    };
+  });
+
   // ---- 單場詳細資料 ----
   function buildLaps(session, seed) {
     var rnd = makeRandom(seed);
