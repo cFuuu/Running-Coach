@@ -1127,6 +1127,329 @@ function intradayChart(points, opts) {
   return svg;
 }
 
+// ---------------------------------------------------------------- 7. 多指標折線（共用日期軸）
+
+function isNum(v) { return typeof v === 'number' && isFinite(v); }
+
+var DAY_MS = 86400000;
+
+function dateMs(iso) { return Date.parse(iso + 'T00:00:00Z'); }
+
+/** 系列的數值格式：呼叫端給 formatter 就用；否則依 decimals，未給時小於 10 的量級顯示一位小數。 */
+function seriesFormatter(s, values) {
+  if (typeof s.formatter === 'function') return s.formatter;
+  var decimals = s.decimals;
+  if (decimals === undefined) {
+    var maxAbs = values.reduce(function (m, v) { return Math.max(m, Math.abs(v)); }, 0);
+    decimals = maxAbs < 10 ? 1 : 0;
+  }
+  return function (v) { return formatNumber(v, decimals); };
+}
+
+/**
+ * 多條指標畫在同一條日期軸上（趨勢頁各區的大圖）。
+ *
+ * 軸的規則（E.2）：
+ *   - 同單位的系列共用一個 Y 軸；
+ *   - 一或兩種單位 → 左軸（第一個出現的單位）＋右軸（第二個）；
+ *   - 三種以上單位 → 「只比形狀」：每條線各自依自己的最小～最大值縮放，
+ *     Y 軸不標數字，實際數值與單位看游標提示。
+ *
+ * 缺值：points 中 value 為 null 的點會讓該線斷開；沒列出的日期只是沒有點，
+ * 線會直接連過去（每場一筆的指標如配速本來就不是每天都有）。要讓沒資料的
+ * 日子斷線，呼叫端就放一個 {date, value:null}。
+ *
+ * @param {Object} spec
+ *   series: [{key, label, color, unit, points:[{date, value}], kind:'line'|'bar-zero',
+ *             hidden?, formatter?, decimals?, invert?}]
+ *     color：任何 CSS 顏色（含 'var(--c-metric-hrv_ms)'），以 inline style 套用
+ *     kind 'bar-zero'：以 0 為中線的柱狀（TSB），正值 .mlc-bar-pos、負值 .mlc-bar-neg
+ *     invert：值越小畫越高（配速）；同軸只要有一條 invert，整個軸反轉
+ *     hidden：true 時不畫也不列入游標提示（開關列關掉的指標）
+ *   containerWidth, label, height(預設 240),
+ *   startDate, endDate：選填，X 軸範圍（預設取所有點的最早～最晚日期）
+ *   highlightDates：選填，日期陣列或 Set，該日整欄淡色底（標出訓練日）
+ * @returns {SVGElement}
+ */
+function multiLineChart(spec) {
+  var options = spec || {};
+  var vbw = vbWidthFor(options.containerWidth);
+  var height = options.height || 240;
+  var svg = createSvg(height, options.label || '多指標折線圖', vbw);
+
+  var series = (options.series || []).filter(function (s) { return s && !s.hidden; }).map(function (s) {
+    var pts = (s.points || []).filter(function (p) { return p && typeof p.date === 'string'; })
+      .slice().sort(function (a, b) { return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+    var values = pts.map(function (p) { return p.value; }).filter(isNum);
+    var byDate = {};
+    pts.forEach(function (p) { byDate[p.date] = p.value; });
+    return {
+      src: s, points: pts, values: values, byDate: byDate,
+      unit: s.unit || '', kind: s.kind === 'bar-zero' ? 'bar-zero' : 'line',
+      fmt: seriesFormatter(s, values)
+    };
+  });
+
+  var units = [];
+  series.forEach(function (s) { if (units.indexOf(s.unit) === -1) units.push(s.unit); });
+  var normalized = units.length >= 3;
+  var hasRight = units.length === 2;
+  var box = {
+    left: normalized ? 18 : 54,
+    top: 22,
+    width: 0,
+    height: height - 22 - 30
+  };
+  box.width = vbw - box.left - (hasRight ? 54 : 18);
+
+  // X 軸：所有系列日期的聯集範圍，每天一格（柱狀圖與標出訓練日都以「天」為單位）
+  var allDates = [];
+  series.forEach(function (s) { s.points.forEach(function (p) { allDates.push(p.date); }); });
+  allDates.sort();
+  var start = options.startDate || allDates[0];
+  var end = options.endDate || allDates[allDates.length - 1];
+  if (!start || !end || series.every(function (s) { return s.values.length === 0; })) {
+    if (start && end) drawAxes(svg, box);
+    return svg;
+  }
+  var startMs = dateMs(start);
+  var totalDays = Math.max(Math.round((dateMs(end) - startMs) / DAY_MS) + 1, 1);
+  var slotW = box.width / totalDays;
+  function xOfDate(iso) {
+    return box.left + (Math.round((dateMs(iso) - startMs) / DAY_MS) + 0.5) * slotW;
+  }
+
+  // Y 範圍：一般模式依單位共用，正規化模式每條線各自一個
+  function extentFor(list) {
+    var vals = [];
+    var anyBar = false;
+    var invert = false;
+    list.forEach(function (s) {
+      vals = vals.concat(s.values);
+      if (s.kind === 'bar-zero') anyBar = true;
+      if (s.src.invert) invert = true;
+    });
+    if (anyBar) vals.push(0);
+    var ext = niceExtent(vals, 0.1);
+    if (ext) ext.invert = invert;
+    return ext;
+  }
+  var unitExtent = {};
+  if (!normalized) {
+    units.forEach(function (u) {
+      unitExtent[u] = extentFor(series.filter(function (s) { return s.unit === u; }));
+    });
+  }
+  series.forEach(function (s) {
+    s.ext = normalized ? extentFor([s]) : unitExtent[s.unit];
+  });
+  function yOf(s, v) {
+    var ext = s.ext;
+    if (!ext || !isNum(v)) return null;
+    var r = (v - ext.min) / (ext.max - ext.min);
+    if (ext.invert) r = 1 - r;
+    return box.top + box.height - r * box.height;
+  }
+
+  // 1. 標出訓練日（最底層）
+  var hl = options.highlightDates || [];
+  var hlList = hl instanceof Set ? Array.from(hl) : hl;
+  hlList.forEach(function (day) {
+    if (day < start || day > end) return;
+    svg.appendChild(el('rect', {
+      x: xOfDate(day) - slotW / 2, y: box.top, width: slotW, height: box.height,
+      class: 'training-day-band'
+    }));
+  });
+
+  // 2. 軸與格線
+  drawAxes(svg, box);
+  function firstOfUnit(u) {
+    for (var i = 0; i < series.length; i += 1) if (series[i].unit === u) return series[i];
+    return null;
+  }
+  function tickFormatter(ext, s) {
+    return function (v) { return s.fmt(ext.invert ? ext.max - (v - ext.min) : v); };
+  }
+  if (normalized) {
+    drawYTicks(svg, box, { min: 0, max: 1 }, function () { return ''; }, 4);
+  } else {
+    var leftSeries = firstOfUnit(units[0]);
+    var leftExt = unitExtent[units[0]];
+    if (leftExt) drawYTicks(svg, box, leftExt, tickFormatter(leftExt, leftSeries), 4);
+    if (units[0]) {
+      svg.appendChild(text(units[0], {
+        x: box.left - 8, y: box.top - 9, class: 'axis-title', 'text-anchor': 'end'
+      }));
+    }
+    if (hasRight) {
+      var rightSeries = firstOfUnit(units[1]);
+      var rightExt = unitExtent[units[1]];
+      var rightFmt = rightExt ? tickFormatter(rightExt, rightSeries) : null;
+      for (var t = 0; rightExt && t <= 4; t += 1) {
+        var ratio = t / 4;
+        svg.appendChild(text(rightFmt(rightExt.min + ratio * (rightExt.max - rightExt.min)), {
+          x: box.left + box.width + 8, y: box.top + box.height - ratio * box.height + 4,
+          class: 'tick-label', 'text-anchor': 'start'
+        }));
+      }
+      svg.appendChild(el('line', {
+        x1: box.left + box.width, y1: box.top, x2: box.left + box.width, y2: box.top + box.height,
+        class: 'axis-line'
+      }));
+      if (units[1]) {
+        svg.appendChild(text(units[1], {
+          x: box.left + box.width + 8, y: box.top - 9, class: 'axis-title', 'text-anchor': 'start'
+        }));
+      }
+    }
+  }
+
+  // 3. 以 0 為中線的柱（TSB）：先畫，線條疊在上面
+  var barW = Math.max(Math.min(slotW * 0.7, 14), 1);
+  series.forEach(function (s) {
+    if (s.kind !== 'bar-zero' || !s.ext) return;
+    var y0 = Math.min(Math.max(yOf(s, 0), box.top), box.top + box.height);
+    s.points.forEach(function (p) {
+      var y = yOf(s, p.value);
+      if (y === null) return;
+      svg.appendChild(el('rect', {
+        x: xOfDate(p.date) - barW / 2, y: Math.min(y, y0),
+        width: barW, height: Math.max(Math.abs(y - y0), 0.5),
+        class: 'bar ' + (p.value >= 0 ? 'mlc-bar-pos' : 'mlc-bar-neg')
+      }));
+    });
+    svg.appendChild(el('line', {
+      x1: box.left, y1: y0, x2: box.left + box.width, y2: y0, class: 'mlc-zero-line'
+    }));
+  });
+
+  // 4. 折線（缺值 null 斷線）與資料點
+  series.forEach(function (s) {
+    if (s.kind !== 'line' || !s.ext) return;
+    var path = buildBrokenPath(s.points, function (p) { return xOfDate(p.date); },
+      function (p) { return yOf(s, p.value); }, 'line mlc-line');
+    if (s.src.color) path.setAttribute('style', 'stroke:' + s.src.color);
+    svg.appendChild(path);
+    if (s.points.length <= 60) {
+      s.points.forEach(function (p) {
+        var y = yOf(s, p.value);
+        if (y === null) return;
+        var dot = el('circle', { cx: xOfDate(p.date), cy: y, r: 2.4, class: 'dot' });
+        if (s.src.color) dot.setAttribute('style', 'stroke:' + s.src.color);
+        svg.appendChild(dot);
+      });
+    }
+  });
+
+  // 5. X 軸日期標籤
+  var labelIdx = pickTickIndexes(totalDays, maxTickCount(vbw, 58));
+  labelIdx.forEach(function (i) {
+    var iso = new Date(startMs + i * DAY_MS).toISOString().slice(0, 10);
+    svg.appendChild(text(shortDate(iso), {
+      x: xOfDate(iso), y: box.top + box.height + 18, class: 'tick-label', 'text-anchor': 'middle'
+    }));
+  });
+
+  // 6. 游標：每個有任一系列資料的日期一個命中點，提示列出每條線當天的值
+  var dates = [];
+  allDates.forEach(function (d) {
+    if (d >= start && d <= end && dates[dates.length - 1] !== d) dates.push(d);
+  });
+  if (dates.length === 0) return svg;
+  var tips = dates.map(function (d) {
+    return {
+      label: shortDatePadded(d),
+      rows: series.map(function (s) {
+        var v = s.byDate[d];
+        return {
+          name: s.src.label || s.src.key || '',
+          value: isNum(v) ? s.fmt(v) + (s.unit ? ' ' + s.unit : '') : '—',
+          color: s.src.color || null
+        };
+      })
+    };
+  });
+  function dotsAt(i) {
+    var out = [];
+    series.forEach(function (s) {
+      var y = yOf(s, s.byDate[dates[i]]);
+      if (y !== null) out.push({ y: y, color: s.src.color || null });
+    });
+    return out;
+  }
+  var meta = buildContinuousHitMeta(box, dates.map(xOfDate), dates,
+    function (i) { var d = dotsAt(i); return d.length ? d[0].y : null; }, tips);
+  meta.dots = dotsAt;
+  // 不在同步群組裡時也畫垂直參考線（見 tooltip.js handlePointerMove）
+  meta.crosshair = true;
+  attachContinuousHitLayer(svg, box, meta);
+  return svg;
+}
+
+// ---------------------------------------------------------------- 8. 分圈小圖（訓練紀錄列）
+
+/**
+ * 分圈小圖：每圈一根柱，高度＝速度（配速越快越高），顏色＝該圈平均心率的區間。
+ * 沒有座標軸與刻度，寬度填滿容器、高度固定（預設 30px）。
+ *
+ * 高度以「最快一圈」為頂、「速度只有最快一半」為底（再慢也保留最低 12% 的柱），
+ * 而不是用最快～最慢拉滿：輕鬆跑各圈只差幾秒，拉滿會把雜訊放大成像間歇的鋸齒。
+ *
+ * @param {Array} laps [{pace_sec_per_km, avg_hr_bpm, zone}]；zone 1–5 或 null（灰色）
+ * @param {Object} [opts] { height:number(px，預設 30), tooltip:boolean, label:string }
+ * @returns {SVGElement}
+ */
+function lapStrip(laps, opts) {
+  var options = opts || {};
+  var H = options.height || 30;
+  var list = laps || [];
+  var UNIT = 10;
+  var GAP = 2;
+  var W = Math.max(list.length, 1) * UNIT;
+  var svg = el('svg', {
+    viewBox: '0 0 ' + W + ' ' + H,
+    preserveAspectRatio: 'none',
+    class: 'chart-svg lap-strip',
+    role: 'img',
+    'aria-label': options.label || '分圈小圖'
+  });
+  svg.style.height = H + 'px';
+
+  var speeds = list.map(function (l) {
+    return l && isNum(l.pace_sec_per_km) && l.pace_sec_per_km > 0 ? 1 / l.pace_sec_per_km : null;
+  });
+  var valid = speeds.filter(isNum);
+  if (valid.length === 0) return svg;
+  var maxSpeed = Math.max.apply(null, valid);
+  var floor = maxSpeed * 0.5;
+
+  var hitItems = [];
+  list.forEach(function (lap, i) {
+    var sp = speeds[i];
+    var x = i * UNIT + GAP / 2;
+    if (sp !== null) {
+      var ratio = Math.min(Math.max((sp - floor) / (maxSpeed - floor), 0.12), 1);
+      var h = ratio * H;
+      var zone = lap.zone;
+      var zoneOk = typeof zone === 'number' && zone >= 0 && zone <= 5;
+      svg.appendChild(el('rect', {
+        x: x, y: H - h, width: UNIT - GAP, height: h,
+        class: 'bar ' + (zoneOk ? 'bar-zone-' + Math.round(zone) : 'lap-strip-bar-none')
+      }));
+    }
+    if (options.tooltip) {
+      var parts = ['第 ' + (i + 1) + ' 圈'];
+      if (lap && isNum(lap.pace_sec_per_km)) parts.push(formatPace(lap.pace_sec_per_km) + '/km');
+      if (lap && isNum(lap.avg_hr_bpm)) parts.push(Math.round(lap.avg_hr_bpm) + ' bpm');
+      if (lap && isNum(lap.zone)) parts.push('Z' + lap.zone);
+      hitItems.push({ x: i * UNIT, y: 0, width: UNIT, height: H, tip: parts.join(' ・ ') });
+    }
+  });
+  if (hitItems.length) attachDiscreteHitLayer(svg, hitItems);
+  return svg;
+}
+
 // ---------------------------------------------------------------- 對外介面
 
 export {
@@ -1141,6 +1464,8 @@ export {
   trendLineChart,
   barChart,
   wellnessChart,
+  multiLineChart,
+  lapStrip,
   emptyBlock,
   formatPace,
   formatDuration,

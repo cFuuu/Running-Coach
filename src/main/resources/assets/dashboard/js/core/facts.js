@@ -35,7 +35,9 @@ export function factValueNode(fact, formatter, unit) {
  * 用點擊而非 hover：手機沒有 hover。整頁共用同一個小視窗（#info-popover），
  * 開新的會取代舊的，不會疊出好幾個。
  * @param {string} label 指標名稱（小視窗標題，也是給螢幕閱讀器的按鈕名稱）
- * @param {string|string[]} text 定義文字；陣列時每個元素一段
+ * @param {string|Node|Array<string|Node>} text 定義文字；陣列時每個元素一段。
+ *   元素可以是 DOM 節點（原樣放入小視窗內文），用來放圖例等非純文字內容。
+ *   注意：同一個節點只能掛在一處，每次開啟都會被移進小視窗——要重複開啟就傳同一個節點即可。
  * @returns {HTMLElement} 按鈕
  */
 export function infoTip(label, text) {
@@ -95,7 +97,10 @@ export function openInfoPopover(button, label, paragraphs) {
   el.querySelector('.info-popover-title').textContent = label;
   var body = el.querySelector('.info-popover-body');
   clear(body);
-  paragraphs.forEach(function (p) { body.appendChild(h('p', null, p)); });
+  // 字串一段一個 <p>；DOM 節點（例如行事曆的圖例：膠囊＋說明）原樣放入
+  paragraphs.forEach(function (p) {
+    body.appendChild(p instanceof Node ? p : h('p', null, p));
+  });
   el.hidden = false;
 
   var margin = 12;
