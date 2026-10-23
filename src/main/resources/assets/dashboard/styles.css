@@ -1899,6 +1899,23 @@ body.coach-open .coach-fab {
   font-weight: 600;
 }
 
+/* 主要數字加淡底色＋細框（顏色取自該區塊標題色帶，與卡片標題呼應）。
+   上下用 padding 撐出底色、再用同樣大小的負 margin 抵銷，所以不會改變卡片高度，
+   也就不影響兩排卡片等高。訓練負荷、戰力綜覽兩區用 */
+#block-load .kpi-value,
+#block-ability .kpi-value,
+#block-ability .pb-time {
+  display: inline-block;
+  padding: 3px 12px;
+  margin: -3px 0;
+  border: 1px solid var(--hdr-border);
+  border-radius: var(--radius-sm);
+  background: var(--hdr-bg);
+  /* 邊框的 1px 也抵銷掉 */
+  margin-top: -4px;
+  margin-bottom: -4px;
+}
+
 /* 指標卡與最佳成績卡的主要數字（-9.7、44.9、40.2、1:57:27、13:59…）：2026-10-23 Fu 要求再加粗一階 */
 #view-home .kpi-value,
 #view-home .pb-time {
