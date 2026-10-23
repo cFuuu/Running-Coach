@@ -1899,6 +1899,22 @@ body.coach-open .coach-fab {
   font-weight: 600;
 }
 
+/* 主要數字用該區塊的強調色（2026-10-23 Fu：只加色字，不放大、不加底色或外框）。
+   訓練負荷用橘、戰力綜覽用綠，與卡片標題色帶、區塊標題左側短條同色 */
+#block-load .kpi-value,
+#block-ability .kpi-value,
+#block-ability .pb-time {
+  color: var(--hdr-strong);
+}
+
+/* 趨勢線上下各一條細虛線，把它與上方數字、下方灰字隔開 */
+.home-load-cards .kpi-spark,
+.ability-grid > .kpi-card .kpi-spark {
+  margin-top: 6px;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+}
+
 /* 指標卡與最佳成績卡的主要數字（-9.7、44.9、40.2、1:57:27、13:59…）：2026-10-23 Fu 要求再加粗一階 */
 #view-home .kpi-value,
 #view-home .pb-time {
