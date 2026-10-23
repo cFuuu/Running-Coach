@@ -5053,22 +5053,28 @@ button.recent-row .rc-dist {
   border: none;
   background: transparent;
   color: var(--text-muted);
-  /* 一般直立的無襯線字，不用斜體襯線（草書感）；字體沿用頁面 */
-  font-style: normal;
-  font-weight: 700;
-  font-size: 0.75rem;
-  line-height: 20px;
-  font-family: inherit;
   cursor: pointer;
   position: relative;
 }
 
-.info-tip-btn::before {
-  content: '';
-  position: absolute;
-  inset: 12px;
-  border: 1px solid var(--border);
-  border-radius: 50%;
+/* 圖示本體：圓框＋一點一豎的 SVG 線條，顏色跟著 currentColor（hover／展開時變強調色） */
+.info-tip-btn svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.info-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.info-dot {
+  fill: currentColor;
+  stroke: none;
 }
 
 .info-tip-btn:hover,
@@ -5076,15 +5082,12 @@ button.recent-row .rc-dist {
   color: var(--accent-text);
 }
 
-.info-tip-btn[aria-expanded="true"]::before {
-  border-color: var(--accent-border);
-}
-
 .info-tip-btn:focus-visible {
   outline: none;
 }
 
-.info-tip-btn:focus-visible::before {
+.info-tip-btn:focus-visible svg {
+  border-radius: 50%;
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 

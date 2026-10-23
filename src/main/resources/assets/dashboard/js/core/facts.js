@@ -39,7 +39,11 @@ export function factValueNode(fact, formatter, unit) {
  * @returns {HTMLElement} 按鈕
  */
 export function infoTip(label, text) {
-  var button = h('button', 'info-tip-btn', 'i');
+  var button = h('button', 'info-tip-btn');
+  // 圓框＋一點一豎的線條圖示（SVG，粗細一致、不受字型影響）；內容是固定字面值
+  button.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">'
+    + '<circle class="info-ring" cx="10" cy="10" r="8"/>'
+    + '<path class="info-ring" d="M10 9v5"/><circle class="info-dot" cx="10" cy="6.2" r="1.1"/></svg>';
   button.type = 'button';
   button.setAttribute('aria-label', label + '的定義');
   button.setAttribute('aria-haspopup', 'dialog');
