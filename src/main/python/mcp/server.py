@@ -438,6 +438,11 @@ def sync_garmin_data(
     ⚠️ 逐秒資料仍需 FIT，本工具不提供，故同步進來的活動**心率漂移與
     配速穩定度兩個維度仍不可評**。
 
+    同步也會依 Garmin 心率區間設定更新學員的 HRmax 與靜止心率（HRmax 若
+    已標為實測值則不覆寫）。`hr_settings_changes` 非空時須告知使用者新舊值
+    ——所有訓練負荷、TSB 與強度判讀都已即時以新值重算，與先前看到的數字
+    不可直接比較。
+
     athlete_id 省略時預設取資料庫中第一位學員。
     """
     resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)

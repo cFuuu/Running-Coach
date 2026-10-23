@@ -1038,6 +1038,76 @@ def _sync_athlete_sex(conn: sqlite3.Connection, athlete_id: int, api: GarminApiC
         conn.execute("UPDATE athlete_profile SET sex = ? WHERE id = ?", (sex, athlete_id))
 
 
+def normalize_hr_settings(raw_zones: list[dict] | None) -> dict | None:
+    """從心率區間設定取出手錶採用的 HRmax 與靜止心率（N-26）。
+
+    每個運動各一筆設定，優先取 `RUNNING`（跑步專屬區間），沒有則取
+    `DEFAULT`。兩個值都缺時回傳 None。
+    """
+    by_sport = {z.get("sport"): z for z in (raw_zones or []) if isinstance(z, dict)}
+    zone = by_sport.get("RUNNING") or by_sport.get("DEFAULT")
+    if not zone:
+        return None
+    max_hr = _round_or_none(zone.get("maxHeartRateUsed"))
+    resting_hr = _round_or_none(zone.get("restingHeartRateUsed"))
+    if max_hr is None and resting_hr is None:
+        return None
+    return {"max_hr_bpm": max_hr, "resting_hr_bpm": resting_hr}
+
+
+def _sync_hr_settings(
+    conn: sqlite3.Connection, athlete_id: int, api: GarminApiClient
+) -> list[dict]:
+    """把 Garmin 心率區間設定的 HRmax／靜止心率寫回 athlete_profile（N-26）。
+
+    HRmax 是負荷（TRIMP）、強度符合度、VDOT 心率換算、區間 bpm 的共同輸入，
+    學員在錶上校正後系統必須跟上，否則會一直用舊值且毫無提示。
+
+    - HRmax：`max_hr_source='measured'` 時**不覆寫**——實測值比手錶設定可信；
+      其餘來源一律以 Garmin 值覆寫並把來源標為 `watch_display`。
+    - 靜止心率：一律覆寫。Garmin 預設自動更新（`restingHrAutoUpdateUsed`），
+      2026-05～10 間 Fu 由約 57 降到約 48，固定手動值會讓 %HRR 一路偏低。
+
+    回傳實際有變動的欄位清單 `[{field, old, new}]`，供同步結果告知使用者
+    「所有負荷已依新值重算」。抓取失敗不影響同步。
+    """
+    row = conn.execute(
+        "SELECT max_hr_bpm, max_hr_source, resting_hr_bpm FROM athlete_profile WHERE id = ?",
+        (athlete_id,),
+    ).fetchone()
+    if row is None:
+        return []
+    try:
+        settings = normalize_hr_settings(api.fetch_heart_rate_zones())
+    except GarminRateLimited:
+        raise
+    except GarminFetchError:
+        return []
+    if settings is None:
+        return []
+
+    changes: list[dict] = []
+    new_max = settings["max_hr_bpm"]
+    if new_max is not None and row["max_hr_source"] != "measured":
+        if new_max != row["max_hr_bpm"]:
+            changes.append({"field": "max_hr_bpm", "old": row["max_hr_bpm"], "new": new_max})
+        conn.execute(
+            "UPDATE athlete_profile SET max_hr_bpm = ?, max_hr_source = 'watch_display' WHERE id = ?",
+            (new_max, athlete_id),
+        )
+    new_rest = settings["resting_hr_bpm"]
+    if new_rest is not None and new_rest != row["resting_hr_bpm"]:
+        changes.append({"field": "resting_hr_bpm", "old": row["resting_hr_bpm"], "new": new_rest})
+        conn.execute(
+            "UPDATE athlete_profile SET resting_hr_bpm = ? WHERE id = ?", (new_rest, athlete_id)
+        )
+    if changes:
+        conn.execute(
+            "UPDATE athlete_profile SET updated_at = ? WHERE id = ?", (_utc_now_iso(), athlete_id)
+        )
+    return changes
+
+
 def _upsert_training_status(conn: sqlite3.Connection, athlete_id: int, rows: list[dict]) -> int:
     """寫入 `training_status`。沿用 daily_wellness 的 ON CONFLICT + COALESCE 慣例
     ——重複同步同一天只補空值，不覆寫已有值。
@@ -1314,6 +1384,7 @@ def sync(
             end_date.isoformat(), api.fetch_performance_metrics_raw(end_date)
         )
         _sync_athlete_sex(conn, athlete_id, api)
+        hr_settings_changes = _sync_hr_settings(conn, athlete_id, api)
     except GarminRateLimited as e:
         return {**plan, "available": False, "dry_run": False,
                 "reason": str(e), "rate_limited": True}
@@ -1355,6 +1426,8 @@ def sync(
         "metrics_coverage_updated": n_cov,
         "laps_synced": n_laps,
         "activities_classified": n_classified,
+        # HRmax／靜止心率有變動時列出新舊值：所有負荷與強度皆即時以新值重算。
+        "hr_settings_changes": hr_settings_changes,
     }
 
 
@@ -1489,6 +1562,11 @@ def main() -> int:
         print(
             f"     分圈 {result['laps_synced']} 圈，"
             f"新完成分類 {result['activities_classified']} 場"
+        )
+    for change in result.get("hr_settings_changes") or []:
+        print(
+            f"[!] {change['field']} 依 Garmin 心率區間設定更新：{change['old']} → "
+            f"{change['new']}（訓練負荷與強度判讀已全部以新值重算）"
         )
     print("[i] 重複執行同一區間不會產生重複列（由資料庫 UNIQUE 約束保證）。")
     return 0

@@ -218,6 +218,18 @@ class GarminApiClient:
         sex = (profile.get("userData") or {}).get("gender")
         return sex if sex in ("MALE", "FEMALE") else None
 
+    def fetch_heart_rate_zones(self) -> list[dict]:
+        """取得心率區間設定（手錶實際採用的 HRmax、靜止心率與各區下限）。
+
+        `garminconnect` 沒有對應方法，直接呼叫 Garmin Connect 網頁使用的端點。
+        實測 2026-10-23：回傳 list，每個運動一筆（Fu 的帳號只有
+        `sport='DEFAULT'`），含 `maxHeartRateUsed`（193）、
+        `restingHeartRateUsed`（48，`restingHrAutoUpdateUsed=True` 時由 Garmin
+        自動更新）、`trainingMethod`（`HR_RESERVE`）與 `zone1Floor`～`zone5Floor`。
+        ⚠️ `get_user_profile` 的 `userData` **沒有** HRmax 欄位，只有乳酸閾值心率。
+        """
+        return list(self._call("connectapi", "/biometric-service/heartRateZones") or [])
+
     def fetch_training_status(self, cdate: datetime.date) -> dict | None:
         """取得單日訓練狀態與訓練負荷（Training Status）。
 

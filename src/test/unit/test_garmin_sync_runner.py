@@ -187,7 +187,10 @@ class TestNormalizeWellness(unittest.TestCase):
 # CLAUDE.md「絕不複製貼上程式碼區塊」，故抽成模組級常數集中維護。
 # 欄位名稱與型別對齊 schema.sql（不含 CHECK，測試不需要驗證約束合法性）。
 FULL_TEST_SCHEMA_SQL = """
-CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, sex TEXT);
+CREATE TABLE athlete_profile (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, sex TEXT,
+    max_hr_bpm INTEGER, max_hr_source TEXT, resting_hr_bpm INTEGER, updated_at TEXT
+);
 CREATE TABLE activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     athlete_id INTEGER NOT NULL, external_id TEXT,
@@ -301,12 +304,14 @@ INSERT INTO athlete_profile (name) VALUES ('Test');
 class FakeApi:
     """假的 API client——回傳固定資料，不發網路請求。"""
 
-    def __init__(self, activities=None, wellness=None, splits=None, performance=None, sex=None):
+    def __init__(self, activities=None, wellness=None, splits=None, performance=None, sex=None,
+                 hr_zones=None):
         self._activities = activities if activities is not None else [REAL_ACTIVITY]
         self._wellness = wellness or {}
         self._splits = splits or {}
         self._performance = performance if performance is not None else {}
         self._sex = sex
+        self._hr_zones = hr_zones or []
         self.activity_calls = 0
         self.split_calls = []
         self.sex_calls = 0
@@ -314,6 +319,9 @@ class FakeApi:
     def fetch_user_sex(self):
         self.sex_calls += 1
         return self._sex
+
+    def fetch_heart_rate_zones(self):
+        return list(self._hr_zones)
 
     def fetch_activities(self, start_date, end_date):
         self.activity_calls += 1
@@ -1321,6 +1329,97 @@ class TestSyncWritesIntradayAndSex(unittest.TestCase):
         runner.sync(self.conn, 1, days=1, client=api, today=self.today, fetch_splits=False)
         self.assertEqual(self.conn.execute("SELECT sex FROM athlete_profile").fetchone()[0], "MALE")
         self.assertEqual(api.sex_calls, 1)
+
+
+# 2026-10-23 對 Fu 真實帳號 dump 的 /biometric-service/heartRateZones（識別欄位已移除）
+REAL_HR_ZONES = [{
+    "trainingMethod": "HR_RESERVE", "restingHeartRateUsed": 48,
+    "lactateThresholdHeartRateUsed": 179, "zone1Floor": 126, "zone2Floor": 134,
+    "zone3Floor": 155, "zone4Floor": 168, "zone5Floor": 176, "maxHeartRateUsed": 193,
+    "restingHrAutoUpdateUsed": True, "sport": "DEFAULT", "changeState": "UNCHANGED",
+}]
+
+
+class TestNormalizeHrSettings(unittest.TestCase):
+    def test_real_default_zone(self):
+        self.assertEqual(
+            runner.normalize_hr_settings(REAL_HR_ZONES),
+            {"max_hr_bpm": 193, "resting_hr_bpm": 48},
+        )
+
+    def test_running_zone_preferred_over_default(self):
+        zones = REAL_HR_ZONES + [{"sport": "RUNNING", "maxHeartRateUsed": 190,
+                                  "restingHeartRateUsed": 50}]
+        self.assertEqual(runner.normalize_hr_settings(zones)["max_hr_bpm"], 190)
+
+    def test_empty_or_missing_values(self):
+        self.assertIsNone(runner.normalize_hr_settings([]))
+        self.assertIsNone(runner.normalize_hr_settings(None))
+        self.assertIsNone(runner.normalize_hr_settings([{"sport": "DEFAULT"}]))
+
+
+class TestSyncHrSettings(unittest.TestCase):
+    """N-26：Garmin 的 HRmax／靜止心率同步回 athlete_profile。"""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(FULL_TEST_SCHEMA_SQL)
+        self.today = datetime.date(2026, 10, 23)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _profile(self, max_hr, source, rest):
+        self.conn.execute(
+            "UPDATE athlete_profile SET max_hr_bpm=?, max_hr_source=?, resting_hr_bpm=?",
+            (max_hr, source, rest),
+        )
+
+    def _sync(self):
+        return runner.sync(self.conn, 1, days=1, client=FakeApi(hr_zones=REAL_HR_ZONES),
+                           today=self.today, fetch_splits=False)
+
+    def _row(self):
+        return self.conn.execute(
+            "SELECT max_hr_bpm, max_hr_source, resting_hr_bpm FROM athlete_profile").fetchone()
+
+    def test_watch_value_updates_and_reports_changes(self):
+        self._profile(194, "watch_display", 56)
+        result = self._sync()
+        self.assertEqual(tuple(self._row()), (193, "watch_display", 48))
+        self.assertEqual(result["hr_settings_changes"], [
+            {"field": "max_hr_bpm", "old": 194, "new": 193},
+            {"field": "resting_hr_bpm", "old": 56, "new": 48},
+        ])
+
+    def test_measured_max_hr_is_not_overwritten(self):
+        """★ 實測 HRmax 比手錶設定可信，不可被同步蓋掉；靜止心率仍更新。"""
+        self._profile(198, "measured", 56)
+        result = self._sync()
+        self.assertEqual(tuple(self._row()), (198, "measured", 48))
+        self.assertEqual([c["field"] for c in result["hr_settings_changes"]], ["resting_hr_bpm"])
+
+    def test_age_formula_replaced_and_relabelled(self):
+        self._profile(190, "age_formula", 48)
+        self._sync()
+        self.assertEqual(tuple(self._row()), (193, "watch_display", 48))
+
+    def test_unchanged_values_report_nothing(self):
+        self._profile(193, "watch_display", 48)
+        self.assertEqual(self._sync()["hr_settings_changes"], [])
+
+    def test_fetch_failure_does_not_break_sync(self):
+        class FailingApi(FakeApi):
+            def fetch_heart_rate_zones(self):
+                raise runner.GarminFetchError("抓取失敗（Timeout）")
+
+        self._profile(194, "watch_display", 56)
+        result = runner.sync(self.conn, 1, days=1, client=FailingApi(),
+                             today=self.today, fetch_splits=False)
+        self.assertTrue(result["available"])
+        self.assertEqual(result["hr_settings_changes"], [])
+        self.assertEqual(tuple(self._row()), (194, "watch_display", 56))
 
 
 class TestSelectPrimaryDevice(unittest.TestCase):
