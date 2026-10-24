@@ -2854,6 +2854,9 @@ body.coach-open .coach-panel {
 .gc-status-xl {
   font-size: var(--fs-xl);
   line-height: 1.1;
+  /* 行高 1.1 幾乎沒有上方半行距，第一行字頂離標題列只有 12px；補 3px 與 HRV 狀態、
+     訓練負荷（15px）、心率（16px）的第一行對齊（2026-10-24 Fu） */
+  margin-top: 3px;
 }
 
 .gc-status-xl+.gc-health-grid {
