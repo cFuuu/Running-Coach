@@ -7147,10 +7147,18 @@ button.recent-row .rc-dist {
   border-radius: var(--radius-sm);
 }
 
+#view-tools {
+  /* 單位切換鈕的按鈕高度；標題列最小高度由它推算，兩處共用 */
+  --tools-switch-btn-h: 30px;
+}
+
+/* 有沒有單位切換鈕，標題列都一樣高（2026-10-24 Fu：田徑場、完成時間原本比配速、跑步機矮）。
+   切換鈕外框 = 按鈕 + 上下內距 2px×2 + 邊線 1px×2；再加標題列上下內距 6px×2 與底線 1px */
 .tools-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: calc(var(--tools-switch-btn-h) + 19px);
   padding: 6px 12px 6px 14px;
   background: var(--tp-bg);
   border-bottom: 1px solid var(--tp-border);
@@ -7229,7 +7237,7 @@ button.recent-row .rc-dist {
 
 .tools-switch button {
   min-width: 56px;
-  min-height: 30px;
+  min-height: var(--tools-switch-btn-h);
   padding: 0 10px;
   border: none;
   border-radius: 16px;
