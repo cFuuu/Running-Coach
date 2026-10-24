@@ -94,7 +94,7 @@ export function applyRoute() {
     else link.removeAttribute('aria-current');
   });
 
-  // 底部分頁列的選取膠囊滑到目前那格；view 不在分頁列（系統設定）時拿掉 data-tab-index 隱藏膠囊
+  // 底部分頁列的選取膠囊移到目前那格；view 不在分頁列（系統設定）時拿掉 data-tab-index 隱藏膠囊
   var tabbar = $('tabbar');
   if (tabbar) {
     var tabIndex = Array.prototype.findIndex.call(tabbar.querySelectorAll('.tab-link'), function (t) {

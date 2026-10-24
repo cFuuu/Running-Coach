@@ -1258,8 +1258,10 @@ body.coach-open .coach-panel {
   }
 }
 
-/* 選取膠囊：單一元素，router 設 --tab-index 後滑到該格。
-   寬度＝內容區的 1/5，translateX(100%) 剛好移一格；不在分頁列的 view（系統設定）就隱藏 */
+/* 選取膠囊：單一元素，router 設 --tab-index 後定位到該格。
+   寬度＝內容區的 1/5，translateX(100%) 剛好移一格；不在分頁列的 view（系統設定）就隱藏。
+   刻意不加滑動 transition：iPhone Safari 上動畫期間點分頁列會讓 Safari 工具列展開、
+   畫面跳一次（2026-10-24 Fu 實機逐項排除確認是動畫造成） */
 .tabbar-pill {
   position: absolute;
   top: 4px;
@@ -1269,17 +1271,10 @@ body.coach-open .coach-panel {
   border-radius: 999px;
   background: var(--accent-soft);
   transform: translateX(calc(var(--tab-index, 0) * 100%));
-  transition: transform 0.38s cubic-bezier(0.3, 1.25, 0.5, 1), opacity 0.2s;
 }
 
 .tabbar:not([data-tab-index]) .tabbar-pill {
   opacity: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tabbar-pill {
-    transition: none;
-  }
 }
 
 .tab-link {
