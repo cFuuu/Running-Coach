@@ -602,20 +602,33 @@ export function renderRaceCountdownBlock(races) {
   var all = (races && races.all) || [];
   var shownCount = grid.classList.contains('is-merged') ? 1 : (next ? 1 : 0) + (target ? 1 : 0);
   if (all.length > shownCount) {
-    // 清單預設展開、只列最近 RACE_LIST_DEFAULT 場；更多的才需要「全部賽事」鈕（2026-10-24 Fu）
+    // 清單預設展開（2026-10-24 Fu），標題旁的「全部賽事」鈕仍可收合／展開整份清單；
+    // 清單只列最近 RACE_LIST_DEFAULT 場，更多的由清單底部的「顯示全部」鈕展開
     var panel = raceListPanel(all);
+    var toggle = h('button', 'race-all-btn is-open', '全部賽事（' + all.length + '）');
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.addEventListener('click', function () {
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute('aria-expanded', String(!panel.hidden));
+      toggle.classList.toggle('is-open', !panel.hidden);
+    });
+    title.appendChild(toggle);
+
     var rows = Array.prototype.slice.call(panel.children);
     if (rows.length > RACE_LIST_DEFAULT) {
       rows.slice(RACE_LIST_DEFAULT).forEach(function (row) { row.classList.add('is-extra'); });
-      var toggle = h('button', 'race-all-btn', '全部賽事（' + all.length + '）');
-      toggle.type = 'button';
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.addEventListener('click', function () {
+      var moreLabel = '顯示全部 ' + rows.length + ' 場';
+      var lessLabel = '只顯示最近 ' + RACE_LIST_DEFAULT + ' 場';
+      var more = h('button', 'race-more-btn', moreLabel);
+      more.type = 'button';
+      more.setAttribute('aria-expanded', 'false');
+      more.addEventListener('click', function () {
         var expanded = panel.classList.toggle('is-expanded');
-        toggle.setAttribute('aria-expanded', String(expanded));
-        toggle.classList.toggle('is-open', expanded);
+        more.textContent = expanded ? lessLabel : moreLabel;
+        more.setAttribute('aria-expanded', String(expanded));
       });
-      title.appendChild(toggle);
+      panel.appendChild(more);
     }
     block.appendChild(panel);
   }

@@ -3940,9 +3940,27 @@ button.recent-row .rc-dist {
   border-top: 1px solid var(--border);
 }
 
-/* 預設只列最近幾場（js/views/home.js RACE_LIST_DEFAULT），按「全部賽事」才展開其餘 */
+/* 預設只列最近幾場（js/views/home.js RACE_LIST_DEFAULT），按清單底部的「顯示全部」才展開其餘 */
 .race-list:not(.is-expanded)>.race-list-row.is-extra {
   display: none;
+}
+
+.race-more-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.race-more-btn:hover {
+  background: var(--surface-sunken);
 }
 
 .race-list-row.is-target {
