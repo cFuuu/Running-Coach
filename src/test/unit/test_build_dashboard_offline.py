@@ -183,6 +183,18 @@ class TestCli(BuildDashboardOfflineTestCase):
         self.assertEqual(code, 0)
         self.assertEqual((dest / self.out.name).read_bytes(), self.out.read_bytes())
 
+    def test_txt_copy_alongside_html(self):
+        dest = self.tmp / "icloud"
+        dest.mkdir()
+        with mock.patch("builtins.print"):
+            code = offline.main(["--db-path", str(self.db_path), "--out", str(self.out),
+                                 "--copy-to", str(dest), "--txt"])
+        self.assertEqual(code, 0)
+        html = self.out.read_bytes()
+        self.assertEqual(self.out.with_suffix(".txt").read_bytes(), html)
+        self.assertEqual((dest / self.out.name).read_bytes(), html)
+        self.assertEqual((dest / self.out.with_suffix(".txt").name).read_bytes(), html)
+
     def test_no_copy_when_env_unset(self):
         env = {k: v for k, v in os.environ.items() if k != offline.COPY_TO_ENV}
         with mock.patch.dict(os.environ, env, clear=True), mock.patch("builtins.print"):

@@ -566,6 +566,7 @@ def build(
     copy_to: Path | None = None,
     profile_path: Path | None = None,
     today: datetime.date | None = None,
+    also_txt: bool = False,
 ) -> Path:
     if copy_to is not None and not copy_to.is_dir():
         raise SystemExit(f"--copy-to 指定的資料夾不存在：{copy_to}")
@@ -578,8 +579,14 @@ def build(
     tmp = out.with_name(out.name + ".tmp")
     tmp.write_text(html, encoding="utf-8")
     os.replace(tmp, out)
+    # 同內容的 .txt：捷徑「取得檔案」拿純文字再 base64 編碼成 data URL 比較穩
+    txt = out.with_suffix(".txt") if also_txt else None
+    if txt is not None:
+        shutil.copy2(out, txt)
     if copy_to is not None:
         shutil.copy2(out, copy_to / out.name)
+        if txt is not None:
+            shutil.copy2(out, copy_to / txt.name)
     return out
 
 
@@ -591,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
         "--copy-to", type=Path, default=os.environ.get(COPY_TO_ENV) or None,
         help=f"另外複製一份到這個資料夾（例如 iCloud Drive），預設讀環境變數 {COPY_TO_ENV}，沒設就不複製",
     )
+    parser.add_argument("--txt", action="store_true", help="同時輸出內容相同的 .txt（輸出處與 --copy-to 都會有）")
     parser.add_argument("--detail-months", type=int, default=0,
                         help="只保留近 N 個月的單場明細（0＝全部）")
     parser.add_argument("--no-gzip", action="store_true", help="快照不壓縮（除錯用）")
@@ -602,7 +610,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--detail-months 不可為負數")
     try:
         out = build(args.db_path, args.out, args.detail_months, not args.no_gzip,
-                    args.athlete_id, args.copy_to, args.profile_path)
+                    args.athlete_id, args.copy_to, args.profile_path, also_txt=args.txt)
     except SecurityScanError as exc:
         print(str(exc), file=sys.stderr)
         return 2
