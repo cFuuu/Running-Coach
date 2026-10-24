@@ -59,6 +59,25 @@ export function infoTip(label, text) {
   return button;
 }
 
+/**
+ * ⓘ 小視窗裡的一個分段：小標題＋內容。內容是字串陣列時以項目符號列出，
+ * 是單一字串時為一段文字；`opts.note` 為最後一行灰色小字（附註）。
+ * 說明很長時分段呈現，讓人能只看想看的那一段（參考值排最上面）。
+ */
+export function tipSection(title, content, opts) {
+  var sec = h('div', 'tip-sec');
+  sec.appendChild(h('div', 'tip-sec-title', title));
+  if (Array.isArray(content)) {
+    var list = h('ul', 'tip-sec-list');
+    content.forEach(function (line) { list.appendChild(h('li', null, line)); });
+    sec.appendChild(list);
+  } else {
+    sec.appendChild(h('p', null, content));
+  }
+  if (opts && opts.note) sec.appendChild(h('p', 'tip-sec-note', opts.note));
+  return sec;
+}
+
 export var infoPopoverState = { el: null, button: null };
 
 export function ensureInfoPopover() {

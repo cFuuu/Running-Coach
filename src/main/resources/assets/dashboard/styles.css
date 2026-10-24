@@ -5959,6 +5959,30 @@ button.recent-row .rc-dist {
   margin-top: 8px;
 }
 
+/* 分段說明（tipSection）：每段小標題＋內容，段與段之間留白、不加框 */
+.tip-sec + .tip-sec {
+  margin-top: 12px;
+}
+
+.tip-sec-title {
+  margin-bottom: 2px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.tip-sec-list {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.info-popover-body .tip-sec p + .tip-sec-note,
+.tip-sec-note {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 .kpi-value-wrap .conf-badge {
   margin-left: 6px;
   align-self: center;

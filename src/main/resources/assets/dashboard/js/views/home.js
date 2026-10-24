@@ -16,7 +16,7 @@ import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL } from '../core/state.js';
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
-import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark } from '../core/facts.js';
+import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark, tipSection } from '../core/facts.js';
 import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel, raceDisplayName, displayDate } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
@@ -656,36 +656,66 @@ export function renderToday() {
 
 // ------------------------------------------------------------ 訓練負荷卡片
 
-export var LOAD_TIPS = {
-  tsb: [
-    'TSB（訓練壓力平衡）＝ CTL − ATL：長期體能基礎減去近期疲勞。負值表示近期負荷高於長期基礎。',
-    '負荷採 Banister TRIMP：分鐘 × 心率儲備百分比（%HRR）× 隨強度指數上升的權重，'
-    + '一小時輕鬆跑約 85、一小時閾值跑約 165。另外標出 TSB 佔 CTL 的百分比，讓自訂尺度的數字可讀。',
-    '參考值（Joe Friel，TrainingPeaks〈Applying the Numbers Part 3〉，原為 TSS 尺度）：'
-    + '比賽日 +15～+25 通常表現最好；−10～+10 是過渡區；負值代表處於疲勞。'
-    + 'TRIMP 與 TSS 定義不同（同一小時閾值跑約為 TSS 的 1.6 倍），絕對值不能直接套用；'
-    + 'intervals.icu 改套在「TSB 佔 CTL 的百分比」，社群常引用 −30% 以下為高風險區——這是社群慣例，不是研究定論。本頁不據此判讀。'
-  ],
-  atl: [
-    'ATL（急性訓練負荷）：每日訓練負荷（TRIMP）的 7 日指數加權平均，代表近期疲勞。',
-    '指數加權：越近的日子權重越高，一週前的訓練影響約剩三分之一。'
-  ],
-  ctl: [
-    'CTL（慢性訓練負荷）：每日訓練負荷（TRIMP）的 42 日指數加權平均，代表長期累積的體能基礎。',
-    '變化很慢：穩定訓練數週才會明顯上升，停練也要數週才明顯下降。'
-  ]
-};
+/**
+ * 自己的範圍：序列內該指標的最低～最高與目前值，例如「近 30 天 −13.1 ～ +8.0（現在 −4.4）」。
+ * 資料不到 5 天不算（範圍沒意義）。用卡片手上已有的序列算，不另外寫死數字。
+ */
+function personalRange(rows, key, rangeLabel, fmt) {
+  var vals = (rows || []).map(function (r) { return r[key] && r[key].value; })
+    .filter(function (v) { return typeof v === 'number'; });
+  if (vals.length < 5) return null;
+  return rangeLabel + ' ' + fmt(Math.min.apply(null, vals)) + ' ～ ' + fmt(Math.max.apply(null, vals))
+    + '（現在 ' + fmt(vals[vals.length - 1]) + '）';
+}
+
+var signed1 = function (v) { return (v > 0 ? '+' : '') + C.formatNumber(v, 1); };
+var plain1 = function (v) { return C.formatNumber(v, 1); };
+
+/**
+ * TSB／ATL／CTL 的 ⓘ 說明：分三段，**參考值放最上面**，其次定義、最後算法。
+ * key：'tsb'／'atl'／'ctl'；rows：該區間的負荷序列（算「你自己的範圍」用）；
+ * rangeLabel：範圍的說法（首頁「近 30 天」、趨勢頁「此區間」）。
+ */
+export function loadTip(key, rows, rangeLabel) {
+  var own = personalRange(rows, key, rangeLabel, key === 'tsb' ? signed1 : plain1);
+  if (key === 'tsb') {
+    return [
+      tipSection('參考值', [
+        own,
+        '比賽日 +15～+25：狀態最好',
+        '−10～+10：過渡區',
+        '負值：處於疲勞',
+        '佔 CTL 低於 −30%：社群常視為高風險（非研究定論）'
+      ].filter(Boolean), {
+        note: '上面三條來自 Joe Friel（TrainingPeaks），原為 TSS 尺度；TRIMP 的數字較大（同一小時閾值跑約為 TSS 的 1.6 倍），僅供對照，本頁不據此判讀。'
+      }),
+      tipSection('定義', 'TSB（訓練壓力平衡）＝ CTL − ATL：長期體能減去近期疲勞。負值代表近期負荷高於長期基礎。'),
+      tipSection('怎麼算', '每日負荷為 Banister TRIMP：分鐘 × 心率儲備百分比 × 隨強度上升的權重。一小時輕鬆跑約 85、閾值跑約 165。')
+    ];
+  }
+  var isAtl = key === 'atl';
+  return [
+    tipSection('參考值', [own, '沒有通用標準，看自己的變化趨勢'].filter(Boolean)),
+    tipSection('定義', isAtl
+      ? 'ATL（急性訓練負荷）：近期疲勞，每日負荷的 7 日指數加權平均。'
+      : 'CTL（慢性訓練負荷）：長期累積的體能基礎，每日負荷的 42 日指數加權平均。'),
+    tipSection('怎麼算', isAtl
+      ? '指數加權：越近的日子權重越高，一週前的訓練影響約剩三分之一。'
+      : '變化很慢：穩定訓練數週才會明顯上升，停練也要數週才明顯下降。')
+  ];
+}
 
 /**
  * 信賴度說明（併進 ⓘ 提示）。卡片上不再放「低信心度」標籤，太突兀；
  * 可信度仍照三欄位契約讀出，只是改成點 ⓘ 才看得到。信賴度為 high 時沒有額外說明。
+ * 每個已知偏誤各占一條，不再串成一整段。
  */
-function confidenceTip(fact) {
+export function confidenceTip(fact) {
   var c = fact && fact.confidence;
   if (!c || c.level === 'high') return [];
   var biases = (c.biases || []).map(function (b) { return b.detail; }).filter(Boolean);
-  return ['信賴度：' + (CONFIDENCE_LABEL[c.level] || c.level)
-    + (biases.length ? '。已知偏誤：' + biases.join('；') : '')];
+  var title = '信賴度：' + (CONFIDENCE_LABEL[c.level] || c.level);
+  return [biases.length ? tipSection(title + '，已知偏誤', biases) : tipSection(title, '無額外說明')];
 }
 
 // 訓練負荷區接在 TSB／ATL／CTL 後面的 Garmin 卡片（views/garmin.js）
@@ -718,7 +748,7 @@ export function renderHomeLoad() {
     value: typeof tsb === 'number' ? (tsb > 0 ? '+' : '') + C.formatNumber(tsb, 1) : '—',
     note: ctl ? '佔 CTL ' + (tsb > 0 ? '+' : '−') + Math.abs(tsb / ctl * 100).toFixed(0) + '%' : null,
     series: rows.map(function (r) { return r.tsb ? r.tsb.value : null; }),
-    tip: LOAD_TIPS.tsb.concat(confidenceTip(load.tsb))
+    tip: loadTip('tsb', rows, '近 30 天').concat(confidenceTip(load.tsb))
   }));
   cards.appendChild(kpiCard({
     label: '近期疲勞',
@@ -726,7 +756,7 @@ export function renderHomeLoad() {
     value: load.atl ? C.formatNumber(load.atl.value, 1) : '—',
     note: '7 日指數加權',
     series: rows.map(function (r) { return r.atl ? r.atl.value : null; }),
-    tip: LOAD_TIPS.atl.concat(confidenceTip(load.atl))
+    tip: loadTip('atl', rows, '近 30 天').concat(confidenceTip(load.atl))
   }));
   cards.appendChild(kpiCard({
     label: '長期體能',
@@ -734,7 +764,7 @@ export function renderHomeLoad() {
     value: load.ctl ? C.formatNumber(load.ctl.value, 1) : '—',
     note: '42 日指數加權',
     series: rows.map(function (r) { return r.ctl ? r.ctl.value : null; }),
-    tip: LOAD_TIPS.ctl.concat(confidenceTip(load.ctl))
+    tip: loadTip('ctl', rows, '近 30 天').concat(confidenceTip(load.ctl))
   }));
 
   // Garmin 的訓練負荷、訓練狀態、負荷焦點（2026-10-22 Fu 指定）：與趨勢頁「Garmin 數據」

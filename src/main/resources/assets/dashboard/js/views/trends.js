@@ -31,7 +31,7 @@ import { loadSeriesToChartSeries, garminLoadNote, seriesFromSessions, SESSION_TR
 import { wellnessFormatter, wellnessPoints, wellnessClipNote } from './wellness.js';
 import { renderOverviewStrip, renderWeeklyVolume, renderRecentVolume, renderZones } from './overview.js';
 import { GARMIN_CARD_DEFS, renderGarminCard, garminScoreTiles, GARMIN_SERIES_DEFS, garminSeriesPoints } from './garmin.js';
-import { LOAD_TIPS } from './home.js';
+import { loadTip, confidenceTip } from './home.js';
 
 // 歸在「訓練負荷」而非「恢復與身體」的 Garmin 每日指標
 var LOAD_WELLNESS_KEYS = ['acwr', 'recovery_time_hours'];
@@ -348,13 +348,6 @@ function loadDefs() {
   return defs;
 }
 
-function confidenceTip(fact) {
-  var c = fact && fact.confidence;
-  if (!c || c.level === 'high') return [];
-  var biases = (c.biases || []).map(function (b) { return b.detail; }).filter(Boolean);
-  return ['信賴度：' + (CONFIDENCE_LABEL[c.level] || c.level) + (biases.length ? '。已知偏誤：' + biases.join('；') : '')];
-}
-
 function lastFact(rows, key) {
   for (var i = rows.length - 1; i >= 0; i -= 1) if (rows[i][key] && isNum(rows[i][key].value)) return rows[i][key];
   return null;
@@ -379,13 +372,13 @@ function renderLoadSection(body) {
     trendKpi({ label: '狀態平衡', abbr: 'TSB', value: tsbFact && tsbFact.value, fmt: signed, deltaFmt: fmt1,
       prev: prevLast('tsb'), note: '期末值',
       series: rows.map(function (r) { return r.tsb ? r.tsb.value : null; }),
-      tip: LOAD_TIPS.tsb.concat(confidenceTip(tsbFact)) }),
+      tip: loadTip('tsb', rows, '此區間').concat(confidenceTip(tsbFact)) }),
     trendKpi({ label: '近期疲勞', abbr: 'ATL', value: atlFact && atlFact.value, fmt: fmt1, prev: prevLast('atl'),
       note: '期末值', series: rows.map(function (r) { return r.atl ? r.atl.value : null; }),
-      tip: LOAD_TIPS.atl.concat(confidenceTip(atlFact)) }),
+      tip: loadTip('atl', rows, '此區間').concat(confidenceTip(atlFact)) }),
     trendKpi({ label: '長期體能', abbr: 'CTL', value: ctlFact && ctlFact.value, fmt: fmt1, prev: prevLast('ctl'),
       note: '期末值', series: rows.map(function (r) { return r.ctl ? r.ctl.value : null; }),
-      tip: LOAD_TIPS.ctl.concat(confidenceTip(ctlFact)) }),
+      tip: loadTip('ctl', rows, '此區間').concat(confidenceTip(ctlFact)) }),
     trendKpi({ label: '恢復時間', value: mean(values(recPts)), fmt: fmt1, unit: 'hr',
       prev: recDef ? prevValue('wellness', function (d) { return mean(values(wellnessPoints(d, recDef))); }) : null,
       note: '期間平均', series: values(recPts),
