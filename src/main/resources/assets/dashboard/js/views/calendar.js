@@ -112,15 +112,39 @@ export function chipValue(distanceKm, durationSec) {
 }
 
 /**
+ * 手機格子窄（文字只剩約 3 個數字寬），chipValue 的短版：10 公里以上取整數（15.2 → 15）；
+ * 時間未滿 100 分顯示分鐘（1.0h → 60m、45:00 → 45m），以上取整小時。完整值看膠囊 title 與當日明細。
+ */
+function chipValueShort(distanceKm, durationSec) {
+  if (distanceKm && distanceKm > 0) {
+    return distanceKm >= 10 ? String(Math.round(distanceKm)) : C.formatNumber(distanceKm, 1);
+  }
+  if (durationSec && durationSec > 0) {
+    if (durationSec < 6000) return Math.round(durationSec / 60) + 'm';
+    return Math.round(durationSec / 3600) + 'h';
+  }
+  return '—';
+}
+
+/**
  * 一顆運動膠囊。
  * @param {string} sport SPORT_KEYS 之一
  * @param {string|null} text 膠囊文字（null＝只有圖示）
  * @param {string} [extra] 額外 class（is-done／is-planned／is-missed／is-race-planned／cal-pending…）
+ * @param {string} [shortText] 手機用的短文字；與 text 不同時兩份都放，由 CSS 依寬度切換
  */
-function sportChip(sport, text, extra) {
+function sportChip(sport, text, extra, shortText) {
   var chip = h('span', 'sport-chip sport-chip--' + sport + (extra ? ' ' + extra : ''));
   chip.appendChild(sportIconNode(sport));
-  if (text !== null && text !== undefined) chip.appendChild(h('span', 'cal-chip-text', text));
+  if (text === null || text === undefined) return chip;
+  var textNode = h('span', 'cal-chip-text');
+  if (shortText && shortText !== text) {
+    textNode.appendChild(h('span', 'cal-val-full', text));
+    textNode.appendChild(h('span', 'cal-val-short', shortText));
+  } else {
+    textNode.textContent = text;
+  }
+  chip.appendChild(textNode);
   return chip;
 }
 
@@ -201,9 +225,10 @@ function dayModel(day, today, raceByDate) {
 
 function entryChip(entry) {
   var cls = entry.matched ? 'is-done' : (entry.pending ? 'cal-pending' : '');
-  var chip = sportChip(entry.sport, chipValue(entry.distance, entry.duration), cls);
+  var full = chipValue(entry.distance, entry.duration);
+  var chip = sportChip(entry.sport, full, cls, chipValueShort(entry.distance, entry.duration));
   var a = entry.act;
-  chip.title = (SPORT_LABEL[entry.sport] || '') + '　' + (a.title || '')
+  chip.title = (SPORT_LABEL[entry.sport] || '') + ' ' + full + '　' + (a.title || '')
     + (entry.pending ? '（待確認是否為課表）' : '');
   return chip;
 }

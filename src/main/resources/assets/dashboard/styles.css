@@ -7714,6 +7714,11 @@ button.recent-row .rc-dist {
   margin: 3.5px;
 }
 
+/* 膠囊數值的手機短版，寬版不顯示（手機規則在 max-width: 600px 段） */
+.cal-val-short {
+  display: none;
+}
+
 .cal-chip-text,
 .cal-ghost-text {
   min-width: 0;
@@ -8071,6 +8076,15 @@ button.recent-row .rc-dist {
   .cal-chips .sport-chip.cal-ghost {
     min-height: 14px;
     padding: 0;
+  }
+
+  /* 手機格子窄：膠囊改顯示短數值（10 km 以上取整、時間改分鐘），見 calendar.js chipValueShort */
+  .cal-chips .cal-val-full {
+    display: none;
+  }
+
+  .cal-chips .cal-val-short {
+    display: inline;
   }
 
   .cal-chips .sport-chip.cal-ghost .sport-icon {
