@@ -51,7 +51,7 @@ export function bindCoachPanel() {
   setCoachPanel(wide && !(settings && settings.coachPanel === 'collapsed'), false);
 
   [['coach-collapse', false], ['coach-close', false], ['coach-rail', true],
-   ['coach-fab', true], ['coach-scrim', false]].forEach(function (pair) {
+   ['coach-scrim', false]].forEach(function (pair) {
     var el = $(pair[0]);
     if (el) el.addEventListener('click', function () { setCoachPanel(pair[1], true); });
   });
@@ -72,7 +72,7 @@ export function bindCoachPanel() {
 }
 
 /**
- * 頂列「分析近況」（跑一次新的 AI 分析）與面板標題列的「分析紀錄」（回看過去的報告）。
+ * 面板標題列的「分析近況」（跑一次新的 AI 分析）與「分析紀錄」（回看過去的報告）。
  * 進度與結果都在 AI 面板裡呈現；無法開始時（例如未設定 API key）把原因放在
  * 內容頂端的提示列，按鈕旁沒有空間放說明文字。
  */

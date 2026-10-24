@@ -196,7 +196,7 @@ class TestCli(BuildDashboardOfflineTestCase):
         self.assertIn("today: window.__SNAPSHOT_TODAY__", html)
         self.assertNotIn("offline-snapshot-badge", html)
         for element_id in ("sync-btn", "analyze-btn", "coach-toggle", "custom-range", "coach-panel",
-                           "coach-rail", "coach-fab", "coach-scrim"):
+                           "coach-rail", "coach-scrim"):
             tag = re.search(r'<[^>]*\bid="' + element_id + r'"[^>]*>', html).group(0)
             self.assertIn("data-online-only", tag, element_id)
         self.assertIn('id="offline-stamp"', html)

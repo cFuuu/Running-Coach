@@ -25,6 +25,8 @@ import { h } from './dom.js';
 // 哪些自訂面板目前是開著的。呼叫端調整後通常整塊 clear() 重畫（連同自訂鈕），
 // 重建時依這裡自動展開，連續調整多個項目才不必每次重新點開。
 var openKeys = {};
+// 每個 settingsKey 最新一個自訂鈕的 { wrap, setOpen }，讓系統設定頁的捷徑能從外部展開它
+var openers = {};
 
 /**
  * 依使用者偏好排出項目。
@@ -190,5 +192,20 @@ export function customizer(opts) {
   }
   btn.addEventListener('click', function () { setOpen(!openKeys[opts.settingsKey]); });
   if (openKeys[opts.settingsKey]) setOpen(true);
+  openers[opts.settingsKey] = { wrap: wrap, setOpen: setOpen };
   return wrap;
+}
+
+/**
+ * 從外部展開某個自訂面板（系統設定頁的捷徑用）。面板還沒建立時只記下要展開，
+ * 該頁之後重畫自訂鈕時就會自動打開。
+ * @param {string} settingsKey 同 customizer 的 settingsKey
+ * @returns {HTMLElement|null} 目前的自訂區塊（可用來捲到畫面內）
+ */
+export function openCustomizer(settingsKey) {
+  openKeys[settingsKey] = true;
+  var o = openers[settingsKey];
+  if (!o || !document.body.contains(o.wrap)) return null;
+  o.setOpen(true);
+  return o.wrap;
 }

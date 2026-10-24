@@ -15,17 +15,10 @@ export function renderMeta() {
   var node = $('meta-info');
   clear(node);
   if (!state.meta) return;
+  // 學員與區網警語在系統設定頁「學員與連線」（2026-10-24 由側邊列搬過去：手機看不到側邊列）
   var athlete = state.meta.athlete || {};
-  if (athlete.name) {
-    // 學員卡：左側圓形頭像（取名字第一個字），右側「學員」小標＋名字
-    var chip = h('div', 'meta-athlete');
-    chip.appendChild(h('span', 'meta-avatar', Array.from(athlete.name)[0]));
-    var text = h('span', 'meta-athlete-text');
-    text.appendChild(h('span', 'meta-athlete-role', '學員'));
-    text.appendChild(h('span', 'meta-athlete-name', athlete.name));
-    chip.appendChild(text);
-    node.appendChild(chip);
-  }
+  var athleteNode = $('settings-athlete');
+  if (athleteNode) athleteNode.textContent = athlete.name || '—';
   var offline = offlineSnapshotInfo();
   if (offline) {
     // 離線快照：側邊列與頂列（手機沒有側邊列）都標資料時間，避免把舊資料當成今天
@@ -39,11 +32,11 @@ export function renderMeta() {
   } else if (useMock) {
     node.appendChild(h('span', 'badge badge-mock', '開發用假資料'));
   }
-  var notice = $('notice-bar');
-  clear(notice);
   // 後端的部署警語（區網、無身分驗證）對離線檔不適用
-  if (state.meta.notice && !offline) {
-    notice.appendChild(h('span', null, state.meta.notice));
+  var noticeRow = $('settings-notice-row');
+  if (noticeRow) {
+    noticeRow.hidden = !(state.meta.notice && !offline);
+    $('settings-notice').textContent = state.meta.notice || '';
   }
 }
 

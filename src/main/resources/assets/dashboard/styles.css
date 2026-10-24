@@ -303,47 +303,6 @@ h1, h2, h3 {
   max-width: 100%;
 }
 
-.meta-athlete {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 8px;
-}
-
-.meta-avatar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.meta-athlete-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-  min-width: 0;
-}
-
-.meta-athlete-role {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
-.meta-athlete-name {
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* range 切換：觸控目標 ≥ 44px */
 .range-switch {
   display: flex;
@@ -640,6 +599,25 @@ h1, h2, h3 {
 .sync-chip.is-fresh .sync-dot { background: var(--pct-green); }
 .sync-chip.is-stale .sync-dot { background: var(--pct-yellow); }
 .sync-chip.is-old .sync-dot { background: var(--pct-red); }
+
+/* 頂列同步鈕的狀態點（js/shell/sync.js markSyncButton）：資料落後才出現，顏色同側邊列圓點 */
+#sync-btn {
+  position: relative;
+}
+
+.sync-btn-dot {
+  display: none;
+  position: absolute;
+  top: 7px;
+  left: 26px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+#sync-btn.is-stale .sync-btn-dot { display: block; background: var(--pct-yellow); }
+#sync-btn.is-old .sync-btn-dot { display: block; background: var(--pct-red); }
 
 .sync-status {
   color: var(--text);
@@ -961,7 +939,32 @@ body.coach-open .coach-panel {
 
 .coach-title {
   font-size: var(--fs-md);
-  margin-right: auto;
+}
+
+/* 「分析近況」緊跟在標題旁，用 margin-right:auto 把分析紀錄／收合／關閉推到右側 */
+.coach-analyze {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 auto 0 8px;
+  padding: 5px 11px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.coach-analyze:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.coach-analyze:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 .coach-btn {
@@ -1180,28 +1183,6 @@ body.coach-open .coach-panel {
   outline-offset: -3px;
 }
 
-.coach-fab {
-  position: fixed;
-  right: 16px;
-  bottom: calc(56px + 16px);
-  z-index: 100;
-  width: 56px;
-  height: 56px;
-  border: 1px solid var(--accent-border);
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--on-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 8px var(--panel-shadow);
-}
-
-body.coach-open .coach-fab {
-  display: none;
-}
-
 /* 手機：AI 面板為全螢幕 sheet */
 @media (max-width: 767px) {
   .coach-panel {
@@ -1214,7 +1195,7 @@ body.coach-open .coach-fab {
   }
 
   .coach-rail {
-    display: none !important; /* 手機用 FAB 開啟，不用直條 */
+    display: none !important; /* 手機由頂列的 AI 教練鈕開啟，不用直條 */
   }
 }
 
@@ -1229,8 +1210,7 @@ body.coach-open .coach-fab {
     display: flex;
   }
 
-  .tabbar,
-  .coach-fab {
+  .tabbar {
     display: none;
   }
 
@@ -6246,18 +6226,9 @@ button.recent-row .rc-dist {
   color: var(--accent-text);
 }
 
-/* 尚未開放的區塊：說明目前的實際行為，不做假的勾選清單 */
-.setting-placeholder,
-.setting-note {
-  margin: 8px 0 0;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-  line-height: 1.6;
-}
-
-.setting-note {
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+/* 設定列右側的純文字值（學員名稱） */
+.setting-value {
+  font-weight: 600;
 }
 
 /* 窄螢幕：標籤與控制項改上下堆疊，控制項靠左（並排會把說明文字擠成單字寬） */

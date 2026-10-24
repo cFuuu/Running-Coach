@@ -26,7 +26,7 @@ import { $, clear, h } from './core/dom.js';
 import { bindInfoTipDismiss } from './core/facts.js';
 import { bindTooltipDelegation } from './core/tooltip.js';
 import { loadHome, initHomeLayout } from './views/home.js';
-import { bindCoachSetting } from './views/settings.js';
+import { bindCoachSetting, bindCustomizeShortcuts } from './views/settings.js';
 import { renderMeta, loadRangeData } from './shell/loader.js';
 import { renderRangeButtons, bindCustomRangePanel } from './shell/range.js';
 import { applyRoute, bindRouter } from './shell/router.js';
@@ -72,6 +72,7 @@ function init() {
   bindCoachPanel();
   bindAnalysisButtons();
   bindCoachSetting();
+  bindCustomizeShortcuts();
   bindSyncButtons();
   bindRouter();
   initHomeLayout();

@@ -6,11 +6,13 @@ import * as Theme from '../theme.js';
 import { $ } from '../core/dom.js';
 import { renderSyncFreshness } from '../shell/sync.js';
 import { setCoachPanel } from '../shell/coach-frame.js';
+import { navigate } from '../shell/router.js';
+import { openCustomizer } from '../core/customize.js';
 
 // N-19 §4。所有設定都存在 theme.js 的 `rc-dashboard-settings` 這一個
 // localStorage key 裡（透過 getSettings/saveSettings），不另開新 key。
-// 主題三選一與「與系統同步」開關由 theme.js 自己綁定與連動，本節只處理
-// AI 教練面板預設與資料同步兩塊。
+// 主題三選一由 theme.js 自己綁定，本節處理 AI 教練面板預設、資料同步，
+// 以及「自訂首頁／自訂類別」兩個捷徑。
 
 export function renderSettingsSync() {
   renderSyncFreshness('settings-sync', false);
@@ -38,4 +40,24 @@ export function syncCoachSettingToggle() {
   if (!toggle) return;
   var settings = Theme.getSettings();
   toggle.checked = !(settings && settings.coachPanel === 'collapsed');
+}
+
+/**
+ * 「自訂首頁」「自訂類別」捷徑：切到該頁並展開該頁既有的自訂面板。
+ * 設定本身只有一份（各頁的 customizer），這裡不重做。
+ * 切頁會觸發路由把內容捲回頂端，所以等路由套用完再把自訂區塊捲進畫面。
+ */
+export function bindCustomizeShortcuts() {
+  [['settings-home-customize', 'home', 'home'],
+   ['settings-trends-customize', 'trends', 'trends']].forEach(function (cfg) {
+    var btn = $(cfg[0]);
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      navigate(cfg[1]);
+      setTimeout(function () {
+        var wrap = openCustomizer(cfg[2]);
+        if (wrap && wrap.scrollIntoView) wrap.scrollIntoView({ block: 'start' });
+      }, 60);
+    });
+  });
 }

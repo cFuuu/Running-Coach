@@ -59,6 +59,18 @@ export function renderSyncFreshness(nodeId, showLabel) {
   }
 }
 
+/**
+ * 頂列同步鈕的狀態點：落後 1 天黃、2 天以上紅，已到今天或未知不顯示。
+ * 手機沒有側邊列，這顆點是唯一看得到「資料落後」的地方。
+ */
+function markSyncButton(days) {
+  var btn = $('sync-btn');
+  if (!btn) return;
+  var tier = freshnessTier(days);
+  btn.classList.toggle('is-stale', tier === 'is-stale');
+  btn.classList.toggle('is-old', tier === 'is-old');
+}
+
 /** 落後天數 → 新鮮度圓點顏色級別：今天＝綠、落後 1 天＝黃、2 天以上＝紅、未知＝灰。 */
 function freshnessTier(days) {
   if (days === null || days === undefined) return 'is-unknown';
@@ -79,6 +91,7 @@ export function renderSidebarSync() {
   clear(node);
   var f = state.today && state.today.freshness;
   if (!f) return;
+  markSyncButton(f.days_behind);
   if (!f.last_synced_at && !f.activity_latest && !f.wellness_latest) {
     node.appendChild(h('span', 'sync-label', '尚無同步資料'));
     return;

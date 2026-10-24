@@ -18,11 +18,9 @@
  *   getChoice() / setChoice(choice)       — 目前主題選擇的讀寫（會連動所有 UI）
  *
  * 【主題 UI 的三種形態】
- *   設定頁的三選一與深色開關（#setting-theme-dark）是同一份狀態的兩個視圖，
- *   updateButtons() 一次更新兩邊，因此不論從哪邊改都會即時連動。
- *   注意三選一呈現的是「使用者選了什麼」（含 system），深色開關呈現的是
- *   「解析後畫面實際是深是淺」——兩者在選 system 時會不同步，這是刻意的
- *   （見 updateButtons）。右上角原本的循環鈕已於 2026-10-21 移除。
+ *   只有設定頁的三選一（淺色／深色／跟隨系統），呈現「使用者選了什麼」。
+ *   右上角原本的循環鈕已於 2026-10-21 移除；設定頁的深色開關與三選一重複，
+ *   2026-10-24 設定頁改版時移除。
  */
 
 var STORAGE_KEY = 'rc-dashboard-settings';
@@ -96,11 +94,6 @@ function updateButtons(choice) {
     btns[i].setAttribute('aria-pressed', isActive ? 'true' : 'false');
   }
 
-  // 深色開關反映的是「現在畫面是深是淺」（resolve 後的結果），不是
-  // 使用者選了哪一項——選「跟隨系統」而系統是深色時，開關要是開的，
-  // 否則畫面明明是深色開關卻顯示關閉，兩者互相矛盾。
-  var darkSwitch = document.getElementById('setting-theme-dark');
-  if (darkSwitch) darkSwitch.checked = (resolve(choice) === 'dark');
 }
 
 function setChoice(choice) {
@@ -119,16 +112,6 @@ function bindButtons() {
     btns[i].addEventListener('click', (function (btn) {
       return function () { setChoice(btn.getAttribute('data-theme-choice')); };
     })(btns[i]));
-  }
-
-  // 深色開關：一律落成明確的 light／dark，不會切回 'system'。
-  // 「跟隨系統」只能從上面的三選一選擇——這顆開關的語意是
-  // 「我現在就要深色／淺色」，那本質上就是一個明確選擇。
-  var darkSwitch = document.getElementById('setting-theme-dark');
-  if (darkSwitch) {
-    darkSwitch.addEventListener('change', function () {
-      setChoice(darkSwitch.checked ? 'dark' : 'light');
-    });
   }
 }
 

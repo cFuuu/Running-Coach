@@ -227,16 +227,8 @@
               <use href="#icon-sync"></use>
             </svg>
             <span class="tool-label">同步資料</span>
-          </button>
-
-          <!-- AI 分析近況：打開 AI 面板並跑一次新的分析（js/shell/coach-frame.js） -->
-          <button type="button" class="tool-btn has-label" id="analyze-btn" data-online-only title="AI 分析最近的訓練與身體狀況（約 1～2 分鐘，結果自動保存）"
-            aria-label="分析近況">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <use href="#icon-bubble"></use>
-            </svg>
-            <span class="tool-label">分析近況</span>
+            <!-- 資料落後時的狀態點（手機看不到側邊列的新鮮度，靠這顆點提示；js/shell/sync.js 設定） -->
+            <span class="sync-btn-dot" aria-hidden="true"></span>
           </button>
 
           <!-- 離線快照的資料時間（js/shell/loader.js renderMeta 填入；側邊列在手機上隱藏，所以頂列也放一份） -->
@@ -253,7 +245,7 @@
           </a>
         </div>
 
-        <!-- 平板：內容頂列多一顆 AI 教練開關（桌機面板常駐、手機用 FAB） -->
+        <!-- 平板與手機：內容頂列的 AI 教練開關（桌機面板常駐）。2026-10-24 拿掉手機 FAB，統一由這裡開啟 -->
         <button type="button" class="coach-toggle" id="coach-toggle" data-online-only aria-expanded="false">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -428,7 +420,7 @@
           <div class="setting-row">
             <div class="setting-label">
               <span class="setting-name">主題</span>
-              <span class="setting-hint">與右上角的循環切換鈕連動</span>
+              <span class="setting-hint">跟隨系統時，會隨手機或電腦的深淺色設定切換</span>
             </div>
             <div class="setting-control">
               <div class="theme-choice-group" role="group" aria-label="主題">
@@ -438,34 +430,15 @@
               </div>
             </div>
           </div>
-
-          <!--
-          直接切換目前顯示的深／淺色。取代先前的「與系統同步」開關——那個
-          開關等同上面三選一的「跟隨系統」，在淺色偏好的系統上按下去
-          畫面毫無變化（system 與 light 解析結果相同），看起來像壞掉。
-          這裡改成操作「現在畫面是深是淺」，一按必有視覺回饋；
-          按下時若原本是「跟隨系統」，會落成明確的 light／dark。
-        -->
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="setting-name">深色模式</span>
-              <span class="setting-hint">直接切換目前顯示的主題；原本設為「跟隨系統」時會改為明確選擇</span>
-            </div>
-            <div class="setting-control">
-              <label class="switch">
-                <input type="checkbox" id="setting-theme-dark">
-                <span class="switch-track" aria-hidden="true"></span>
-              </label>
-            </div>
-          </div>
         </section>
 
-        <section class="panel" aria-labelledby="h-set-coach" data-online-only>
-          <h2 class="panel-title" id="h-set-coach">AI 教練</h2>
-          <div class="setting-row">
+        <section class="panel" aria-labelledby="h-set-layout">
+          <h2 class="panel-title" id="h-set-layout">版面</h2>
+
+          <div class="setting-row" data-online-only>
             <div class="setting-label">
-              <span class="setting-name">面板預設開啟</span>
-              <span class="setting-hint">只影響 ≥1280px 的桌機版面；平板與手機的面板是覆蓋式，一律預設收起</span>
+              <span class="setting-name">AI 教練面板預設開啟</span>
+              <span class="setting-hint">只影響寬螢幕桌機；手機與平板一律收起</span>
             </div>
             <div class="setting-control">
               <label class="switch">
@@ -474,23 +447,35 @@
               </label>
             </div>
           </div>
-        </section>
 
-        <section class="panel" aria-labelledby="h-set-metrics">
-          <h2 class="panel-title" id="h-set-metrics">今日頁指標</h2>
-          <p class="setting-placeholder">
-            今日頁要顯示哪些指標的勾選清單尚未開放。目前今日頁固定顯示課表、
-            綜合整備狀態、訓練負荷與 HRV、最近一場四張卡。
-          </p>
-        </section>
-
-        <section class="panel" aria-labelledby="h-set-sync">
-          <h2 class="panel-title" id="h-set-sync">資料同步</h2>
+          <!-- 兩顆鈕都是捷徑：切到該頁並展開該頁既有的自訂面板（js/views/settings.js），設定本身不在這裡重做一份 -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">首頁區塊</span>
+              <span class="setting-hint">調整首頁要顯示哪些區塊與順序</span>
+            </div>
+            <div class="setting-control">
+              <button type="button" class="setting-btn" id="settings-home-customize">自訂首頁 ›</button>
+            </div>
+          </div>
 
           <div class="setting-row">
             <div class="setting-label">
-              <span class="setting-name">最後同步</span>
-              <span class="setting-hint">與側邊列底部同一個來源（/api/today 的 freshness）</span>
+              <span class="setting-name">趨勢類別</span>
+              <span class="setting-hint">調整趨勢頁要顯示哪些類別</span>
+            </div>
+            <div class="setting-control">
+              <button type="button" class="setting-btn" id="settings-trends-customize">自訂類別 ›</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="h-set-data">
+          <h2 class="panel-title" id="h-set-data">資料</h2>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">資料狀態</span>
             </div>
             <div class="setting-control">
               <div class="settings-sync" id="settings-sync"></div>
@@ -500,7 +485,7 @@
           <div class="setting-row" data-online-only>
             <div class="setting-label">
               <span class="setting-name">立即同步</span>
-              <span class="setting-hint">會先估算耗時並詢問確認，再實際執行</span>
+              <span class="setting-hint">會先估算時間並詢問，再開始同步。Garmin 授權失效時不會自動重新登入，需在電腦終端機重新認證一次</span>
             </div>
             <div class="setting-control">
               <button type="button" class="setting-btn" id="settings-sync-btn" data-action="sync" disabled>
@@ -516,11 +501,33 @@
           <!-- 同步的進度／結果／失敗原因。空的時候由 CSS 收起不留空白塊。 -->
           <p class="setting-sync-message" id="settings-sync-message" data-online-only></p>
 
-          <p class="setting-note" data-online-only>
-            同步使用的是一次性認證取得的 OAuth token。token 失效時匯入器不會自動用
-            帳密重新登入（那會觸發 Garmin 的反爬蟲機制），請在終端機重跑一次性
-            認證指令重新取得 token。
-          </p>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">離線檔</span>
+              <span class="setting-hint">在電腦執行 scripts/build_dashboard_offline.py 產生單一 HTML，iPhone 透過 iCloud 雲碟與捷徑開啟；步驟見 docs/dev/OFFLINE_EXPORT.md</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 學員與連線：原本在側邊列底部，手機看不到（側邊列隱藏），2026-10-24 搬來這裡。js/shell/loader.js renderMeta 填入 -->
+        <section class="panel" aria-labelledby="h-set-athlete">
+          <h2 class="panel-title" id="h-set-athlete">學員與連線</h2>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="setting-name">學員</span>
+            </div>
+            <div class="setting-control">
+              <span class="setting-value" id="settings-athlete">—</span>
+            </div>
+          </div>
+
+          <div class="setting-row" id="settings-notice-row" hidden>
+            <div class="setting-label">
+              <span class="setting-name">連線方式</span>
+              <span class="setting-hint" id="settings-notice"></span>
+            </div>
+          </div>
         </section>
       </section>
 
@@ -537,7 +544,16 @@
     <aside class="coach-panel" id="coach-panel" data-online-only aria-label="AI 教練">
       <div class="coach-head">
         <h2 class="coach-title">AI 教練</h2>
-        <!-- 回看過去的 AI 分析報告（不跑新的）；跑新分析在頂列「分析近況」 -->
+        <!-- 跑一次新的 AI 分析（js/shell/coach-frame.js）。2026-10-24 由頂列移進面板：分析結果本來就呈現在面板裡 -->
+        <button type="button" class="coach-analyze" id="analyze-btn" data-online-only title="AI 分析最近的訓練與身體狀況（約 1～2 分鐘，結果自動保存）">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path>
+            <path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path>
+          </svg>
+          <span>分析近況</span>
+        </button>
+        <!-- 回看過去的 AI 分析報告（不跑新的） -->
         <button type="button" class="coach-btn" id="coach-history" title="分析紀錄" aria-label="分析紀錄">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -633,14 +649,6 @@
       <span class="tab-text">配速</span>
     </a>
   </nav>
-
-  <!-- AI 教練浮動按鈕（<768px 顯示，位於分頁列上方） -->
-  <button type="button" class="coach-fab" id="coach-fab" data-online-only aria-label="開啟 AI 教練">
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"
-      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <use href="#icon-bubble"></use>
-    </svg>
-  </button>
 
   <!-- 平板／手機面板開啟時的遮罩 -->
   <div class="coach-scrim" id="coach-scrim" data-online-only hidden></div>
