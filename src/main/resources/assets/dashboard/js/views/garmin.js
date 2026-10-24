@@ -1,7 +1,7 @@
 /**
  * garmin.js — Garmin 網頁式卡片牆（/api/garmin-cards）
  *
- * 趨勢頁「Garmin 數據」類別與首頁「體能狀況」共用同一組卡片：GARMIN_CARD_DEFS
+ * 趨勢頁「Garmin 數據」類別與首頁「體能狀態」共用同一組卡片：GARMIN_CARD_DEFS
  * 是唯一的卡片定義，每張卡的 render(card) 吃 API 回傳裡對應的那一塊。
  * 版面仿 Garmin Connect 網頁（2026-10-22 Fu 提供的截圖）：卡片標題、主數字、
  * 環形／分段量表或日內小圖、底部說明。

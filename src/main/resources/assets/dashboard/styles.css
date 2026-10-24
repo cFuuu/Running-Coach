@@ -208,7 +208,7 @@
 
   /* 首頁區塊的類別色（標題列底色、框線、文字、區塊標題左側短條）。
      顏色代表「這塊屬於哪一類數據」，是分類不是評價（2026-10-22 Fu 指定）：
-     綜覽淺藍、訓練負荷橘、體能狀況紫、戰力綜覽綠、當週課表深藍、近期活動黃。 */
+     綜覽淺藍、訓練負荷橘、體能狀態紫、戰力綜覽綠、當週課表深藍、近期活動黃。 */
   --cat-overview-bg: #dcf1f9;
   --cat-overview-border: #b8e0ef;
   --cat-overview-text: #155e75;
@@ -1957,7 +1957,7 @@ body.coach-open .coach-panel {
   gap: 12px;
 }
 
-/* 指標卡片：一列 2 張；體能狀況區塊夠寬（佔滿整欄）時一列 4 張 */
+/* 指標卡片：一列 2 張；體能狀態區塊夠寬（佔滿整欄）時一列 4 張 */
 .home-cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2022,7 +2022,7 @@ body.coach-open .coach-panel {
   --fs-md: 16px;
   --fs-lg: 19px;
   --fs-xl: 24px;
-  /* 2026-10-22：34 → 28，與綜覽、體能狀況、當週課表的主數字（24–28px）一致 */
+  /* 2026-10-22：34 → 28，與綜覽、體能狀態、當週課表的主數字（24–28px）一致 */
   --fs-2xl: 28px;
   font-size: var(--fs-md);
 }
@@ -2064,7 +2064,7 @@ body.coach-open .coach-panel {
 }
 
 /* 卡片標題：與數字拉開層級但不能小到要瞇眼看。2026-10-22 由 19px 降為 15px，
-   與體能狀況、當週課表的卡片標題（gc-title、pw-tile-label）同一級 */
+   與體能狀態、當週課表的卡片標題（gc-title、pw-tile-label）同一級 */
 #view-home .kpi-label,
 #view-home .gc-title {
   font-size: var(--fs-sm);
@@ -2139,7 +2139,7 @@ body.coach-open .coach-panel {
   color: var(--hdr-text);
 }
 
-/* Garmin 卡片放在首頁區塊裡時，標題列也套用該區塊的類別色（訓練負荷橘、體能狀況紫），
+/* Garmin 卡片放在首頁區塊裡時，標題列也套用該區塊的類別色（訓練負荷橘、體能狀態紫），
    與同區的指標卡一致（.gc-card 內距 12px） */
 #block-load .gc-card>.gc-head,
 #block-body .gc-card>.gc-head {
@@ -2313,7 +2313,7 @@ body.coach-open .coach-panel {
   font-size: var(--fs-xs);
 }
 
-/* ---- Garmin 卡片牆（views/garmin.js）：趨勢頁「Garmin 數據」與首頁體能狀況共用 ----
+/* ---- Garmin 卡片牆（views/garmin.js）：趨勢頁「Garmin 數據」與首頁體能狀態共用 ----
    版面仿 Garmin Connect 網頁：固定高度的小卡、標題在上、量表置中。
    一列張數隨容器寬度自動調整（手機兩張）。 */
 .gc-grid {

@@ -3,7 +3,7 @@
  *
  * 固定看「現在」，不吃頂列的時間範圍——會隨範圍變動的走勢都在趨勢頁。
  * 6 個區塊，依「回答什麼問題」分（分類見 docs/dev/FRONTEND_REFACTOR.md 階段 6）：
- *   綜覽（今日課表＋綜合整備狀態／本週訓練狀況＋賽事倒數）、訓練負荷、體能狀況、
+ *   綜覽（今日課表＋綜合整備狀態／本週訓練狀況＋賽事倒數）、訓練負荷、體能狀態、
  *   當週課表、戰力綜覽、近期活動
  * 區塊的順序與顯隱由使用者自訂（core/customize.js，偏好 key 'home'）。
  *
@@ -29,12 +29,13 @@ import { renderSidebarSync } from '../shell/sync.js';
 
 // ------------------------------------------------------------ 區塊版面
 
+// 預設順序（2026-10-24 Fu）；名稱與各區塊標題一致，自訂面板顯示的就是這些名稱
 var HOME_BLOCKS = [
-  { key: 'today', label: '綜覽' },
-  { key: 'load', label: '訓練負荷' },
-  { key: 'body', label: '體能狀況' },
+  { key: 'today', label: '學員檔案' },
   { key: 'week', label: '當週課表' },
-  { key: 'ability', label: '戰力綜覽' },
+  { key: 'load', label: '訓練負荷' },
+  { key: 'body', label: '體能狀態' },
+  { key: 'ability', label: '跑力綜覽' },
   { key: 'recent', label: '近期活動' }
 ];
 
@@ -748,17 +749,17 @@ export function renderHomeLoad() {
   node.appendChild(cards);
 }
 
-// ------------------------------------------------------------ 體能狀況卡片
+// ------------------------------------------------------------ 體能狀態卡片
 
-// 首頁體能狀況要放的 Garmin 卡片（2026-10-22 Fu 指定）：原有四張＋身體能量指數＋健康狀態
-// （健康狀態取代原本的最大攝氧量，VO2max 仍在趨勢頁）。
+// 首頁體能狀態要放的 Garmin 卡片（2026-10-22 Fu 指定）：原有四張＋身體能量指數＋健康狀態
+// （健康狀態取代原本的最大攝氧量，VO2max 仍在趨勢頁）。陣列順序就是顯示順序（2026-10-24 Fu 調整）。
 // 卡片本身與趨勢頁「Garmin 數據」共用 views/garmin.js，這裡只決定放哪幾張。
-var HOME_GARMIN_KEYS = ['hrv', 'heart_rate', 'sleep', 'training_readiness', 'body_battery', 'health_status'];
+var HOME_GARMIN_KEYS = ['hrv', 'sleep', 'heart_rate', 'training_readiness', 'body_battery', 'health_status'];
 
 export function renderHomeBody() {
   var node = $('kpi-strip');
   if (!node) return;
-  renderGarminWall(node, state.todayKpi && state.todayKpi.garminCards, HOME_GARMIN_KEYS, '載入體能狀況');
+  renderGarminWall(node, state.todayKpi && state.todayKpi.garminCards, HOME_GARMIN_KEYS, '載入體能狀態');
 }
 
 /**
