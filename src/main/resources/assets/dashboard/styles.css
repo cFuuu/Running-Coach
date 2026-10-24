@@ -7778,6 +7778,7 @@ button.recent-row .rc-dist {
 
 .cal-title {
   margin: 0;
+  white-space: nowrap;
   font-size: var(--fs-lg);
   font-weight: 700;
   color: var(--text);
@@ -7790,10 +7791,143 @@ button.recent-row .rc-dist {
   flex: none;
 }
 
+.cal-month-picker {
+  position: relative;
+}
+
+.cal-month-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.cal-month-short {
+  display: none;
+}
+
+.cal-month-trigger svg {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+}
+
+.cal-month-trigger:hover,
+.cal-month-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+/* 月份面板：右緣對齊按鈕（按鈕在標題列最右側），往下展開 */
+.cal-month-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  width: 264px;
+  max-width: calc(100vw - 32px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px var(--panel-shadow);
+}
+
+.cal-month-panel[hidden] {
+  display: none;
+}
+
+.cal-month-year {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.cal-month-year-label {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-month-year-btn {
+  width: 36px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.cal-month-year-btn:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.cal-month-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cal-month-cell {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.cal-month-cell:hover {
+  border-color: var(--accent);
+}
+
+/* 今天所在月份：只描邊；目前選到的月份：實心 */
+.cal-month-cell.is-today {
+  border-color: var(--accent);
+}
+
+.cal-month-cell.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.cal-month-today {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  margin-top: 8px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.cal-month-today:hover {
+  background: var(--accent-soft);
+}
+
 .cal-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 28px;
+  gap: 6px 44px;
   margin-bottom: 12px;
 }
 
@@ -8220,8 +8354,20 @@ button.recent-row .rc-dist {
 
 /* 手機：格子結構同桌機，膠囊縮小、最多 2 筆＋「+N」、空的課表膠囊只留外框 */
 @media (max-width: 600px) {
+  .cal-month-full {
+    display: none;
+  }
+
+  .cal-month-short {
+    display: inline;
+  }
+
+  .cal-month-trigger {
+    padding: 0 8px;
+  }
+
   .cal-stats {
-    gap: 4px 18px;
+    gap: 4px 30px;
   }
 
   .cal-stat-value {

@@ -260,9 +260,9 @@ function monthDays(range) {
   });
 }
 
-/** 當月合計：跑量（跑步類 activity_type，含暖身）、活動次數（暖身併入主課不另計）、各運動種類合計。 */
+/** 當月合計：跑量（跑步類 activity_type，含暖身）、活動次數與課表完成堂數（暖身併入主課不另計）、各運動種類合計。 */
 function monthTotals(range) {
-  var totals = { runKm: 0, count: 0, bySport: {} };
+  var totals = { runKm: 0, count: 0, planDone: 0, bySport: {} };
   monthDays(range).forEach(function (day) {
     var acts = day.activities || [];
     var present = {};
@@ -277,6 +277,8 @@ function monthTotals(range) {
       if (a.warmup_for_activity_id && present[a.warmup_for_activity_id]) return;
       t.count += 1;
       totals.count += 1;
+      var matchState = (a.plan_match || {}).state;
+      if (matchState === 'exact' || matchState === 'inferred') totals.planDone += 1;
     });
   });
   return totals;
@@ -413,6 +415,7 @@ export function renderCalendarBody() {
   nextBtn.setAttribute('aria-label', '下個月');
   nextBtn.addEventListener('click', function () { shiftCalendarMonth(1); });
   nav.appendChild(prevBtn);
+  nav.appendChild(buildMonthPicker(state.calendarMonth, today.slice(0, 7)));
   nav.appendChild(nextBtn);
   head.appendChild(nav);
   node.appendChild(head);
@@ -422,8 +425,9 @@ export function renderCalendarBody() {
   var stats = h('div', 'cal-stats');
   stats.appendChild(statBlock('本月跑量', C.formatNumber(totals.runKm, 1), ' km'));
   stats.appendChild(statBlock('本月活動', String(totals.count), ' 次'));
+  stats.appendChild(statBlock('課表完成', String(totals.planDone), ' 堂'));
   var streak = state.calendarStreak && state.calendarStreak.today === today ? state.calendarStreak.weeks : undefined;
-  stats.appendChild(statBlock('連續訓練',
+  stats.appendChild(statBlock('連續紀錄',
     streak === undefined ? '…' : (streak === null ? '—' : String(streak)),
     streak === undefined || streak === null ? null : ' 週'));
   node.appendChild(stats);
@@ -782,12 +786,106 @@ export function loadCalendarBody() {
   });
 }
 
+/**
+ * 直接跳到指定月份的選單：按鈕顯示目前月份，點開是「年份＋12 個月」的面板。
+ * 不用原生 <input type="month">——它的彈出面板外觀由瀏覽器決定，沒辦法跟 dashboard 的風格一致。
+ */
+function buildMonthPicker(currentMonth, todayMonth) {
+  var wrap = h('div', 'cal-month-picker');
+  var pickerYear = parseInt(currentMonth.slice(0, 4), 10);
+
+  var trigger = h('button', 'cal-month-trigger');
+  trigger.type = 'button';
+  trigger.setAttribute('aria-label', '選擇月份');
+  trigger.setAttribute('aria-haspopup', 'dialog');
+  trigger.setAttribute('aria-expanded', 'false');
+  // 手機寬度不夠放完整文字，改用精簡的「2026/10」（CSS 依寬度切換）
+  trigger.appendChild(h('span', 'cal-month-full', currentMonth.slice(0, 4) + ' 年 ' + parseInt(currentMonth.slice(5, 7), 10) + ' 月'));
+  trigger.appendChild(h('span', 'cal-month-short', currentMonth.slice(0, 4) + '/' + currentMonth.slice(5, 7)));
+  trigger.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">'
+    + '<path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" '
+    + 'stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  wrap.appendChild(trigger);
+
+  var panel = h('div', 'cal-month-panel');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', '選擇月份');
+  panel.hidden = true;
+  wrap.appendChild(panel);
+
+  function pick(yearMonth) {
+    close();
+    if (yearMonth !== state.calendarMonth) goToCalendarMonth(yearMonth);
+  }
+
+  function renderPanel() {
+    clear(panel);
+    var yearRow = h('div', 'cal-month-year');
+    var prevYear = h('button', 'cal-month-year-btn', '‹');
+    prevYear.type = 'button';
+    prevYear.setAttribute('aria-label', '前一年');
+    prevYear.addEventListener('click', function () { pickerYear -= 1; renderPanel(); });
+    var nextYear = h('button', 'cal-month-year-btn', '›');
+    nextYear.type = 'button';
+    nextYear.setAttribute('aria-label', '後一年');
+    nextYear.addEventListener('click', function () { pickerYear += 1; renderPanel(); });
+    yearRow.appendChild(prevYear);
+    yearRow.appendChild(h('span', 'cal-month-year-label', pickerYear + ' 年'));
+    yearRow.appendChild(nextYear);
+    panel.appendChild(yearRow);
+
+    var grid = h('div', 'cal-month-grid');
+    for (var m = 1; m <= 12; m++) {
+      var ym = pickerYear + '-' + (m < 10 ? '0' : '') + m;
+      var cell = h('button', 'cal-month-cell'
+        + (ym === currentMonth ? ' is-selected' : '') + (ym === todayMonth ? ' is-today' : ''), m + ' 月');
+      cell.type = 'button';
+      if (ym === currentMonth) cell.setAttribute('aria-current', 'true');
+      (function (target) { cell.addEventListener('click', function () { pick(target); }); }(ym));
+      grid.appendChild(cell);
+    }
+    panel.appendChild(grid);
+
+    var todayBtn = h('button', 'cal-month-today', '回到本月');
+    todayBtn.type = 'button';
+    todayBtn.addEventListener('click', function () { pick(todayMonth); });
+    panel.appendChild(todayBtn);
+  }
+
+  // 用事件路徑判斷：點年份按鈕會重畫面板，evt.target 此時已不在 DOM 裡，contains() 會誤判成點到外面
+  function onOutsideClick(evt) { if (evt.composedPath().indexOf(wrap) === -1) close(); }
+  function onKeydown(evt) { if (evt.key === 'Escape') { close(); trigger.focus(); } }
+
+  function open() {
+    pickerYear = parseInt(currentMonth.slice(0, 4), 10);
+    renderPanel();
+    panel.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onOutsideClick);
+    document.addEventListener('keydown', onKeydown);
+  }
+
+  function close() {
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onOutsideClick);
+    document.removeEventListener('keydown', onKeydown);
+  }
+
+  trigger.addEventListener('click', function () { if (panel.hidden) open(); else close(); });
+  return wrap;
+}
+
 export function shiftCalendarMonth(delta) {
   var d = new Date(state.calendarMonth + '-01T00:00:00Z');
   d.setUTCMonth(d.getUTCMonth() + delta);
+  goToCalendarMonth(d.toISOString().slice(0, 7));
+}
+
+function goToCalendarMonth(yearMonth) {
   // 換月後原本選的那天已不在畫面上，明細跟著收起，避免月曆顯示 10 月
   // 下方卻還停在 9 月某天的內容
   state.calendarSelectedDate = null;
   state.calendarLinkMessage = null;
-  navigate('calendar', d.toISOString().slice(0, 7));
+  navigate('calendar', yearMonth);
 }
