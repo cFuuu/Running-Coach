@@ -456,11 +456,28 @@ function recordsChart(points, opts) {
     return box.left + (p.elapsed_sec / maxElapsed) * box.width;
   }
 
+  // 停止：活動中途（前後都有配速）速度為 0 而沒有配速的點，等於「配速無限慢」，
+  // 與超出軸下限的慢配速一樣壓在最下緣，線不斷開；間歇跑組間站著休息就是這種點
+  // （2026-10-24 Fu：原本每組休息都斷線）。起跑前、結束後的空值仍不畫。
+  function hasPace(p) { return typeof p.pace_sec_per_km === 'number' && isFinite(p.pace_sec_per_km); }
+  var firstPace = -1;
+  var lastPace = -1;
+  points.forEach(function (p, i) {
+    if (!hasPace(p)) return;
+    if (firstPace < 0) firstPace = i;
+    lastPace = i;
+  });
+  function isStopped(i) { return i > firstPace && i < lastPace && !hasPace(points[i]); }
+
   // 左軸：配速（上快下慢 → 反轉）
   if (paceExtent) {
     drawYTicks(svg, box, { min: paceExtent.max, max: paceExtent.min }, formatPace, 4);
-    svg.appendChild(buildBrokenPath(points, xOf, function (p) {
-      if (typeof p.pace_sec_per_km !== 'number' || !isFinite(p.pace_sec_per_km)) return null;
+    drawStoppedBands(svg, box, points, xOf, function (i) {
+      return isStopped(i) || (hasPace(points[i]) && points[i].pace_sec_per_km > paceExtent.max);
+    });
+    svg.appendChild(buildBrokenPath(points, xOf, function (p, i) {
+      if (isStopped(i)) return box.top + box.height;
+      if (!hasPace(p)) return null;
       var clamped = Math.min(Math.max(p.pace_sec_per_km, paceExtent.min), paceExtent.max);
       var ratio = (paceExtent.max - clamped) / (paceExtent.max - paceExtent.min);
       return box.top + box.height - ratio * box.height;
@@ -502,10 +519,12 @@ function recordsChart(points, opts) {
   // #session-body 內各圖共用「經過時間」這條軸）。
   var xs = points.map(xOf);
   var logicalXs = points.map(function (p) { return p.elapsed_sec; });
-  var tips = points.map(function (p) {
+  var tips = points.map(function (p, i) {
     var parts = [formatDuration(p.elapsed_sec)];
     if (typeof p.pace_sec_per_km === 'number' && isFinite(p.pace_sec_per_km)) {
       parts.push(formatPace(p.pace_sec_per_km) + '/km');
+    } else if (isStopped(i)) {
+      parts.push('停止');
     }
     if (typeof p.hr_bpm === 'number' && isFinite(p.hr_bpm)) {
       parts.push(p.hr_bpm + ' bpm');
@@ -516,6 +535,7 @@ function recordsChart(points, opts) {
   // 退回心率軸，兩者皆無則回傳 null（該點不畫圓點，但垂直線仍會畫出）。
   function yOfIndex(i) {
     var p = points[i];
+    if (paceExtent && isStopped(i)) return box.top + box.height;
     if (paceExtent && typeof p.pace_sec_per_km === 'number' && isFinite(p.pace_sec_per_km)) {
       var clamped = Math.min(Math.max(p.pace_sec_per_km, paceExtent.min), paceExtent.max);
       var ratio = (paceExtent.max - clamped) / (paceExtent.max - paceExtent.min);
@@ -532,16 +552,38 @@ function recordsChart(points, opts) {
 }
 
 /**
+ * 配速圖上「停止或慢到超出軸下限」的時段畫淡灰底（間歇跑組間休息一眼可辨）。
+ * 每段從前一點與第一點的中點畫到最後一點與後一點的中點，單一點也有寬度。
+ * @param {Function} isStop index → 該點是否屬於停止時段
+ */
+function drawStoppedBands(svg, box, points, xOf, isStop) {
+  var i = 0;
+  while (i < points.length) {
+    if (!isStop(i)) { i += 1; continue; }
+    var a = i;
+    while (i + 1 < points.length && isStop(i + 1)) i += 1;
+    var b = i;
+    var x0 = a > 0 ? (xOf(points[a - 1]) + xOf(points[a])) / 2 : xOf(points[a]);
+    var x1 = b < points.length - 1 ? (xOf(points[b]) + xOf(points[b + 1])) / 2 : xOf(points[b]);
+    svg.appendChild(el('rect', {
+      x: x0.toFixed(2), y: box.top, width: Math.max(1, x1 - x0).toFixed(2), height: box.height,
+      class: 'stopped-band'
+    }));
+    i += 1;
+  }
+}
+
+/**
  * 建立會在 null 處斷開的折線（缺值不補 0、不內插）。
  * @param {Array} items 資料點
  * @param {Function} xOf item → x
- * @param {Function} yOf item → y 或 null（null 代表此點缺值）
+ * @param {Function} yOf (item, index) → y 或 null（null 代表此點缺值）
  */
 function buildBrokenPath(items, xOf, yOf, className) {
   var d = '';
   var penDown = false;
-  items.forEach(function (item) {
-    var y = yOf(item);
+  items.forEach(function (item, index) {
+    var y = yOf(item, index);
     if (y === null || y === undefined || !isFinite(y)) {
       penDown = false; // 遇到缺值 → 抬筆，形成斷線
       return;

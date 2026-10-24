@@ -5262,6 +5262,12 @@ button.recent-row .rc-dist {
   stroke: var(--c-pace);
 }
 
+/* 配速圖的停止／慢到超出軸下限的時段（charts.js drawStoppedBands），間歇跑組間休息 */
+.stopped-band {
+  fill: var(--text-muted);
+  opacity: 0.12;
+}
+
 .line-hr {
   stroke: var(--c-hr);
 }
