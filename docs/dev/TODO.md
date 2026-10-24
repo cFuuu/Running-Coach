@@ -1138,7 +1138,7 @@
   - [ ] **另一台電腦**：本機舊歷史已無法 `pull`，需重新 clone，或執行 `git fetch origin && git reset --hard origin/main`（先確認沒有未推的變更）；該機的 `user.email` 也要改為 noreply
   - [ ] 建議 Fu：全域 `git config --global user.email` 改為 noreply，並在 GitHub Settings → Emails 開啟「Keep my email addresses private」與「Block command line pushes that expose my email」
 
-- **📋 N-32 訓練紀錄嵌入路線地圖＋同步活動補逐點資料（2026-10-24 Fu 提出並確認方向，待實作；一併解決 N-9）**：訓練紀錄展開後顯示跑步路線。逐點資料加上經緯度，地圖與既有圖表共用同一份資料。Fu 表示通常到河濱才開始記錄，起終點沒有隱私問題，不做隱私半徑。
+- **✅ N-32 訓練紀錄嵌入路線地圖＋同步活動補逐點資料（2026-10-24 Fu 提出，同日完成近一年；一併解決 N-9）**：訓練紀錄展開後顯示跑步路線。逐點資料加上經緯度，地圖與既有圖表共用同一份資料。Fu 表示通常到河濱才開始記錄，起終點沒有隱私問題，不做隱私半徑。
   - **2026-10-24 實測 `get_activity_details`**（真實帳號，探查腳本在 scratchpad，未進 repo）：
     | 活動 | 參數 | 耗時 | 回應 | `geoPolylineDTO.polyline` | `activityDetailMetrics` |
     |---|---|---|---|---|---|
@@ -1160,12 +1160,16 @@
     | 單場明細 API 回應 | — | 200 ms（區網）| 超過就檢查是否漏了降採樣 |
     | 經緯度精度 | — | 小數 5 位（約 1 m）| 更多位數只是 GPS 雜訊，還會讓離線匯出檔變大 |
   - **實作步驟**：
-    - [ ] ① `fit_parser` 的 `record` 多讀 `position_lat`／`position_long`（單位是 semicircles，乘 `180 / 2^31` 換成度）；`activity_records` 加 `lat`／`lon`（`REAL`，可為 NULL：跑步機、游泳、室內活動沒有 GPS）
-    - [ ] ② `garmin_api_client.fetch_activity_details()`：打 `get_activity_details`，用 `metricsIndex` 把 `activityDetailMetrics` 轉成與 `fit_parser` 相同形狀的 records。**動工前先 dump 各欄位的實際單位**（`directSpeed` 是否為 m/s、`directRunCadence` 與 `directDoubleCadence` 哪個對應 `cadence_spm`、`sumDistance` 是否為公尺），不可只照 library 文件或 fixture 寫
-    - [ ] ③ `garmin_sync_runner` 同步跑步活動時，若該場沒有 `activity_records` 就補抓並寫入。抓取失敗不影響同步（比照 N-26），遇到 429 立即停止
-    - [ ] ④ 回填：歷史 FIT 匯入的 243 場用 FIT 重新匯入補座標（不需要 API）；API 同步、沒有逐點資料的場次（id 498 之後）用 ③ 分批補，每批之間留間隔
-    - [ ] ⑤ `/api/sessions/{id}` 的 `records.points` 多回傳 `lat`／`lon`；**MCP 工具不回傳座標**（教練判讀用不到，只會佔 context）
-    - [ ] ⑥ 前端：訓練紀錄展開後加一張地圖（Leaflet＋OpenStreetMap 圖磚，從 cdnjs 載入固定版本），路線依配速或心率區間上色，滑過圖表時在地圖上標出對應位置。沒有座標的場次不顯示地圖
-    - [ ] ⑦ 離線匯出（N-30）：圖磚需要網路，iPhone 離線時地圖畫不出來。預設**不匯出**座標，避免檔案變大卻用不到；要不要加開關，等 Fu 實際用過再決定
-  - **驗收**：真實 DB 抽 10/22 間歇課與 21 km 長跑，分別比對 Garmin Connect 網頁的路線形狀、距離、心率；確認資料庫增量與單場 API 回應時間在上限內；`assess_session_quality` 對 API 同步的場次恢復評估配速穩定度與心率漂移
-  - **待 Fu 確認**：取樣間隔用 10 秒（預設）還是 5 秒
+    - [x] ① `fit_parser` 的 `record` 多讀 `position_lat`／`position_long`（單位是 semicircles，乘 `180 / 2^31` 換成度）；`activity_records` 加 `lat`／`lon`（`REAL`，可為 NULL：跑步機、游泳、室內活動沒有 GPS）
+    - [x] ② `garmin_api_client.fetch_activity_details()` ＋ `garmin_sync_runner.normalize_detail_records()`，以 `metricsIndex` 對應欄位。**單位已實測**：同一場活動 600／1200 秒兩點與 FIT 完全一致——`sumElapsedDuration` 秒、`sumDistance` 公尺、`directSpeed` m/s、`directRunCadence` 為單腳步頻（同 FIT；`directDoubleCadence` 是雙腳）、經緯度已是度數
+    - [x] ③ 同步跑步活動時：沒有逐點資料就寫入 API 的逐點序列；已有 FIT 逐點資料但沒座標的只補經緯度（最近時間點、差 ≤5 秒），不覆寫 FIT 數值；已有座標不重抓。抓取失敗跳過該場，429 立即停止。耗時預估每場改計 2 次請求
+    - [x] ④ 回填近一年（`garmin_sync_runner --backfill-records-since 2025-10-24`）：82 場全部完成，新寫入 24 場的逐點 7,278 筆，另 58 場 FIT 逐點補經緯度 17,389 筆，共 24,667 點 100% 有座標，0 場略過。資料庫 17.6 → 18.5 MB（+0.8 MB）。回填前備份於 scratchpad `running_coach_before_n32.db`
+      - [ ] 更早的歷史（2025-10-24 前）尚未補。原訂用 FIT 重新匯入，但這台電腦找不到 Garmin 匯出包；可改用同一個指令走 API（每場 1 次請求，約 3 秒），或在有匯出包的電腦上做
+    - [x] ⑤ `get_session_detail(include_coords=...)`：只有 `/api/sessions/{id}` 開啟；**MCP 維持不帶座標**。整場沒有座標時不附欄位
+    - [x] ⑥ 前端 [`route-map.js`](../../src/main/resources/assets/dashboard/js/route-map.js)：展開列「圖表」分頁地圖在上、曲線在下，完整單場另有「路線」區塊；依本場配速或心率五分位分段上色（相對快慢，不是訓練區間）；滑過曲線時地圖標出同一時間點並顯示配速與心率
+      - **底圖改用 OpenStreetMap 官方圖磚**：原訂的 CARTO 實測已改成要 API key（圖磚印「API KEY REQUIRED」）；Google／Apple 地圖都要 key 與帳單帳戶。OSM 沒有免 key 的深色版，深色主題用 CSS 濾鏡反轉底圖
+      - 載不到 Leaflet（沒網路）時退回 SVG，只畫路線形狀並說明原因
+    - [x] ⑦ 離線匯出**改為預設含座標**（Fu 確認）：近一年檔 1.69 → 1.97 MB（+275 KB，與預估 +0.27 MB 相符）；`file://` 開啟時 OSM 圖磚回 200（沒有 Referer 也能取得）
+  - **驗收（2026-10-24）**：Playwright 對真實 DB × 1280／768／390 × 淺色／深色，無 console 錯誤、無橫向捲動；10/22 間歇課路線落在板橋第一運動場跑道上，滑到 15:30 時地圖與曲線同為 4:49/km、164 bpm；21 km 長跑完整單場路線完整；擋掉 cdnjs 時正確退回 SVG。單場明細 API：28 KB／16 ms、110 KB／31 ms（第一次冷查詢 328 ms），在 200 ms 上限內。API 同步場次（10/17、10/19、10/20）恢復可算心率漂移，`assessability.blocked` 為空。1073 項測試通過
+    - [ ] 與 Garmin Connect 網頁逐場比對路線形狀（Fu 目視）；iPhone 真機開離線檔（併入 N-30 ⑤）
+  - **取樣間隔**：維持 10 秒（預設，與現有逐點資料一致）。若之後覺得彎道太直，改 `DEFAULT_SAMPLE_EVERY_SEC` 並重跑回填即可
