@@ -13,7 +13,7 @@
 
 import * as C from '../charts.js';
 import { h, clear, showLoading, showUnavailable } from '../core/dom.js';
-import { todayISO } from '../core/format.js';
+import { todayISO, displayDate } from '../core/format.js';
 import { infoTip, hrvStatusMark, toneMark } from '../core/facts.js';
 import { HRV_STATUS_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 
@@ -164,7 +164,7 @@ function weekChecks(items) {
     var d = new Date(p.date + 'T00:00:00');
     var cell = h('span', 'gc-check' + (met ? ' is-met' : '') + (i === last7.length - 1 ? ' is-today' : ''),
       met ? '✓' : WEEKDAY[d.getDay()]);
-    cell.title = p.date + '：' + num(p.value) + (p.goal ? ' / ' + num(p.goal) : '');
+    cell.title = displayDate(p.date) + '：' + num(p.value) + (p.goal ? ' / ' + num(p.goal) : '');
     row.appendChild(cell);
   });
   return row;
@@ -375,7 +375,7 @@ function renderTrainingStatus(c, body) {
   var strip = h('div', 'gc-strip');
   (c.series || []).slice(-28).forEach(function (p) {
     var cell = h('span', 'gc-strip-cell ' + (TRAINING_STATUS_TONE[p.status] || 'gc-tone-gray'));
-    cell.title = p.date + '：' + (GARMIN_TRAINING_STATUS_LABEL[p.status] || p.status);
+    cell.title = displayDate(p.date) + '：' + (GARMIN_TRAINING_STATUS_LABEL[p.status] || p.status);
     strip.appendChild(cell);
   });
   if (strip.childNodes.length) body.appendChild(strip);
@@ -490,7 +490,7 @@ function renderIntensity(c, body) {
     var mins = byDate[iso];
     var cell = h('span', 'gc-check' + (mins ? ' is-met' : '') + (iso === c.date ? ' is-today' : ''),
       mins !== undefined ? String(mins) : WEEKDAY[d.getDay()]);
-    cell.title = iso + (mins !== undefined ? '：' + mins + ' 分鐘' : '');
+    cell.title = displayDate(iso) + (mins !== undefined ? '：' + mins + ' 分鐘' : '');
     row.appendChild(cell);
   }
   body.appendChild(row);
@@ -769,7 +769,7 @@ export function garminScoreTiles(data) {
     var tile = h('div', 'gc-tile' + (c ? '' : ' is-empty'));
     tile.appendChild(h('div', 'gc-tile-label', d.label));
     tile.appendChild(h('div', 'gc-tile-value', c ? GARMIN_TILE_VALUE[d.key](c) : '—'));
-    if (c && c.date) tile.title = d.label + '：' + c.date + ' 的資料';
+    if (c && c.date) tile.title = d.label + '：' + displayDate(c.date) + ' 的資料';
     grid.appendChild(tile);
   });
   return grid;

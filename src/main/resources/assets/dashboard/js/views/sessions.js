@@ -6,7 +6,7 @@
 import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, SOURCE_LABEL } from '../core/state.js';
 import { $, clear, h, showError, showLoading, showUnavailable, statCard, widthOf, wrapChart } from '../core/dom.js';
-import { fmtDelta, deltaClass, mondayOf, addDaysISO, dowLabel } from '../core/format.js';
+import { fmtDelta, deltaClass, mondayOf, addDaysISO, dowLabel, displayDate } from '../core/format.js';
 import { selectSession } from '../shell/range.js';
 import { navigate } from '../shell/router.js';
 
@@ -22,7 +22,7 @@ export function renderSessionPicker() {
   state.sessions.forEach(function (s) {
     var opt = document.createElement('option');
     opt.value = String(s.id);
-    opt.textContent = s.date + '　' + C.formatNumber(s.distance_km, 2) + ' km　'
+    opt.textContent = displayDate(s.date) + '　' + C.formatNumber(s.distance_km, 2) + ' km　'
       + (s.workout_type ? (WORKOUT_TYPE_LABEL[s.workout_type] || s.workout_type) : '未標記');
     if (s.id === state.selectedSessionId) opt.selected = true;
     select.appendChild(opt);
@@ -202,7 +202,7 @@ export function renderRecoveryImpact(target) {
     return;
   }
   node.appendChild(h('div', 'chart-note',
-    '訓練日 ' + impact.training_date + ' → 隔天 ' + nextDay.date + '（數值為隔天減訓練當天）'));
+    '訓練日 ' + displayDate(impact.training_date) + ' → 隔天 ' + displayDate(nextDay.date) + '（數值為隔天減訓練當天）'));
 
   var grid = h('div', 'stat-grid stat-grid-3');
   var hrvCard = statCard('HRV 夜間均值變化',

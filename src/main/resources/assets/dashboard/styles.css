@@ -4020,6 +4020,63 @@ button.recent-row .rc-dist {
   color: var(--text-muted);
 }
 
+/* 手機窄欄（2026-10-24 Fu）：
+   - 下場／目標賽事卡維持兩欄，加大上下間距；名稱與距離膠囊換行時，
+     膠囊與上（名稱）下（日期）等距，膠囊本身也加高一點。
+   - 全部賽事清單：日期改成小字放在名稱上方，名稱可用整列寬度，不會被擠到換行。 */
+@container page (max-width: 599px) {
+  .race-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 12px;
+  }
+
+  .race-card-label {
+    margin-bottom: 0;
+  }
+
+  .race-card-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 4px;
+  }
+
+  .race-card-name .race-distance {
+    margin-left: 0;
+    padding: 2px 10px;
+  }
+
+  /* 日期的 .today-note 自帶 margin-top 8px，疊在 gap 上會讓膠囊偏上，這裡只靠 gap */
+  .race-card > .today-note {
+    margin-top: 0;
+  }
+
+  .race-list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+    padding: 10px 12px;
+  }
+
+  .race-list-date {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: var(--fs-xs);
+  }
+
+  .race-list-name {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .race-list-days {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}
+
 /* 整備狀態判定膠囊：顏色＋圖示＋文字三重表達 */
 .readiness-pill {
   display: inline-flex;
@@ -8035,6 +8092,14 @@ button.recent-row .rc-dist {
     gap: 2px;
   }
 
+  /* 星期列與月曆格往左右延伸、吃掉卡片內距，只離卡片框 6px（2026-10-24 Fu）。
+     每天的格子與格間距不變，標題、統計、底部合計仍對齊原本內距 */
+  #panel-calendar .cal-dow-head,
+  #panel-calendar .cal-grid {
+    margin-left: calc(6px - var(--gap));
+    margin-right: calc(6px - var(--gap));
+  }
+
   .calendar-cell.cal-cell {
     min-height: 64px;
     padding: 3px 1px 4px;
@@ -8078,7 +8143,7 @@ button.recent-row .rc-dist {
     padding: 0;
   }
 
-  /* 手機格子窄：膠囊改顯示短數值（10 km 以上取整、時間改分鐘），見 calendar.js chipValueShort */
+  /* 手機格子窄：膠囊改顯示短數值（100 km 以上取整、未滿 1 小時改分鐘），見 calendar.js chipValueShort */
   .cal-chips .cal-val-full {
     display: none;
   }

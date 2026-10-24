@@ -17,7 +17,7 @@ import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFID
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark } from '../core/facts.js';
-import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel, raceDisplayName } from '../core/format.js';
+import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel, raceDisplayName, displayDate } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
 import { activityDots, firstRunningActivity } from './calendar.js';
@@ -123,7 +123,7 @@ function planBlockTitle(planned) {
   title.appendChild(h('span', null, '課表'));
   var source = planned.today || planned.tomorrow;
   if (source && source.created_at) {
-    title.appendChild(h('span', 'today-note', '（於' + source.created_at.slice(0, 10) + '更新）'));
+    title.appendChild(h('span', 'today-note', '（於' + displayDate(source.created_at.slice(0, 10)) + '更新）'));
   }
   return title;
 }
@@ -458,7 +458,7 @@ export function renderTodayReadinessBlock(readiness) {
     var latest = readiness && readiness.latest_evaluable;
     if (latest) {
       var lrow = h('div', 'today-note');
-      lrow.appendChild(document.createTextNode('最近一次可評估：' + latest.date + '　'));
+      lrow.appendChild(document.createTextNode('最近一次可評估：' + displayDate(latest.date) + '　'));
       lrow.appendChild(readinessPill(latest.readiness));
       block.appendChild(lrow);
     }
@@ -522,7 +522,7 @@ function raceCard(iconKind, label, race, extraClass) {
   }
   card.appendChild(days);
   card.appendChild(raceNameRow(race, 'race-card-name'));
-  card.appendChild(h('div', 'today-note', race.date));
+  card.appendChild(h('div', 'today-note', displayDate(race.date)));
   return card;
 }
 
@@ -542,7 +542,7 @@ function raceListPanel(all) {
   var list = h('div', 'race-list');
   all.forEach(function (race) {
     var row = h('div', 'race-list-row' + (race.is_target ? ' is-target' : ''));
-    row.appendChild(h('span', 'race-list-date', race.date));
+    row.appendChild(h('span', 'race-list-date', displayDate(race.date)));
     var name = raceNameRow(race, 'race-list-name');
     if (race.is_target) name.appendChild(h('span', 'race-target-tag', '目標'));
     row.appendChild(name);
@@ -610,8 +610,8 @@ function renderFreshness(data) {
   // 分開列出兩者，不能只挑其中一個日期配這個天數——挑錯就會出現
   // 「顯示活動日 09-04 卻標『今天』」這種自相矛盾的畫面（曾經發生過）。
   var parts = [];
-  if (f.activity_latest) parts.push('活動 ' + f.activity_latest);
-  if (f.wellness_latest) parts.push('身體數據 ' + f.wellness_latest);
+  if (f.activity_latest) parts.push('活動 ' + displayDate(f.activity_latest));
+  if (f.wellness_latest) parts.push('身體數據 ' + displayDate(f.wellness_latest));
   node.textContent = parts.length > 0
     ? '資料最後同步：' + parts.join('，')
     + (days === null || days === undefined ? '' : (days > 0 ? '（' + days + ' 天前）' : '（今天）'))
@@ -867,7 +867,7 @@ export function renderWeekStrip() {
     // 當週課表只看跑步；健走等其他活動不在這裡標點。暖身已併入主課，不另標一點
     var runs = day.activities.filter(function (act) { return act.is_running && !act.warmup_for_activity_id; });
     if (runs.length > 0) cell.appendChild(activityDots(runs));
-    cell.title = day.date + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
+    cell.title = displayDate(day.date) + '　' + (DAY_STATE_LABEL[day.day_state] || day.day_state);
     grid.appendChild(cell);
   });
   node.appendChild(grid);
@@ -1079,7 +1079,7 @@ function pbCard(pb) {
   var best = pb.records[0];
   card.appendChild(h('div', 'pb-time', C.formatDuration(best.time_sec)));
   card.appendChild(h('div', 'pb-pace', C.formatPace(best.pace_sec_per_km) + '/km'));
-  card.appendChild(h('div', 'pb-date', best.date));
+  card.appendChild(h('div', 'pb-date', displayDate(best.date)));
   card.appendChild(h('div', 'pb-vdot', 'VDOT ' + C.formatNumber(best.vdot, 1)));
   var name = h('div', 'pb-name', pbCardName(best));
   name.title = best.name || '';
@@ -1119,7 +1119,7 @@ function pbDetail(pb) {
     }
     row.appendChild(time);
     row.appendChild(h('span', 'pb-row-pace', C.formatPace(r.pace_sec_per_km) + '/km'));
-    row.appendChild(h('span', 'pb-row-date', r.date));
+    row.appendChild(h('span', 'pb-row-date', displayDate(r.date)));
     row.appendChild(h('span', 'pb-row-name', r.name || ''));
     row.appendChild(h('span', 'pb-row-vdot', 'VDOT ' + C.formatNumber(r.vdot, 1)));
     row.addEventListener('click', function () { navigate('sessions', r.id); });

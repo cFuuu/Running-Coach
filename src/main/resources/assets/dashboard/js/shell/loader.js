@@ -10,6 +10,7 @@ import { loadLoadSeries } from '../views/load.js';
 import { loadOverview } from '../views/overview.js';
 import { renderOrDefer } from './router.js';
 import { renderTrendsPage, showTrendsLoading } from '../views/trends.js';
+import { displayDate } from '../core/format.js';
 
 export function renderMeta() {
   var node = $('meta-info');
@@ -34,7 +35,7 @@ export function renderMeta() {
   var offline = offlineSnapshotInfo();
   if (offline) {
     // 離線快照：側邊列與頂列（手機沒有側邊列）都標資料時間，避免把舊資料當成今天
-    var label = '資料截至 ' + offline.at;
+    var label = '資料截至 ' + displayDate(offline.at);
     node.appendChild(h('span', 'badge badge-offline', label));
     var stamp = $('offline-stamp');
     if (stamp) {

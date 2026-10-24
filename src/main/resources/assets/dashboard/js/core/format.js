@@ -109,6 +109,16 @@ export function shortPlanNote(notes) {
 }
 
 /**
+ * 畫面上的日期一律寫成 YYYY/MM/DD（2026-10-24 Fu）。把字串裡所有 YYYY-MM-DD 換成斜線，
+ * 可以直接丟整句（「活動 2026-10-22，身體數據 …」）。只用在顯示：API、資料庫、
+ * 比較與計算仍用 ISO 的 YYYY-MM-DD，aria-label 也不必換。
+ */
+export function displayDate(text) {
+  if (text === null || text === undefined) return '';
+  return String(text).replace(/(\d{4})-(\d{2})-(\d{2})/g, '$1/$2/$3');
+}
+
+/**
  * 畫面用的賽事名稱：拿掉開頭的西元年（「2026 長榮馬拉松」→「長榮馬拉松」）。
  * 顯示處旁邊都有日期，年份是贅字，手機上還會擠到換行。只影響顯示，學員檔原文不動；
  * 呼叫端應把完整名稱放在 title。拿掉後是空字串就保留原名。

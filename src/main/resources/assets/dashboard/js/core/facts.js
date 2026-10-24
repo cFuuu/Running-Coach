@@ -5,6 +5,7 @@
 import * as C from '../charts.js';
 import { CONFIDENCE_LABEL, HRV_STATUS_MARK } from './state.js';
 import { $, clear, h } from './dom.js';
+import { displayDate } from './format.js';
 
 /**
  * 把 data_confidence.fact() 的三欄位輸出（{value, source, confidence}）
@@ -181,7 +182,7 @@ export function confBadge(fact) {
   var badge = h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level);
   var biases = (fact && fact.confidence && fact.confidence.biases || [])
     .map(function (b) { return b.detail; }).join('；');
-  badge.title = ((fact && fact.source) || '') + (biases ? '　' + biases : '');
+  badge.title = displayDate(((fact && fact.source) || '') + (biases ? '　' + biases : ''));
   return badge;
 }
 

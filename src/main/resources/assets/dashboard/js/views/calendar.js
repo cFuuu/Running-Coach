@@ -12,7 +12,7 @@ import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, activityColorVar, DAY_STATE_LABEL } from '../core/state.js';
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
-import { sundayOf, mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote, raceDisplayName } from '../core/format.js';
+import { sundayOf, mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote, raceDisplayName, displayDate } from '../core/format.js';
 import { infoTip } from '../core/facts.js';
 import { sportOf, sportIconNode, SPORT_KEYS, SPORT_LABEL } from '../core/sport-icons.js';
 import { navigate, renderOrDefer } from '../shell/router.js';
@@ -112,18 +112,16 @@ export function chipValue(distanceKm, durationSec) {
 }
 
 /**
- * 手機格子窄（文字只剩約 3 個數字寬），chipValue 的短版：10 公里以上取整數（15.2 → 15）；
- * 時間未滿 100 分顯示分鐘（1.0h → 60m、45:00 → 45m），以上取整小時。完整值看膠囊 title 與當日明細。
+ * 手機格子窄，chipValue 的短版（2026-10-24 Fu：至少保留十位、個位與小數點）：
+ * 距離 100 公里以下照常一位小數，100 公里以上才取整數；時間未滿 1 小時顯示分鐘（45:00 → 45m，
+ * 5 個字放不下），1 小時以上同 chipValue（1.1h）。完整值看膠囊 title 與當日明細。
  */
 function chipValueShort(distanceKm, durationSec) {
   if (distanceKm && distanceKm > 0) {
-    return distanceKm >= 10 ? String(Math.round(distanceKm)) : C.formatNumber(distanceKm, 1);
+    return distanceKm >= 100 ? String(Math.round(distanceKm)) : C.formatNumber(distanceKm, 1);
   }
-  if (durationSec && durationSec > 0) {
-    if (durationSec < 6000) return Math.round(durationSec / 60) + 'm';
-    return Math.round(durationSec / 3600) + 'h';
-  }
-  return '—';
+  if (durationSec && durationSec > 0 && durationSec < 3600) return Math.round(durationSec / 60) + 'm';
+  return chipValue(distanceKm, durationSec);
 }
 
 /**
@@ -691,7 +689,7 @@ export function renderCalendarDay() {
 
   var daySec = h('div', 'cal-day');
   if (!day) {
-    daySec.appendChild(h('p', 'calendar-day-empty', date + '　沒有資料。'));
+    daySec.appendChild(h('p', 'calendar-day-empty', displayDate(date) + '　沒有資料。'));
   } else {
     var model = dayModel(day, state.calendarData.today, raceIndex());
     var head = h('div', 'calendar-day-head');
@@ -761,7 +759,7 @@ export function renderCalendarDay() {
   var weekDays = selectedWeekDays(date);
   var weekSec = h('div', 'calendar-week cal-week');
   weekSec.appendChild(h('h3', 'calendar-day-title',
-    '課表週　' + (weekDays ? planWeekLabel(weekDays) : planWeekRange(date).start + ' 起')));
+    '課表週　' + (weekDays ? planWeekLabel(weekDays) : displayDate(planWeekRange(date).start) + ' 起')));
   var weekBody = h('div', null);
   weekBody.id = 'calendar-week-body';
   if (weekDays) weekBody.appendChild(renderPlanWeek(weekDays, { selectedDate: date }));

@@ -6,7 +6,7 @@ import * as C from '../charts.js';
 import { state } from '../core/state.js';
 import { api, apiPost, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h } from '../core/dom.js';
-import { shortDateTime } from '../core/format.js';
+import { shortDateTime, displayDate } from '../core/format.js';
 import { loadHome } from '../views/home.js';
 import { loadCalendarBody } from '../views/calendar.js';
 
@@ -196,7 +196,7 @@ export function requestSync() {
     var summary = (plan.estimate && plan.estimate.summary) || (plan.days + ' 天');
     var lines = ['即將同步：' + summary];
     if (plan.start_date && plan.end_date) {
-      lines.push('區間：' + plan.start_date + ' ~ ' + plan.end_date);
+      lines.push('區間：' + displayDate(plan.start_date) + ' ~ ' + displayDate(plan.end_date));
     }
     if (plan.gap_truncated) {
       lines.push('⚠️ 距上次同步已超過 90 天，更早的缺口本次補不到，'
