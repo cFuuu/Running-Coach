@@ -1957,6 +1957,17 @@ body.coach-open .coach-panel {
   color: var(--text-muted);
 }
 
+/* 手機不顯示資料新鮮度那一行（2026-10-24 Fu），落後時看同步鈕上的狀態點；「自訂首頁」維持靠右 */
+@media (max-width: 767px) {
+  .home-freshness {
+    display: none;
+  }
+
+  #home-customize {
+    margin-left: auto;
+  }
+}
+
 .home-head .customize {
   margin-bottom: 0;
 }
