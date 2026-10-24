@@ -294,6 +294,13 @@ CREATE TABLE activity_laps (
     pace_sec_per_km INTEGER, avg_hr_bpm INTEGER, max_hr_bpm INTEGER,
     UNIQUE (activity_id, lap_index)
 );
+CREATE TABLE activity_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id INTEGER NOT NULL REFERENCES activities(id),
+    elapsed_sec INTEGER NOT NULL, distance_km REAL, hr_bpm INTEGER,
+    pace_sec_per_km INTEGER, cadence_spm INTEGER, altitude_m REAL, lat REAL, lon REAL,
+    UNIQUE (activity_id, elapsed_sec)
+);
 CREATE TABLE metric_coverage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     athlete_id INTEGER NOT NULL, metric_name TEXT NOT NULL,
@@ -314,10 +321,12 @@ class FakeApi:
     """假的 API client——回傳固定資料，不發網路請求。"""
 
     def __init__(self, activities=None, wellness=None, splits=None, performance=None, sex=None,
-                 hr_zones=None):
+                 hr_zones=None, details=None):
         self._activities = activities if activities is not None else [REAL_ACTIVITY]
         self._wellness = wellness or {}
         self._splits = splits or {}
+        self._details = details or {}
+        self.detail_calls = []
         self._performance = performance if performance is not None else {}
         self._sex = sex
         self._hr_zones = hr_zones or []
@@ -342,6 +351,10 @@ class FakeApi:
     def fetch_activity_splits(self, activity_id):
         self.split_calls.append(str(activity_id))
         return list(self._splits.get(str(activity_id), []))
+
+    def fetch_activity_details(self, activity_id):
+        self.detail_calls.append(str(activity_id))
+        return self._details.get(str(activity_id))
 
     def fetch_performance_metrics_raw(self, cdate):
         return dict(self._performance)
@@ -897,9 +910,141 @@ class TestSyncFetchesSplitsAndClassifies(unittest.TestCase):
         self.assertEqual(len(api.split_calls), first_calls, "第二次不應重抓分圈")
 
     def test_cost_estimate_accounts_for_splits(self):
-        """耗時預告須把分圈請求算進去，否則低估。"""
+        """耗時預告須把分圈與逐點資料請求算進去，否則低估。"""
         est = runner.estimate_sync_cost(7, expected_activities=5)
-        self.assertEqual(est["request_count"], 1 + 7 * 8 + 5)
+        self.assertEqual(est["request_count"], 1 + 7 * 8 + 5 * 2)
+
+
+def _details_payload(points: list[dict], reverse_descriptors: bool = False) -> dict:
+    """組出 `get_activity_details` 形狀的 payload。
+
+    `reverse_descriptors`：實測兩次呼叫的 `metricDescriptors` 順序不同，
+    測試用反向排列確認解析只依 `metricsIndex`。
+    """
+    keys = ["sumElapsedDuration", "sumDistance", "directHeartRate", "directSpeed",
+            "directRunCadence", "directDoubleCadence", "directElevation",
+            "directLatitude", "directLongitude"]
+    order = list(reversed(keys)) if reverse_descriptors else keys
+    descriptors = [{"metricsIndex": i, "key": k} for i, k in enumerate(order)]
+    metrics = [{"metrics": [p.get(k) for k in order]} for p in points]
+    return {"metricDescriptors": descriptors, "activityDetailMetrics": metrics}
+
+
+# 2026-10-24 真實活動 600 秒那點的實測值（與 FIT 逐秒資料一致）。
+# 經緯度改為合成值（repo 公開，不放真實路線座標），只保留實測的浮點位數。
+_REAL_POINT_600 = {
+    "sumElapsedDuration": 600.0, "sumDistance": 1543.3699951171875, "directHeartRate": 145.0,
+    "directSpeed": 2.5190000534057617, "directRunCadence": 84.0, "directDoubleCadence": 169.0,
+    "directElevation": 9.600000381469727, "directLatitude": 10.12345678901234,
+    "directLongitude": 100.98765432109876,
+}
+
+
+class TestNormalizeDetailRecords(unittest.TestCase):
+    """N-32：`get_activity_details` 逐點序列轉 `activity_records`。"""
+
+    def test_real_point_matches_fit_values(self):
+        """★ 同一場活動的 FIT 600 秒那筆：1.5434 km、145 bpm、397 s/km、84 spm。"""
+        rec = runner.normalize_detail_records(_details_payload([_REAL_POINT_600]))[0]
+        self.assertEqual(rec["elapsed_sec"], 600)
+        self.assertAlmostEqual(rec["distance_km"], 1.5434, places=4)
+        self.assertEqual(rec["hr_bpm"], 145)
+        self.assertEqual(rec["pace_sec_per_km"], 397)
+        self.assertEqual(rec["cadence_spm"], 84, "要用單腳步頻，不是 directDoubleCadence")
+        self.assertEqual(rec["lat"], 10.12346)
+        self.assertEqual(rec["lon"], 100.98765)
+
+    def test_descriptor_order_does_not_matter(self):
+        """★ 欄位順序每次呼叫都不同，只能依 metricsIndex 對應。"""
+        a = runner.normalize_detail_records(_details_payload([_REAL_POINT_600]))
+        b = runner.normalize_detail_records(
+            _details_payload([_REAL_POINT_600], reverse_descriptors=True)
+        )
+        self.assertEqual(a, b)
+
+    def test_missing_gps_gives_none_coords(self):
+        point = dict(_REAL_POINT_600, directLatitude=None, directLongitude=None)
+        rec = runner.normalize_detail_records(_details_payload([point]))[0]
+        self.assertIsNone(rec["lat"])
+        self.assertIsNone(rec["lon"])
+
+    def test_empty_payload(self):
+        self.assertEqual(runner.normalize_detail_records(None), [])
+        self.assertEqual(runner.normalize_detail_records({}), [])
+
+
+def _track(seconds: int, step: int = 1) -> list[dict]:
+    return [
+        dict(_REAL_POINT_600, sumElapsedDuration=float(t), sumDistance=t * 2.5,
+             directLatitude=10.0 + t * 1e-5, directLongitude=100.0 + t * 1e-5)
+        for t in range(0, seconds + 1, step)
+    ]
+
+
+class TestSyncActivityRecords(unittest.TestCase):
+    """N-32：同步時補逐點資料；已有 FIT 逐點資料者只補經緯度。"""
+
+    def setUp(self):
+        TestDedupByExternalId.setUp(self)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _activity_id(self):
+        return self.conn.execute("SELECT id FROM activities").fetchone()["id"]
+
+    def test_sync_writes_downsampled_records_with_coords(self):
+        api = FakeApi(details={"23997807612": _details_payload(_track(60))})
+        result = runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        rows = self.conn.execute(
+            "SELECT elapsed_sec, lat FROM activity_records ORDER BY elapsed_sec"
+        ).fetchall()
+        self.assertEqual([r["elapsed_sec"] for r in rows], [0, 10, 20, 30, 40, 50, 60])
+        self.assertTrue(all(r["lat"] is not None for r in rows))
+        self.assertEqual(result["records_synced"], 7)
+
+    def test_existing_fit_records_only_get_coords(self):
+        """★ FIT 的數值不被 API 覆寫，只補經緯度。"""
+        runner.sync(self.conn, 1, days=1, client=FakeApi(), today=self.today)
+        aid = self._activity_id()
+        for t in (0, 10, 20):
+            self.conn.execute(
+                "INSERT INTO activity_records (activity_id, elapsed_sec, hr_bpm) VALUES (?, ?, 999)",
+                (aid, t),
+            )
+        api = FakeApi(details={"23997807612": _details_payload(_track(30, step=4))})
+        result = runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        rows = self.conn.execute(
+            "SELECT elapsed_sec, hr_bpm, lat FROM activity_records ORDER BY elapsed_sec"
+        ).fetchall()
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(r["hr_bpm"] == 999 for r in rows))
+        self.assertTrue(all(r["lat"] is not None for r in rows))
+        self.assertEqual(result["record_coords_filled"], 3)
+
+    def test_activity_with_coords_not_refetched(self):
+        api = FakeApi(details={"23997807612": _details_payload(_track(60))})
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        runner.sync(self.conn, 1, days=1, client=api, today=self.today)
+        self.assertEqual(len(api.detail_calls), 1, "已有座標不應重抓")
+
+    def test_detail_fetch_failure_does_not_abort_sync(self):
+        class Failing(FakeApi):
+            def fetch_activity_details(self, activity_id):
+                raise runner.GarminFetchError("抓取失敗（Timeout）")
+
+        result = runner.sync(self.conn, 1, days=1, client=Failing(), today=self.today)
+        self.assertTrue(result["available"])
+        self.assertEqual(result["records_synced"], 0)
+
+    def test_rate_limit_during_details_aborts(self):
+        class RateLimited(FakeApi):
+            def fetch_activity_details(self, activity_id):
+                raise runner.GarminRateLimited("觸發 Garmin rate limit")
+
+        result = runner.sync(self.conn, 1, days=1, client=RateLimited(), today=self.today)
+        self.assertFalse(result["available"])
+        self.assertTrue(result["rate_limited"])
 
 
 # ============================================================================

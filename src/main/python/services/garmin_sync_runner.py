@@ -89,8 +89,12 @@
 （重訓/健走不分類——用跑步的配速門檻分類它們會產生誤導標籤）。此時依
 PLAN.md §1「缺前提時留空讓下游拒絕判讀」，屬正確行為。
 
-⚠️ 逐秒資料（`activity_records`）仍需 FIT，本模組不提供——故心率漂移與
-配速穩定度兩個維度對同步進來的活動仍不可評。
+## 逐點資料與經緯度（N-32，2026-10-24）
+
+跑步活動另打 `get_activity_details`，降到每 10 秒一點寫入
+`activity_records`（含經緯度，供路線地圖），補上 N-9 的缺口：同步進來的
+活動也能評心率漂移與配速穩定度。已有 FIT 逐點資料但沒有座標的場次，只
+補經緯度、不覆寫 FIT 的數值。
 
 ## Garmin 黑盒衍生值
 
@@ -118,8 +122,15 @@ from src.main.python.services.garmin_auth import GarminAuthError, GarminAuthRequ
 from src.main.python.services.warmup_links import link_warmups
 from src.main.python.services.fit_import_runner import (
     DEFAULT_CLASSIFIABLE_SPORTS,
+    DEFAULT_SAMPLE_EVERY_SEC,
     store_laps,
+    store_records,
     update_workout_type,
+)
+from src.main.python.services.fit_parser import (
+    COORD_DECIMALS,
+    downsample_records,
+    mps_to_pace_sec_per_km,
 )
 
 # 寫入時採用的 source 值。沿用 garmin_export 的理由見模組 docstring。
@@ -358,6 +369,57 @@ def normalize_laps(lap_dtos: list[dict]) -> list[dict]:
             }
         )
     return rows
+
+
+def normalize_detail_records(raw: dict | None) -> list[dict]:
+    """把 `get_activity_details` 的逐點序列轉成 `activity_records` 的欄位（N-32）。
+
+    欄位名稱對齊 `fit_parser.parse_fit()` 的 records，讓兩條路徑共用
+    `downsample_records()` 與 `store_records()`。回傳的是 API 原始密度，
+    呼叫端負責降採樣。
+
+    ⚠️ 每點的欄位位置以 `metricDescriptors[].metricsIndex` 對應——實測兩次呼叫
+    同一場活動，描述的順序不同。
+
+    2026-10-24 以同一場活動對照 FIT 逐秒資料，在 600／1200 秒兩點完全一致：
+    `sumElapsedDuration` 秒（含暫停，同 FIT 的 timestamp 差）、`sumDistance`
+    公尺、`directSpeed` m/s、`directRunCadence` 單腳步頻（同 FIT `cadence`；
+    `directDoubleCadence` 為雙腳）、`directElevation` 公尺、經緯度已是度數。
+    """
+    if not raw:
+        return []
+    index = {
+        d.get("key"): d.get("metricsIndex") for d in raw.get("metricDescriptors") or []
+    }
+    if index.get("sumElapsedDuration") is None:
+        return []
+
+    def pick(values: list, key: str):
+        i = index.get(key)
+        return values[i] if i is not None and i < len(values) else None
+
+    records = []
+    for point in raw.get("activityDetailMetrics") or []:
+        values = point.get("metrics") or []
+        elapsed = pick(values, "sumElapsedDuration")
+        if elapsed is None:
+            continue
+        distance_m = pick(values, "sumDistance")
+        lat = pick(values, "directLatitude")
+        lon = pick(values, "directLongitude")
+        records.append(
+            {
+                "elapsed_sec": int(elapsed),
+                "distance_km": round(distance_m / 1000, 4) if distance_m is not None else None,
+                "hr_bpm": _round_or_none(pick(values, "directHeartRate")),
+                "pace_sec_per_km": mps_to_pace_sec_per_km(pick(values, "directSpeed")),
+                "cadence_spm": _round_or_none(pick(values, "directRunCadence")),
+                "altitude_m": pick(values, "directElevation"),
+                "lat": round(lat, COORD_DECIMALS) if lat is not None else None,
+                "lon": round(lon, COORD_DECIMALS) if lon is not None else None,
+            }
+        )
+    return records
 
 
 # Training Readiness 快照選取（缺陷 C）：課表決策要問的是「今天能不能練」，
@@ -1289,13 +1351,13 @@ def estimate_sync_cost(days: int, expected_activities: int = 0) -> dict:
     成本結構：活動只打 1 次（`get_activities_by_date` 吃日期區間），
     wellness 則**逐日**各打 `_WELLNESS_ENDPOINTS_PER_DAY`（8）個端點，
     故基本總數 = 1 + days × 8。
-    另若要補抓分圈，**每場跑步各多 1 次**（`get_activity_splits`）——
-    `expected_activities` 即該筆數，未知時傳 0（僅低估分圈部分）。
+    另每場跑步**各多 2 次**（`get_activity_splits` 分圈、`get_activity_details`
+    逐點資料）——`expected_activities` 即該筆數，未知時傳 0（僅低估這部分）。
     每次呼叫之間有 `REQUEST_INTERVAL_SEC` 的節流間隔。
 
     預估值只計節流時間，未計網路往返，實際耗時會略長於此。
     """
-    request_count = 1 + days * _WELLNESS_ENDPOINTS_PER_DAY + expected_activities
+    request_count = 1 + days * _WELLNESS_ENDPOINTS_PER_DAY + expected_activities * 2
     estimated_seconds = request_count * REQUEST_INTERVAL_SEC
     minutes = int(estimated_seconds // _SECONDS_PER_MINUTE)
     seconds = int(estimated_seconds % _SECONDS_PER_MINUTE)
@@ -1410,9 +1472,23 @@ def sync(
 
     n_laps = 0
     n_classified = 0
+    record_stats = {"records_written": 0, "coords_filled": 0}
     if fetch_splits:
         try:
             n_laps, n_classified = _sync_splits(conn, athlete_id, api, activity_rows)
+            synced_ids = [
+                r["id"]
+                for r in (
+                    conn.execute(
+                        "SELECT id FROM activities WHERE athlete_id = ? AND external_id = ?",
+                        (athlete_id, a["external_id"]),
+                    ).fetchone()
+                    for a in activity_rows
+                    if a["external_id"]
+                )
+                if r is not None
+            ]
+            record_stats = sync_activity_records(conn, api, synced_ids)
         except GarminRateLimited as e:
             # 分圈抓到一半觸發 429：已寫入的活動保留，但中止並回報。
             conn.commit()
@@ -1436,6 +1512,8 @@ def sync(
         "metrics_coverage_updated": n_cov,
         "laps_synced": n_laps,
         "activities_classified": n_classified,
+        "records_synced": record_stats["records_written"],
+        "record_coords_filled": record_stats["coords_filled"],
         "warmup_links_changed": n_warmups,
         # HRmax／靜止心率有變動時列出新舊值：所有負荷與強度皆即時以新值重算。
         "hr_settings_changes": hr_settings_changes,
@@ -1500,6 +1578,90 @@ def _sync_splits(
     return n_laps, n_classified
 
 
+# 補座標時，FIT 逐點與 API 逐點的時間差在此秒數內才視為同一點。
+# API 長跑約每 4 秒一點，最近點最多差 2 秒；留一點餘裕。
+COORD_MATCH_TOLERANCE_SEC = 5
+
+
+def _fill_record_coords(conn: sqlite3.Connection, activity_id: int, api_records: list[dict]) -> int:
+    """既有 FIT 逐點資料只補經緯度，數值欄位不動。回傳補到座標的筆數。"""
+    located = [r for r in api_records if r["lat"] is not None and r["lon"] is not None]
+    if not located:
+        return 0
+    rows = conn.execute(
+        "SELECT id, elapsed_sec FROM activity_records WHERE activity_id = ? ORDER BY elapsed_sec",
+        (activity_id,),
+    ).fetchall()
+    filled = 0
+    j = 0
+    for row in rows:
+        t = row["elapsed_sec"]
+        # 兩邊都依時間排序，指標只往前走
+        while j + 1 < len(located) and abs(located[j + 1]["elapsed_sec"] - t) <= abs(
+            located[j]["elapsed_sec"] - t
+        ):
+            j += 1
+        nearest = located[j]
+        if abs(nearest["elapsed_sec"] - t) > COORD_MATCH_TOLERANCE_SEC:
+            continue
+        conn.execute(
+            "UPDATE activity_records SET lat = ?, lon = ? WHERE id = ?",
+            (nearest["lat"], nearest["lon"], row["id"]),
+        )
+        filled += 1
+    return filled
+
+
+def sync_activity_records(
+    conn: sqlite3.Connection, api: GarminApiClient, activity_ids: list[int]
+) -> dict:
+    """為跑步活動補逐點資料與經緯度（N-32）。
+
+    - 沒有逐點資料：寫入 API 的逐點序列（降到每 10 秒一點）
+    - 有逐點資料但沒有座標（歷史 FIT 匯入）：只補經緯度
+    - 已有座標：跳過，不打 API
+
+    ⚠️ 只處理 `DEFAULT_CLASSIFIABLE_SPORTS`（跑步）；跑步機等室內活動不在其中。
+    單場失敗只跳過該場；429 往外拋——限制以 IP 累積，繼續打只會延長封鎖。
+    """
+    stats = {"records_written": 0, "coords_filled": 0, "activities": 0, "skipped": 0}
+    for activity_id in activity_ids:
+        row = conn.execute(
+            "SELECT external_id, activity_type FROM activities WHERE id = ?", (activity_id,)
+        ).fetchone()
+        if row is None or row["activity_type"] not in DEFAULT_CLASSIFIABLE_SPORTS:
+            continue
+        if not row["external_id"]:
+            continue
+        state = conn.execute(
+            "SELECT COUNT(*) AS n, COUNT(lat) AS n_lat FROM activity_records WHERE activity_id = ?",
+            (activity_id,),
+        ).fetchone()
+        if state["n_lat"]:
+            continue
+
+        try:
+            raw = api.fetch_activity_details(row["external_id"])
+        except GarminRateLimited:
+            raise
+        except GarminFetchError:
+            stats["skipped"] += 1
+            continue
+
+        api_records = normalize_detail_records(raw)
+        if not api_records:
+            stats["skipped"] += 1
+            continue
+        if state["n"]:
+            stats["coords_filled"] += _fill_record_coords(conn, activity_id, api_records)
+        else:
+            records = downsample_records(api_records, DEFAULT_SAMPLE_EVERY_SEC)
+            stats["records_written"] += store_records(conn, activity_id, records)
+        stats["activities"] += 1
+        conn.commit()
+    return stats
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=(
@@ -1526,6 +1688,12 @@ def main() -> int:
         action="store_true",
         help="略過耗時確認直接同步（供排程等非互動情境使用）",
     )
+    ap.add_argument(
+        "--backfill-records-since",
+        metavar="YYYY-MM-DD",
+        default=None,
+        help="不做一般同步，改為此日期起的跑步活動補逐點資料與經緯度（N-32），每場 1 次 API 請求",
+    )
     args = ap.parse_args()
 
     if not Path(args.db_path).exists():
@@ -1541,6 +1709,9 @@ def main() -> int:
                 print("[!] 資料庫中沒有任何學員資料")
                 return 1
             athlete_id = row["id"]
+
+        if args.backfill_records_since:
+            return _backfill_records(conn, athlete_id, args)
 
         # 先跑一次 dry-run 取得計畫，把預計耗時告知使用者後再真的打 API。
         plan = sync(conn, athlete_id, args.days, today=None, dry_run=True)
@@ -1574,12 +1745,54 @@ def main() -> int:
             f"     分圈 {result['laps_synced']} 圈，"
             f"新完成分類 {result['activities_classified']} 場"
         )
+    if result.get("records_synced") or result.get("record_coords_filled"):
+        print(f"     逐點資料 {result['records_synced']} 筆，補經緯度 {result['record_coords_filled']} 筆")
     for change in result.get("hr_settings_changes") or []:
         print(
             f"[!] {change['field']} 依 Garmin 心率區間設定更新：{change['old']} → "
             f"{change['new']}（訓練負荷與強度判讀已全部以新值重算）"
         )
     print("[i] 重複執行同一區間不會產生重複列（由資料庫 UNIQUE 約束保證）。")
+    return 0
+
+
+def _backfill_records(conn: sqlite3.Connection, athlete_id: int, args) -> int:
+    """`--backfill-records-since`：補指定日期起的跑步活動逐點資料與經緯度。"""
+    since = datetime.date.fromisoformat(args.backfill_records_since)
+    ids = [
+        r["id"]
+        for r in conn.execute(
+            """
+            SELECT a.id FROM activities a
+            WHERE a.athlete_id = ? AND a.started_at >= ? AND a.external_id IS NOT NULL
+              AND a.activity_type IN ({})
+              AND NOT EXISTS (SELECT 1 FROM activity_records r
+                              WHERE r.activity_id = a.id AND r.lat IS NOT NULL)
+            ORDER BY a.started_at
+            """.format(",".join("?" * len(DEFAULT_CLASSIFIABLE_SPORTS))),
+            (athlete_id, since.isoformat(), *sorted(DEFAULT_CLASSIFIABLE_SPORTS)),
+        )
+    ]
+    # 每場一次請求，回應較大（實測 1–3.5 秒）再加節流間隔
+    print(f"[i] {since} 起有 {len(ids)} 場跑步缺經緯度，預估 {len(ids)} 次 API 請求、"
+          f"約 {len(ids) * 3 // 60 + 1} 分鐘")
+    if args.dry_run or not ids:
+        return 0
+    if not args.yes and not _confirm():
+        print("[i] 已取消，未打 API、未寫入資料庫。")
+        return 0
+    try:
+        api = GarminApiClient()
+    except (GarminAuthRequired, GarminAuthError) as e:
+        print(f"[!] {e}")
+        return 1
+    try:
+        stats = sync_activity_records(conn, api, ids)
+    except GarminRateLimited as e:
+        print(f"[!] {e}（已寫入的場次保留，稍後重跑會從缺的場次繼續）")
+        return 1
+    print(f"[OK] 處理 {stats['activities']} 場：新寫入逐點 {stats['records_written']} 筆，"
+          f"補經緯度 {stats['coords_filled']} 筆，略過 {stats['skipped']} 場")
     return 0
 
 

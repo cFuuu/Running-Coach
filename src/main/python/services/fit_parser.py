@@ -34,7 +34,7 @@ COORD_DECIMALS = 5
 DEFAULT_MIN_FILE_BYTES = 3000
 
 
-def _mps_to_pace_sec_per_km(speed_mps: float | None) -> int | None:
+def mps_to_pace_sec_per_km(speed_mps: float | None) -> int | None:
     """公尺/秒 → 每公里秒數。速度為 0 或 None 時回 None（靜止不該算配速）。"""
     if not speed_mps or speed_mps <= 0:
         return None
@@ -112,7 +112,7 @@ def parse_fit(source: bytes | BinaryIO) -> dict | None:
                 "elapsed_sec": int((ts - start_ts).total_seconds()),
                 "distance_km": round(distance_m / _M_PER_KM, 4) if distance_m is not None else None,
                 "hr_bpm": r.get("heart_rate"),
-                "pace_sec_per_km": _mps_to_pace_sec_per_km(speed),
+                "pace_sec_per_km": mps_to_pace_sec_per_km(speed),
                 "cadence_spm": r.get("cadence"),
                 "altitude_m": r.get("enhanced_altitude", r.get("altitude")),
                 "lat": _semicircles_to_deg(r.get("position_lat")),

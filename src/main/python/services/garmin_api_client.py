@@ -35,6 +35,10 @@ DEFAULT_REQUEST_INTERVAL_SEC = 1.0
 # 單次同步允許回溯的最大天數，避免手滑打出巨量請求。
 MAX_SYNC_DAYS = 365
 
+# 逐點序列（`get_activity_details`）的點數上限，沿用 Garmin 網頁的預設值。
+# 入庫時再降到每 10 秒一點，這裡只要不比 10 秒粗即可（2000 點可涵蓋 5.5 小時）。
+DETAIL_MAX_CHART_POINTS = 2000
+
 
 class GarminFetchError(Exception):
     """抓取資料失敗（逾時、rate limit、伺服器錯誤等）。"""
@@ -162,6 +166,19 @@ class GarminApiClient:
         if not result:
             return []
         return list(result.get("lapDTOs") or [])
+
+    def fetch_activity_details(self, activity_id: str | int) -> dict | None:
+        """取得單場活動的**逐點序列**（心率、速度、步頻、海拔、經緯度），N-32。
+
+        實測（2026-10-24）：原始資料為每秒一點，`maxchart` 以內原樣回傳，超過
+        則均勻降採樣（2 小時長跑回 1912 點，約每 4 秒一點）。`maxpoly=0` 不取
+        `geoPolylineDTO`——那是另一份幾何簡化過的路線，地圖改用逐點序列的經緯度，
+        避免同一份資料有兩個來源。
+
+        ⚠️ `metricDescriptors` 每次呼叫的順序都不同，讀 `activityDetailMetrics`
+        必須以 `metricsIndex` 對應，不可假設固定位置。
+        """
+        return self._call("get_activity_details", str(activity_id), DETAIL_MAX_CHART_POINTS, 0)
 
     # --- 每日身體數據 ---
     #

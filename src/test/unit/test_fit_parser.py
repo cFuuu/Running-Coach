@@ -9,7 +9,21 @@ from src.main.python.services.fit_parser import (
     assess_hr_quality,
     compute_hr_drift,
     downsample_records,
+    _semicircles_to_deg,
 )
+
+
+class TestSemicirclesToDeg(unittest.TestCase):
+    """N-32：FIT 經緯度單位是 semicircles，2^31 對應 180 度。"""
+
+    def test_converts_and_rounds_to_5_decimals(self):
+        self.assertEqual(_semicircles_to_deg(2**30), 90.0)
+        self.assertEqual(_semicircles_to_deg(-(2**30)), -90.0)
+        # 合成值：10.123456789 度 → semicircles → 回轉後取 5 位
+        self.assertEqual(_semicircles_to_deg(round(10.123456789 * 2**31 / 180)), 10.12346)
+
+    def test_none_stays_none(self):
+        self.assertIsNone(_semicircles_to_deg(None))
 
 
 def _rec(elapsed: int, hr: int | None = None, pace: int | None = 360) -> dict:
