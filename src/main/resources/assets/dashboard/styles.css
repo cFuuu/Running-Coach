@@ -5535,7 +5535,7 @@ button.recent-row .rc-dist {
 /* 摘要佔較寬的一格，資料品質一格 */
 .overview-strip {
   display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
 }
 
 .strip-cell {
@@ -5549,14 +5549,19 @@ button.recent-row .rc-dist {
 
 .strip-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  margin-bottom: 2px;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  margin-bottom: 10px;
+  padding: 0 0 8px 10px;
+  border-left: 4px solid var(--cat-overview-strong);
+  border-bottom: 1px solid var(--border);
 }
 
 .strip-line {
+  padding-left: 14px;
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }
@@ -7682,19 +7687,24 @@ button.recent-row .rc-dist {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
+/* 標題左側的類別色條比照首頁區塊標題（.panel-title） */
 .cal-title-wrap {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  padding-left: 10px;
+  border-left: 4px solid var(--cat-week-strong);
 }
 
 .cal-title {
   margin: 0;
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -8509,6 +8519,12 @@ button.recent-row .rc-dist {
 #view-sessions.stage-list #panel-session,
 #view-sessions.stage-detail #panel-session-list {
   display: none;
+}
+
+/* 場次清單的標題比照首頁區塊：左側類別色條（近期活動的黃） */
+#panel-session-list>.panel-title {
+  border-left: 4px solid var(--cat-recent-strong);
+  padding-left: 10px;
 }
 
 #view-sessions .detail-back {

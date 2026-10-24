@@ -54,7 +54,7 @@ export var VIEWS = {
   home:     { title: '首頁',         hasRange: false },
   calendar: { title: '行事曆',       hasRange: false },
   trends:   { title: '趨勢',         hasRange: true },
-  sessions: { title: '訓練紀錄',     hasRange: true },
+  sessions: { title: '活動紀錄',     hasRange: true },
   tools:    { title: '配速計算機',   hasRange: false },
   settings: { title: '系統設定',     hasRange: false }
 };
