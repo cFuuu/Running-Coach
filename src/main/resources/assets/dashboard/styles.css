@@ -9189,6 +9189,110 @@ button.recent-row .rc-dist {
   margin-top: 10px;
 }
 
+/* ---- 路線地圖（N-32）：展開列「圖表」分頁與完整單場共用 ---- */
+.slog-route {
+  margin-bottom: 14px;
+}
+
+.route-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.route-mode {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.route-mode-btn {
+  padding: 4px 12px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.route-mode-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.route-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.route-ramp {
+  display: inline-flex;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.route-ramp-step {
+  width: 16px;
+  height: 8px;
+}
+
+.route-map {
+  position: relative;
+  height: 280px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-sunken);
+  /* Leaflet 的圖層 z-index 到 400 以上，隔離成獨立堆疊，免得蓋住頂列與 AI 面板 */
+  isolation: isolate;
+  z-index: 0;
+}
+
+.route-map-offline {
+  height: auto;
+}
+
+/* 深色主題：OSM 沒有免 key 的深色圖磚，把圖磚反轉成深底（只動底圖，不動路線） */
+.route-map-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85);
+}
+
+.route-map-dark.leaflet-container {
+  background: #1c2127;
+}
+
+.route-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 280px;
+}
+
+.route-cursor-label {
+  min-height: 1.4em;
+  padding: 2px 8px 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.chart-block[hidden] {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .route-map {
+    height: 220px;
+  }
+}
+
 /* ---- 窄版（手機，或平板開著 AI 面板）：第一行 日期・課種・距離・配速，分圈小圖移到第二行 ---- */
 @container (max-width: 559px) {
   .slog-row {

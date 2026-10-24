@@ -7,6 +7,7 @@ import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, SOURCE_LABEL } from '../core/state.js';
 import { $, clear, h, showError, showLoading, showUnavailable, statCard, widthOf, wrapChart } from '../core/dom.js';
 import { fmtDelta, deltaClass, mondayOf, addDaysISO, dowLabel, displayDate } from '../core/format.js';
+import { hasRoute, renderRouteMap, linkChartToMap } from '../route-map.js';
 import { selectSession } from '../shell/range.js';
 import { navigate } from '../shell/router.js';
 
@@ -469,6 +470,18 @@ function renderExpandPanel(panel) {
     return;
   }
   if (expandTab === 'chart') {
+    if (hasRoute(detail)) {
+      // 地圖在上、曲線在下，滑過曲線時地圖標出同一時間點的位置
+      clear(panel);
+      var routeBox = h('div', 'slog-route');
+      var chartBox = h('div');
+      panel.appendChild(routeBox);
+      panel.appendChild(chartBox);
+      var map = renderRouteMap(routeBox, detail);
+      renderRecords(detail, chartBox);
+      linkChartToMap(chartBox, map);
+      return;
+    }
     renderRecords(detail, panel);
     // 沒有逐秒資料（近期活動常見）時，圖表分頁不留一片空白：說明下方接著畫分圈配速
     var hasRecords = detail.records && detail.records.available !== false
@@ -591,9 +604,22 @@ export function renderSessionFull() {
   renderSessionSummary(detail);
   renderLaps(detail);
   renderRecords(detail);
+  renderFullRoute(detail);
   renderHrDrift(detail);
   renderHrZones(detail);
   renderRecoveryImpact();
+}
+
+/** 完整單場的路線區塊：沒有座標（跑步機、舊資料）就整塊收起 */
+function renderFullRoute(detail) {
+  var node = $('route-map');
+  if (!node) return;
+  clear(node);
+  var block = node.closest('.chart-block');
+  var show = hasRoute(detail);
+  if (block) block.hidden = !show;
+  if (!show) return;
+  linkChartToMap($('records-chart'), renderRouteMap(node, detail));
 }
 
 /** 明細讀取失敗：展開列顯示錯誤；完整單場的摘要區也顯示（不清掉其他區塊的骨架） */

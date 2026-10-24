@@ -483,12 +483,18 @@ def list_sessions(
 
 
 def get_session_detail(
-    conn: sqlite3.Connection, session_id: int, athlete_id: int | None = None
+    conn: sqlite3.Connection,
+    session_id: int,
+    athlete_id: int | None = None,
+    include_coords: bool = False,
 ) -> dict | None:
     """單場詳細資料：摘要、心率區間、分圈、逐秒、心率漂移。查無此場回傳 None。
 
     每個子區塊都一定會出現在回傳裡，沒有資料時是 {"available": false, "reason": ...}
     而不是省略——前端才能顯示「為什麼沒有圖」而不是畫一張空圖。
+
+    `include_coords`：逐點資料是否附經緯度（路線地圖用，N-32）。只有 Dashboard
+    開啟；MCP 共用本函式，教練判讀用不到座標，帶上只會佔 context。
     """
     resolved = resolve_athlete_id(conn, athlete_id)
     sql = """
@@ -508,7 +514,7 @@ def get_session_detail(
     if row is None:
         return None
 
-    records = _fetch_records(conn, session_id)
+    records = _fetch_records(conn, session_id, include_coords)
 
     return {
         "id": row["id"],
@@ -690,9 +696,19 @@ def get_activity_plan_match(
     return match
 
 
-def _fetch_records(conn: sqlite3.Connection, session_id: int) -> list[dict]:
-    return [
-        {
+def _fetch_records(
+    conn: sqlite3.Connection, session_id: int, include_coords: bool = False
+) -> list[dict]:
+    rows = conn.execute(
+        "SELECT elapsed_sec, distance_km, hr_bpm, pace_sec_per_km, cadence_spm, altitude_m, "
+        "lat, lon FROM activity_records WHERE activity_id = ? ORDER BY elapsed_sec",
+        (session_id,),
+    ).fetchall()
+    # 整場都沒有座標（跑步機、舊資料）時不附欄位，前端據此不顯示地圖
+    with_coords = include_coords and any(r["lat"] is not None for r in rows)
+    records = []
+    for r in rows:
+        rec = {
             "elapsed_sec": r["elapsed_sec"],
             "distance_km": r["distance_km"],
             "hr_bpm": r["hr_bpm"],
@@ -700,12 +716,11 @@ def _fetch_records(conn: sqlite3.Connection, session_id: int) -> list[dict]:
             "cadence_spm": r["cadence_spm"],
             "altitude_m": r["altitude_m"],
         }
-        for r in conn.execute(
-            "SELECT elapsed_sec, distance_km, hr_bpm, pace_sec_per_km, cadence_spm, altitude_m "
-            "FROM activity_records WHERE activity_id = ? ORDER BY elapsed_sec",
-            (session_id,),
-        )
-    ]
+        if with_coords:
+            rec["lat"] = r["lat"]
+            rec["lon"] = r["lon"]
+        records.append(rec)
+    return records
 
 
 def _build_records_block(records: list[dict]) -> dict:

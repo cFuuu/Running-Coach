@@ -464,6 +464,24 @@ class TestSessionDetail(DashboardQueryTestCase):
         self.assertEqual(drift["drift_pct"], 10.0)
         self.assertEqual(drift["tier"], "standard")
 
+    def test_coords_only_when_requested(self):
+        """N-32：Dashboard 要座標畫地圖；MCP 共用同一函式但預設不帶，免得佔 context。"""
+        session_id = self._detail("測試晨跑")["id"]
+        self.conn.execute(
+            "UPDATE activity_records SET lat = 10.0, lon = 100.0 WHERE activity_id = ?",
+            (session_id,),
+        )
+        default = queries.get_session_detail(self.conn, session_id)["records"]["points"][0]
+        self.assertNotIn("lat", default)
+        point = queries.get_session_detail(self.conn, session_id, include_coords=True)[
+            "records"]["points"][0]
+        self.assertEqual((point["lat"], point["lon"]), (10.0, 100.0))
+
+    def test_no_coord_fields_when_activity_has_no_gps(self):
+        point = self._detail("測試晨跑")  # fixture 沒有座標
+        detail = queries.get_session_detail(self.conn, point["id"], include_coords=True)
+        self.assertNotIn("lat", detail["records"]["points"][0])
+
     def test_short_activity_reports_drift_unavailable(self):
         """共用 fixture 的 40 秒活動短於下限，應明確標為不可計算並附理由。"""
         drift = self._detail("測試晨跑")["hr_drift"]

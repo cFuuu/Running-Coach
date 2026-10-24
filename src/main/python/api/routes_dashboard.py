@@ -118,7 +118,7 @@ def read_session_detail(
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict:
-    detail = queries.get_session_detail(conn, session_id, athlete_id)
+    detail = queries.get_session_detail(conn, session_id, athlete_id, include_coords=True)
     if detail is None:
         raise HTTPException(status_code=404, detail=f"找不到 id={session_id} 的活動")
     return detail
