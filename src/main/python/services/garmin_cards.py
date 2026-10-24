@@ -261,7 +261,9 @@ def get_garmin_cards(
         "baseline_balanced_upper": "hrv_baseline_balanced_upper",
     })
     if hrv:
-        hrv["series"] = _series(w, "hrv_weekly_avg_ms", "hrv_ms")
+        # 每日平衡區間一併送出，前端用來畫 Garmin 風格的「區間帶＋7 天平均點」趨勢圖
+        hrv["series"] = _series(w, "hrv_weekly_avg_ms", "hrv_ms",
+                                "hrv_baseline_balanced_low", "hrv_baseline_balanced_upper")
         cards["hrv"] = hrv
 
     readiness = _card(w, "training_readiness_score", {

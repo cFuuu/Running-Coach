@@ -79,6 +79,17 @@ class TestGetGarminCards(unittest.TestCase):
         self.assertEqual([p["date"] for p in self.cards["sleep"]["series"]],
                          ["2026-10-19", "2026-10-21"])
 
+    def test_hrv_series_carries_daily_balanced_range(self):
+        for date, avg, low, upper in (("2026-10-22", 57, 52, 77), ("2026-10-23", 58, None, None)):
+            self.conn.execute(
+                "INSERT INTO daily_wellness (athlete_id, date, hrv_weekly_avg_ms, "
+                "hrv_baseline_balanced_low, hrv_baseline_balanced_upper, source, fetched_at) "
+                "VALUES (1, ?, ?, ?, ?, 'garmin_mcp', 'x')", (date, avg, low, upper))
+        series = garmin_cards.get_garmin_cards(self.conn, 1, "7d")["cards"]["hrv"]["series"]
+        self.assertEqual([(p["date"], p["hrv_baseline_balanced_low"], p["hrv_baseline_balanced_upper"])
+                          for p in series],
+                         [("2026-10-22", 52, 77), ("2026-10-23", None, None)])
+
     def test_steps_with_goal(self):
         self.assertEqual((self.cards["steps"]["value"], self.cards["steps"]["goal"]), (1306, 12360))
 
