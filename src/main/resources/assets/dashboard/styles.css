@@ -8191,19 +8191,21 @@ button.recent-row .rc-dist {
     gap: 2px;
   }
 
+  /* iPhone 系統字型的數字較寬，「15.2」差約一個數字寬（2026-10-24 Fu 選方案 B：每項縮一點）：
+     圖示 10→8px、圖示與數字間隔 1→0、內距 5→2px、字距 −0.2→−0.4px，合計騰出約 6px */
   .cal-chips .sport-chip {
-    gap: 1px;
+    gap: 0;
     min-width: 0;
     min-height: 16px;
-    padding: 0 3px 0 2px;
+    padding: 0 1px;
     font-size: 10.5px;
-    letter-spacing: -0.2px;
+    letter-spacing: -0.4px;
     margin: 2.5px;
   }
 
   .cal-chips .sport-icon {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
 
   .cal-chips .sport-chip.is-done {
