@@ -124,12 +124,21 @@ function sportChip(sport, text, extra) {
   return chip;
 }
 
+/**
+ * 膠囊上的賽事名稱拿掉開頭的西元年（「2026 長榮馬拉松」→「長榮馬拉松」），格子窄，年份是贅字。
+ * 只用在膠囊；tooltip 與當日明細保留完整名稱。拿掉後是空字串就保留原名。
+ */
+function chipRaceName(name) {
+  var short = String(name).replace(/^\s*(19|20)\d{2}\s*年?\s*/, '');
+  return short || name;
+}
+
 /** 空的課表膠囊（未到／未執行／賽事）。文字包在 .cal-ghost-text，手機上隱藏只留外框。 */
 function ghostChip(ghost) {
   var cls = ghost.kind === 'missed' ? 'is-missed' : (ghost.kind === 'race' ? 'is-race-planned' : 'is-planned');
   var chip = h('span', 'sport-chip sport-chip--' + ghost.sport + ' ' + cls + ' cal-ghost');
   if (ghost.kind === 'race') chip.appendChild(sportIconNode('race'));
-  chip.appendChild(h('span', 'cal-ghost-text', ghost.label));
+  chip.appendChild(h('span', 'cal-ghost-text', ghost.kind === 'race' ? chipRaceName(ghost.label) : ghost.label));
   chip.title = ghost.title || ghost.label;
   return chip;
 }
@@ -513,18 +522,15 @@ export function selectCalendarDate(date) {
 }
 
 /**
- * 標出選取的那天，以及它所屬課表週（週一到週日）的 7 格。
- * 月曆從週日排，所以一個課表週會跨兩列（週一～週六在上一列、週日在下一列）。
+ * 只框出選取的那天。所屬課表週不在月曆上標（2026-10-24 Fu）：
+ * 範圍已寫在明細的「課表週」標題，跨兩列的色塊反而雜。
  */
 function markCalendarSelection() {
   var grid = $('calendar-body') && $('calendar-body').querySelector('.calendar-grid');
   if (!grid) return;
   var selected = state.calendarSelectedDate;
-  var week = selected ? planWeekRange(selected) : null;
   Array.prototype.forEach.call(grid.querySelectorAll('.calendar-cell'), function (c) {
-    var d = c.dataset.date;
-    c.classList.toggle('is-selected', d === selected);
-    c.classList.toggle('in-plan-week', !!week && d >= week.start && d <= week.end);
+    c.classList.toggle('is-selected', c.dataset.date === selected);
   });
 }
 

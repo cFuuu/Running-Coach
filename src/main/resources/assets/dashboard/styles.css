@@ -1273,6 +1273,9 @@ body.coach-open .coach-panel {
     min-height: 52px;
     font-size: var(--fs-xs);
     text-align: center;
+    /* 4 字標籤（訓練紀錄）48px，欄內可用寬只有 47px，差 1px 就斷成「訓練紀／錄」
+       （2026-10-24 Fu）。不換行，溢出的半像素看不出來 */
+    white-space: nowrap;
   }
 
   .sidebar-foot {
@@ -4729,13 +4732,6 @@ button.recent-row .rc-dist {
 
 /* 目前在下方明細面板顯示的那一天。用外框而非底色，因為底色已經被
    day_state（完成／未執行／額外訓練）用掉了，再疊一層會蓋掉狀態資訊。 */
-/* 選取日所屬的課表週（週一到週日，會跨兩列）：底部一條強調色標記。
-   同樣不動底色，理由同下方的 is-selected。 */
-.calendar-cell.in-plan-week {
-  border-color: var(--accent-border);
-  box-shadow: inset 0 -3px 0 var(--accent);
-}
-
 .calendar-cell.is-selected {
   border-color: var(--accent);
   box-shadow: inset 0 0 0 2px var(--accent);
@@ -7489,12 +7485,6 @@ button.recent-row .rc-dist {
   /* 待確認（ambiguous）虛線色：淺色、深色用同一個琥珀色（2026-10-24 Fu：顏色要一致）。
      對白底 3.35、淺灰底 3.13、深色底 4.83，都達非文字元素 3:1 */
   --cal-pending-line: #bb810f;
-  /* 課表週格子底：淺色介於 surface-sunken 與 bg 之間（bg 太灰，2026-10-24 Fu） */
-  --cal-week-bg: #f2f4f7;
-}
-
-:root[data-theme="dark"] {
-  --cal-week-bg: var(--bg);
 }
 
 .cal-head {
@@ -7566,15 +7556,6 @@ button.recent-row .rc-dist {
   border-color: var(--accent);
 }
 
-/* 選取：課表週 7 格淡灰底＋頂端藍線；選取日 2px 藍框＋淡藍底。
-   週底刻意用灰不用藍，避免和選取日混在一起。格子底色已不承載課表狀態
-   （改由膠囊外框），所以淡底不會蓋掉資訊。 */
-.calendar-cell.cal-cell.in-plan-week {
-  border-color: var(--accent-border);
-  background: var(--cal-week-bg);
-  box-shadow: inset 0 3px 0 var(--accent);
-}
-
 /* 深色模式非本月：只降透明度時，深底上的格框和淡字跟本月格差不多，
    拿掉格底改虛線框，讓本月格「浮起來」 */
 :root[data-theme="dark"] .calendar-cell.cal-cell.is-outside-month {
@@ -7583,10 +7564,11 @@ button.recent-row .rc-dist {
   border-style: dashed;
 }
 
+/* 選取日：2px 藍框＋頂端 4px 藍線，不加底色（2026-10-24 Fu：只有框不夠明顯）。
+   hover 只有 1px 框 */
 .calendar-cell.cal-cell.is-selected {
   border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), inset 0 4px 0 var(--accent);
 }
 
 /* 寬版（L2）：月曆左、當日／課表週右。用 flex-wrap 而非斷點，
@@ -7643,8 +7625,11 @@ button.recent-row .rc-dist {
   --sport-chip-gap: var(--surface);
 }
 
+/* 每顆膠囊都預留「已執行」外框的 3.5px（沒外框的那圈透明），
+   外圍尺寸與數字基線才會一致（2026-10-24 Fu） */
 .cal-chips .sport-chip {
   justify-content: flex-start;
+  margin: 3.5px;
 }
 
 .cal-chip-text,
@@ -7718,6 +7703,7 @@ button.recent-row .rc-dist {
 
 .cal-foot-val {
   font-size: var(--fs-sm);
+  font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -7979,6 +7965,7 @@ button.recent-row .rc-dist {
     padding: 0 3px 0 2px;
     font-size: 10.5px;
     letter-spacing: -0.2px;
+    margin: 2.5px;
   }
 
   .cal-chips .sport-icon {
