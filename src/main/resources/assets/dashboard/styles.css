@@ -7923,7 +7923,13 @@ button.recent-row .rc-dist {
 }
 
 .cal-foot-item .sport-chip {
-  padding: 1px 6px;
+  padding: 2px 8px;
+}
+
+/* 底部合計的圖示比數字（15px）大一點才好辨認（2026-10-24 Fu） */
+.cal-foot-item .sport-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .cal-foot-val {
