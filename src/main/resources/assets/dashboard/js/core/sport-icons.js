@@ -17,7 +17,7 @@ export var SPORT_ICONS = {
   strength: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.6" y="6.5" width="3.2" height="11" rx="1.2" fill="currentColor" fill-opacity=".22"/><rect x="16.2" y="6.5" width="3.2" height="11" rx="1.2" fill="currentColor" fill-opacity=".22"/><path d="M2.6 9.5v5M21.4 9.5v5M7.8 12h8.4"/></svg>',
   walk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.1"><circle cx="12.8" cy="3.9" r="2.4" fill="currentColor" stroke="none"/><path d="M12.3 8.2 10 11.2l-.6 2.6M11.6 13.2 10 17.1l-1.2 3.9" stroke-opacity=".4"/><path d="M12.3 7.5 11.6 13.2l2 3.8 1 4M12.4 8.3l2 3 1.8 1.4"/></svg>',
   hike: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 19.5 8.6 9.6l3.3 5.1 2.6-3.6 7 8.4z" fill="currentColor" fill-opacity=".22"/><path d="M7.1 12.1 8.6 13.2l1.4-1.1"/><circle cx="17.5" cy="5" r="1.8" fill="currentColor"/></svg>',
-  bike: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.6" cy="16.2" r="3.6" fill="currentColor" fill-opacity=".22"/><circle cx="18.4" cy="16.2" r="3.6" fill="currentColor" fill-opacity=".22"/><path d="M5.6 16.2 9.4 9.4h5.9l3.1 6.8"/><path d="M9.4 9.4 12 16.2h1.2"/><path d="M8 6.8h3M14.3 6.2h2.3l-1.3 3.2"/></svg>',
+  bike: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="17.6" r="3.8" stroke-width="1.8" fill="currentColor" fill-opacity=".22"/><circle cx="19" cy="17.6" r="3.8" stroke-width="1.8" fill="currentColor" fill-opacity=".22"/><path stroke-width="1.6" stroke-opacity=".4" d="M5 17.6h5.8l6.4-6.4 1.8 6.4M10.8 17.6 8.2 10.4"/><circle cx="18" cy="5.4" r="2.3" fill="currentColor" stroke="none"/><path stroke-width="3.1" d="M8.2 9.8 14.4 7.8l2.8 3.6M8.2 9.8l4.6 2.6-2 5.2"/></svg>',
   swim: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="2.9" d="M3.4 13.4 12.6 12.4"/><circle cx="16.6" cy="12.2" r="2" fill="currentColor" stroke="none"/><path stroke-width="2.9" d="M11.2 12.2Q12.4 5 18.6 7.2"/><path stroke-width="1.8"  d="M2 16.8c1.7 0 1.7-1.3 3.3-1.3S7 16.8 8.6 16.8s1.7-1.3 3.4-1.3 1.7 1.3 3.4 1.3 1.6-1.3 3.3-1.3 1.7 1.3 3.3 1.3"/><path stroke-width="1.8" stroke-opacity=".4" d="M2 20.4c1.7 0 1.7-1.3 3.3-1.3S7 20.4 8.6 20.4s1.7-1.3 3.4-1.3 1.7 1.3 3.4 1.3 1.6-1.3 3.3-1.3 1.7 1.3 3.3 1.3"/></svg>',
   race: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.2 2.8 10.6 9M15.8 2.8 13.4 9"/><circle cx="12" cy="14.8" r="5.6" fill="currentColor" fill-opacity=".22"/><path d="m12 12.2.9 1.8 2 .3-1.4 1.4.3 2-1.8-.9-1.8.9.3-2-1.4-1.4 2-.3z" fill="currentColor" stroke-width="1"/></svg>',
   other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12.5h3.8l2.3-5.5 4 11 2.4-5.5h6.5"/></svg>'
@@ -30,7 +30,7 @@ export var SPORT_LABEL = {
   strength: '健身',
   walk: '健走',
   hike: '登山',
-  bike: '自行車',
+  bike: '騎乘',
   swim: '游泳',
   race: '賽事',
   other: '其他'
