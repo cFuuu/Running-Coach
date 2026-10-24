@@ -2012,11 +2012,13 @@ body.coach-open .coach-panel {
 /* 首頁字級放大一階、字重加粗（2026-10-21 Fu：首頁字太小也太細，要一眼看得清楚）。
    在 view 範圍重新定義字級 token，view 內所有用 var(--fs-*) 的元素自動跟著放大，
    不必逐一覆寫。2026-10-24 Fu：趨勢、行事曆、訓練紀錄的標題與內文都比照首頁，
-   所以四個主頁共用這一套；配速計算機與系統設定維持原本的 6 階。 */
+   所以四個主頁共用這一套；系統設定維持原本的 6 階。2026-10-24 Fu：配速計算機的字級與
+   排版也要與其他分頁一致，併入這一組。 */
 #view-home,
 #view-trends,
 #view-calendar,
-#view-sessions {
+#view-sessions,
+#view-tools {
   --fs-xs: 13px;
   --fs-sm: 15px;
   --fs-md: 16px;
@@ -5580,7 +5582,8 @@ button.recent-row .rc-dist {
    AI 面板時內容欄會少 360px，用視窗寬度判斷會在 1440px 螢幕上把圖表
    並排壓到看不清。收起面板時內容欄變寬，版面自動切回並排。 */
 #view-home,
-#view-trends {
+#view-trends,
+#view-tools {
   container: page / inline-size;
 }
 
@@ -6961,74 +6964,73 @@ button.recent-row .rc-dist {
 }
 
 /* ------------------------------------------------------------ 配速計算機（#/tools）
- * 手機優先：四張卡單欄由上而下（配速／田徑場／完成時間／跑步機）；≥900px 兩欄。
- * 標題列用首頁同一組類別色（--cat-*），左側短條與 icon 用該類的 strong 色。
+ * 與首頁／趨勢同一套：全寬面板（標題左側色條）裡放淡色標題列的小卡（同 .kpi-card），
+ * 字級用 #view-tools 重新定義過的 var(--fs-*)，主要數字 32px／700（同指標卡）。
+ * 窄螢幕單欄依序為配速／田徑場／完成時間／跑步機；內容欄夠寬時兩欄，田徑場獨占右欄。
  * 數字一律 tabular-nums，連動換算時欄寬不會跳動。
- * 計算機的內容不多，寬螢幕上限制內容寬度並置中，卡片才不會被拉成大片空白。
  */
-#tools-body {
-  /* width:100% 是必要的：#view-tools 是 flex 容器，只有 margin:auto 會縮成內容寬度 */
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-}
-
-.tools-intro {
-  margin: 0 0 12px;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
+.tools-main > .panel-title {
+  border-left: 4px solid var(--accent);
+  padding-left: 10px;
 }
 
 .tools-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--gap);
+  gap: 12px;
   align-items: start;
 }
 
-/* 寬螢幕：田徑場（展開後最高）獨占右欄，配速／完成時間／跑步機疊在左欄。
-   最後一列 1fr 吸收右欄多出的高度，左欄的卡片之間才不會被撐開 */
-@media (min-width: 900px) {
+.tools-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* 斷點看內容欄本身的寬度（開著 AI 面板時內容欄會少 360px），同首頁／趨勢 */
+@container page (min-width: 720px) {
   .tools-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    /* 最後一列 1fr 吸收右欄多出的高度，左欄的卡片之間才不會被撐開 */
     grid-template-rows: auto auto 1fr;
   }
 
-  .tools-grid>* {
+  .tools-grid > * {
     grid-column: 1;
   }
 
-  .tools-grid> :nth-child(2) {
+  .tools-grid > :nth-child(2) {
     grid-column: 2;
     grid-row: 1 / span 3;
   }
 }
 
-.tools-panel {
-  padding: 0;
+/* 卡片：外框同 .kpi-card；標題列貼齊上緣與左右邊，底色代表類別 */
+.tools-card {
+  min-width: 0;
   overflow: hidden;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
-.tools-panel-head {
+.tools-card-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 5px var(--gap) 5px 12px;
+  gap: 8px;
+  padding: 6px 12px 6px 14px;
   background: var(--tp-bg);
   border-bottom: 1px solid var(--tp-border);
-  box-shadow: inset 4px 0 0 var(--tp-strong);
   color: var(--tp-text);
 }
 
-.tools-panel-head svg {
+.tools-card-head svg {
   flex: none;
-  margin-left: 4px;
 }
 
-.tools-panel-title {
+.tools-card-title {
   margin: 0;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: inherit;
 }
@@ -7061,12 +7063,12 @@ button.recent-row .rc-dist {
   --tp-strong: var(--cat-ability-strong);
 }
 
-.tools-panel-body {
+.tools-card-body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 14px;
-  padding: var(--gap);
+  gap: 12px;
+  padding: 12px 14px;
 }
 
 .tools-row {
@@ -7077,7 +7079,7 @@ button.recent-row .rc-dist {
 }
 
 .tools-unit {
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -7088,20 +7090,20 @@ button.recent-row .rc-dist {
   margin-left: auto;
   padding: 2px;
   border: 1px solid var(--tp-border);
-  border-radius: 20px;
+  border-radius: 18px;
   background: var(--surface-sunken);
 }
 
 .tools-switch button {
-  min-width: 64px;
-  min-height: 36px;
-  padding: 0 12px;
+  min-width: 56px;
+  min-height: 30px;
+  padding: 0 10px;
   border: none;
-  border-radius: 18px;
+  border-radius: 16px;
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -7110,7 +7112,7 @@ button.recent-row .rc-dist {
   background: var(--surface);
   box-shadow: 0 0 0 2px var(--tp-strong) inset;
   color: var(--text);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .tools-switch button:focus-visible {
@@ -7121,8 +7123,8 @@ button.recent-row .rc-dist {
 .tools-input,
 .tools-select {
   min-width: 0;
-  min-height: 48px;
-  padding: 6px 12px;
+  min-height: 44px;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
   background: var(--surface);
@@ -7131,16 +7133,18 @@ button.recent-row .rc-dist {
   font-variant-numeric: tabular-nums;
 }
 
+/* 主要輸入數字：同指標卡的 32px／700 */
 .tools-input {
-  width: 9ch;
-  font-size: 38px;
-  font-weight: 600;
+  width: 8ch;
+  min-height: 56px;
+  font-size: 32px;
+  font-weight: 700;
   line-height: 1;
 }
 
 .tools-select {
   width: 100%;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
 }
 
 .tools-input:focus-visible,
@@ -7155,18 +7159,19 @@ button.recent-row .rc-dist {
   background: var(--error-bg);
 }
 
-/* 分段時間的展開鍵：＋／－ 由 aria-expanded 決定 */
+/* 展開鍵：＋／－ 由 aria-expanded 決定 */
 .tools-expand {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 44px;
-  padding: 0 4px;
+  min-height: 40px;
+  padding: 0 2px;
   border: none;
   background: none;
   color: var(--accent-text);
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -7233,23 +7238,47 @@ button.recent-row .rc-dist {
 }
 
 .tools-clock.is-lg {
-  min-height: 76px;
-  padding: 0 18px;
-  font-size: 44px;
-  font-weight: 600;
+  min-height: 56px;
+  padding: 0 12px;
+  font-size: 32px;
+  font-weight: 700;
   line-height: 1;
 }
 
-@media (max-width: 767px) {
-  .tools-clock.is-lg {
-    min-height: 64px;
-    padding: 0 14px;
-    font-size: 38px;
-  }
+/* 田徑場的換算結果：每 100m 秒數與配速／時速，2×2 小卡 */
+.tools-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-self: stretch;
+}
+
+.tools-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.tools-stat-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.tools-stat-value {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .tools-table {
   width: 100%;
+  align-self: stretch;
   border-collapse: collapse;
   font-size: var(--fs-md);
 }
@@ -7266,16 +7295,16 @@ button.recent-row .rc-dist {
   vertical-align: middle;
 }
 
-.tools-table tbody th {
-  font-weight: 400;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
 .tools-table thead th {
   font-size: var(--fs-sm);
   font-weight: 400;
   color: var(--text-muted);
+}
+
+.tools-table tbody th {
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* 數字欄靠右（含欄名），小數點上下對齊才好比較 */
@@ -7285,39 +7314,6 @@ button.recent-row .rc-dist {
 
 .tools-num {
   font-variant-numeric: tabular-nums;
-}
-
-/* 田徑場的換算結果：每 100m 秒數與配速／時速，2×2 小卡 */
-.tools-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  align-self: stretch;
-}
-
-.tools-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-}
-
-.tools-stat-label {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
-.tools-stat-value {
-  font-size: var(--fs-xl);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.tools-panel-body > .tools-table {
-  align-self: stretch;
 }
 
 /* === W0 sport chip === */

@@ -25,9 +25,9 @@ var RACE_DISTANCES = [
   { km: 1.5, label: '1500m' },
   { km: 3, label: '3000m' },
   { km: 5, label: '5000m' },
-  { km: 10, label: '10K' },
-  { km: 21.0975, label: '半馬' },
-  { km: 42.195, label: '全馬' }
+  { km: 10, label: '10K', note: '10 km' },
+  { km: 21.0975, label: '半馬', note: '21.0975 km' },
+  { km: 42.195, label: '全馬', note: '42.195 km' }
 ];
 
 var WARMUP_TRACK_M = 300;
@@ -62,7 +62,7 @@ var ICONS = {
   ]
 };
 var SVG_NS = 'http://www.w3.org/2000/svg';
-var ICON_SIZE_PX = 34;
+var ICON_SIZE_PX = 28;
 
 var tools = {
   built: false,
@@ -187,20 +187,20 @@ function icon(kind) {
 }
 
 /**
- * 一張區塊卡：類別色標題列（icon＋標題，右側可放切換鍵）＋內容。
+ * 一張區塊卡（與首頁指標卡同一套）：類別色標題列（icon＋標題，右側可放切換鍵）＋內容。
  * @param {string} kind ICONS 的 key，同時決定標題列的類別色（CSS .tools-theme-*）
  * @param {string} title
  * @param {?HTMLElement} headControl 放在標題列右側的元素（單位切換鍵）
  * @returns {{sec:HTMLElement, body:HTMLElement}}
  */
 function panel(kind, title, headControl) {
-  var sec = h('section', 'panel tools-panel tools-theme-' + kind);
-  var head = h('div', 'tools-panel-head');
+  var sec = h('section', 'tools-card tools-theme-' + kind);
+  var head = h('div', 'tools-card-head');
   head.appendChild(icon(kind));
-  head.appendChild(h('h2', 'tools-panel-title', title));
+  head.appendChild(h('h3', 'tools-card-title', title));
   if (headControl) head.appendChild(headControl);
   sec.appendChild(head);
-  var body = h('div', 'tools-panel-body');
+  var body = h('div', 'tools-card-body');
   sec.appendChild(body);
   return { sec: sec, body: body };
 }
@@ -392,10 +392,15 @@ function buildTrackPanel() {
   return p.sec;
 }
 
+/** 下拉選項文字：有標註公里數的（10K、半馬、全馬）附在後面，括號同道次下拉用全形。 */
+function distanceOptionText(d) {
+  return d.label + (d.note ? '（' + d.note + '）' : '');
+}
+
 function buildFinishPanel() {
   var p = panel('finish', '完成時間');
   var defaultIndex = RACE_DISTANCES.map(function (d) { return d.km; }).indexOf(tools.finishKm);
-  p.body.appendChild(selectField('距離', RACE_DISTANCES.map(function (d) { return d.label; }), defaultIndex,
+  p.body.appendChild(selectField('距離', RACE_DISTANCES.map(distanceOptionText), defaultIndex,
     function (i) {
       tools.finishKm = RACE_DISTANCES[i].km;
       syncFields(null);
@@ -445,12 +450,17 @@ export function renderToolsPage() {
   var body = $('tools-body');
   if (!body) return;
   tools.built = true;
-  body.appendChild(h('p', 'tools-intro',
-    '任一格輸入，其他格即時換算。時間分格填寫，打完一格按 : 或 Tab 跳下一格，空格視為 0。'));
+  // 外層同首頁／趨勢：全寬面板、標題左側色條，裡面才是淡色標題列的卡片
+  var main = h('section', 'panel tools-main');
+  var title = h('h2', 'panel-title', '速度換算');
+  title.appendChild(h('span', 'panel-hint', '任一格輸入，其他格即時換算'));
+  main.appendChild(title);
   var grid = h('div', 'tools-grid');
   grid.appendChild(buildPacePanel());
   grid.appendChild(buildTrackPanel());
   grid.appendChild(buildFinishPanel());
   grid.appendChild(buildTreadmillPanel());
-  body.appendChild(grid);
+  main.appendChild(grid);
+  main.appendChild(h('p', 'tools-note', '時間分格填寫：打完一格按 : 或 Tab 跳下一格，空格視為 0。'));
+  body.appendChild(main);
 }

@@ -53,12 +53,13 @@ TEMPLATE = """<!doctype html>
 __STYLES__
 </style>
 <style>
+/* id="view-tools" 讓離線檔吃到與 dashboard 計算機頁相同的字級 token 與斷點（styles.css） */
 .standalone { max-width: 1100px; margin: 0 auto; padding: var(--gap); }
 .standalone-title { margin: 8px 0 12px; font-size: var(--fs-xl); }
 </style>
 </head>
 <body>
-<main class="standalone">
+<main class="standalone" id="view-tools">
   <h1 class="standalone-title">配速計算機</h1>
   <div id="tools-body"></div>
 </main>
