@@ -876,7 +876,7 @@
 | **親自打一次 `/coach`**（Phase 3 殘留的最後一步）| MCP prompt 是**使用者端** slash command，AI 無法自行觸發（見 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log) 2026-09-02 該條決策）|
 | **N-12 那批 2027-01 殘留課表的處置** | 直接改真實 DB 的 `training_plan`，屬破壞性操作，須先備份 |
 | **N-10 環境資料實際回填 441 列** | 寫入真實 DB，且需真實活動的座標與時間 |
-| **N-9 逐秒資料補抓**（若決定做）| `download_activity()` 需 token |
+| **N-9 逐秒資料補抓**（2026-10-24 改由 N-32 處理）| `get_activity_details()` 需 token |
 | **Dashboard Phase 6 前端 + 手機實機測試** | [CLAUDE.md 驗證原則](../../CLAUDE.md)：前端變動須實際開瀏覽器確認；手機測試須實機 |
 | **N-7／N-8 的 grill 與決策本身** | 需 Fu 本人參與決策，非實作工作 |
 | **任何涉及外部 API 巢狀結構／單位換算的雲端產出之驗收** | 1B-9 教訓：fixture 與實作同源時測試全過也可能全錯 |
@@ -915,6 +915,7 @@
 - **🟡 N-9 逐秒資料的長期缺口（⚠️ 需一個小決策）**：API 同步進來的活動沒有 `activity_records`，故 `assess_session_quality` 三個維度中**有兩個（配速穩定度、心率漂移）對所有新活動永久不可評**，且此缺口隨每次同步擴大——歷史 FIT 涵蓋到 2026-08-16，其後全部是摘要。
   - 2026-09-01 的決策記錄判定「優先度低」，理由是心率漂移本就無可用閾值。**但配速穩定度不受此理由保護**，它是可評的維度，只是缺資料。
   - **候選解**：`garminconnect` 的 `download_activity(activity_id, dl_fmt=ORIGINAL)` 可取回原始 FIT，接既有 `fit_parser`／`fit_import_runner` 即可，不需新解析器。代價是每場多一次請求與檔案暫存。**要不要做、是否只對長跑/品質課做，需使用者決定。**
+  - **➡️ 2026-10-24 決定做，改由 N-32 處理**：不下載 FIT，改打 `get_activity_details`，一次取得逐點的心率、配速、步頻、經緯度，所有跑步活動都補
 - **🟡 N-10 品質課「主段」未被建模（2026-09-04 實作品質課下限與配速執行度時暴露，⚠️ 需一個設計決策）**：兩個獨立項目在同一個缺口上卡住——**專案沒有任何地方能表達「這堂課的主段是哪一段」**，排程器只有「當日目標距離」、活動只有「整場平均配速」。
   - **卡住項目一（配速執行度）**：tempo/interval 的整場平均配速含暖身、緩和與間歇休息段，會系統性地看起來「偏慢」。原訂的 ±3% 容差無處可套，只能對這兩種課種不評（已實作為 `not_assessed` 並附理由）。**受影響的正是最需要判讀執行度的課種**。
   - **卡住項目二（品質課絕對下限）**：規則本文寫的是「**主段** ≥3K 或 ≥12 分鐘」，但只能套在當日總距離上，導致實測要週跑量低於約 11K 才觸發，而非原動機設想的週 15K（詳見 Phase 3 該項目的說明）。
@@ -1136,3 +1137,35 @@
   - [ ] **GitHub 端殘留**：`refs/pull/22/merge`（PR #22 的試合併 commit）仍指向舊 main，含舊信箱與 userProfileId。PR 與新 main 衝突，GitHub 不會自動重算。需 Fu 關閉或重開 PR #22，並依 GitHub「Removing sensitive data from a repository」流程聯絡 Support，清除舊 commit 的快取與 PR ref
   - [ ] **另一台電腦**：本機舊歷史已無法 `pull`，需重新 clone，或執行 `git fetch origin && git reset --hard origin/main`（先確認沒有未推的變更）；該機的 `user.email` 也要改為 noreply
   - [ ] 建議 Fu：全域 `git config --global user.email` 改為 noreply，並在 GitHub Settings → Emails 開啟「Keep my email addresses private」與「Block command line pushes that expose my email」
+
+- **📋 N-32 訓練紀錄嵌入路線地圖＋同步活動補逐點資料（2026-10-24 Fu 提出並確認方向，待實作；一併解決 N-9）**：訓練紀錄展開後顯示跑步路線。逐點資料加上經緯度，地圖與既有圖表共用同一份資料。Fu 表示通常到河濱才開始記錄，起終點沒有隱私問題，不做隱私半徑。
+  - **2026-10-24 實測 `get_activity_details`**（真實帳號，探查腳本在 scratchpad，未進 repo）：
+    | 活動 | 參數 | 耗時 | 回應 | `geoPolylineDTO.polyline` | `activityDetailMetrics` |
+    |---|---|---|---|---|---|
+    | 5 km／27 分（10/22）| 預設 `maxchart=2000, maxpoly=4000` | 1.1 s | 986 KB | 1657 | 1657 |
+    | 21.2 km／2 小時 6 分 | 預設 | 3.5 s | 760 KB | 646 | 1912 |
+    | 同上 | 上限拉到 100000 | 2.0 s | 4.5 MB | 7575 | 7579 |
+    - 原始資料是每秒一點（`totalMetricsCount` 7579 ≈ 7578 秒）。圖表資料會均勻降採樣到 `maxchart` 以內；地圖路線則做幾何簡化（長跑上限 4000 只回 646 點，平均約 33 m 一點）
+    - `activityDetailMetrics` 每點帶 26 個欄位，含 `directLatitude`／`directLongitude`／`directHeartRate`／`directSpeed`／`sumDistance`／`directRunCadence`／`directElevation`／`directTimestamp`
+    - ⚠️ **兩次呼叫的 `metricDescriptors` 順序不同**：讀逐點資料必須用每個欄位的 `metricsIndex` 對應，不能假設固定位置。這種錯在 fixture 測試裡抓不到，要寫進 docstring
+  - **選定方案（Fu 確認方向）**：同步時多打一次 `get_activity_details`，用既有的 `downsample_records()` 降到每 10 秒一點，寫入 `activity_records`，並新增 `lat`／`lon` 兩欄。**不**存 Garmin 的 `geoPolylineDTO`，也**不**下載原始 FIT，以免同一份資料有兩個來源
+    - 比較過但未選：①只存一條壓縮過的路線字串，最輕（全部 <1 MB），但只能畫路線，無法依配速或心率上色，也不能跟圖表同步互動 ②每秒一點全存，外加原始 FIT 檔：資料庫約 +80 MB、FIT 檔另外 60–170 MB；而每秒一點在畫面上沒有好處，GPS 本身有 3–5 m 誤差，點太密只會畫出抖動
+  - **上下限**（🔴 工程決策，依上表實測與目前 DB 試算）：
+    | 項目 | 下限 | 上限 | 理由 |
+    |---|---|---|---|
+    | 取樣間隔 | 5 秒 | 10 秒（預設，與現有 `activity_records` 一致）| 小於 5 秒只會放大 GPS 抖動；10 秒在配速 5:30 時約 30 m 一點，河濱彎道略被切直但可接受 |
+    | 單場 API 回傳點數 | — | 2000 點 | 3 小時長跑以 5 秒取樣約 2160 點，超過就再降一次取樣 |
+    | 單場儲存量 | — | 30 KB | 入庫時檢查，超過代表降採樣沒有生效 |
+    | 資料庫總增量 | — | +10 MB | 目前 17.6 MB；預估補齊全部活動約 +3 MB（5 秒取樣約 +6 MB），保留 2–3 年成長空間 |
+    | 單場明細 API 回應 | — | 200 ms（區網）| 超過就檢查是否漏了降採樣 |
+    | 經緯度精度 | — | 小數 5 位（約 1 m）| 更多位數只是 GPS 雜訊，還會讓離線匯出檔變大 |
+  - **實作步驟**：
+    - [ ] ① `fit_parser` 的 `record` 多讀 `position_lat`／`position_long`（單位是 semicircles，乘 `180 / 2^31` 換成度）；`activity_records` 加 `lat`／`lon`（`REAL`，可為 NULL：跑步機、游泳、室內活動沒有 GPS）
+    - [ ] ② `garmin_api_client.fetch_activity_details()`：打 `get_activity_details`，用 `metricsIndex` 把 `activityDetailMetrics` 轉成與 `fit_parser` 相同形狀的 records。**動工前先 dump 各欄位的實際單位**（`directSpeed` 是否為 m/s、`directRunCadence` 與 `directDoubleCadence` 哪個對應 `cadence_spm`、`sumDistance` 是否為公尺），不可只照 library 文件或 fixture 寫
+    - [ ] ③ `garmin_sync_runner` 同步跑步活動時，若該場沒有 `activity_records` 就補抓並寫入。抓取失敗不影響同步（比照 N-26），遇到 429 立即停止
+    - [ ] ④ 回填：歷史 FIT 匯入的 243 場用 FIT 重新匯入補座標（不需要 API）；API 同步、沒有逐點資料的場次（id 498 之後）用 ③ 分批補，每批之間留間隔
+    - [ ] ⑤ `/api/sessions/{id}` 的 `records.points` 多回傳 `lat`／`lon`；**MCP 工具不回傳座標**（教練判讀用不到，只會佔 context）
+    - [ ] ⑥ 前端：訓練紀錄展開後加一張地圖（Leaflet＋OpenStreetMap 圖磚，從 cdnjs 載入固定版本），路線依配速或心率區間上色，滑過圖表時在地圖上標出對應位置。沒有座標的場次不顯示地圖
+    - [ ] ⑦ 離線匯出（N-30）：圖磚需要網路，iPhone 離線時地圖畫不出來。預設**不匯出**座標，避免檔案變大卻用不到；要不要加開關，等 Fu 實際用過再決定
+  - **驗收**：真實 DB 抽 10/22 間歇課與 21 km 長跑，分別比對 Garmin Connect 網頁的路線形狀、距離、心率；確認資料庫增量與單場 API 回應時間在上限內；`assess_session_quality` 對 API 同步的場次恢復評估配速穩定度與心率漂移
+  - **待 Fu 確認**：取樣間隔用 10 秒（預設）還是 5 秒
