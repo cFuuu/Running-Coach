@@ -118,6 +118,22 @@ class TestOutput(BuildDashboardOfflineTestCase):
         # 清單摘要仍保留完整歷史
         self.assertIn(old[0], [s["id"] for s in sessions])
 
+    def test_keep_long_km_retains_old_long_runs(self):
+        """超過 detail_months 的舊場次，達 keep_long_km 以上的長跑仍要有明細；不到的照舊丟掉。
+        fixture 只有一場舊的（2026-01-15、8 km），門檻 5 要留、門檻 20 要丟。"""
+        snap = _read_snapshot(self.build(detail_months=1, keep_long_km=5))
+        self.assertEqual(snap["detail_long_km"], 5)
+        old = [s["id"] for s in snap["exact"]["/api/sessions?range=all"]["sessions"] if s["date"] < "2026-02-10"]
+        self.assertEqual(len(old), 1)
+        self.assertIn(f"/api/sessions/{old[0]}", snap["exact"])
+
+        snap = _read_snapshot(self.build(detail_months=1, keep_long_km=20))
+        self.assertNotIn(f"/api/sessions/{old[0]}", snap["exact"])
+
+    def test_keep_long_km_off_by_default_in_build(self):
+        snap = _read_snapshot(self.build(detail_months=1))
+        self.assertIsNone(snap["detail_long_km"])
+
     def test_db_is_not_modified(self):
         def fingerprint():
             return hashlib.sha256(self.db_path.read_bytes()).hexdigest(), self.db_path.stat().st_mtime_ns

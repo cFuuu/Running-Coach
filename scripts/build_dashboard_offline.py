@@ -59,6 +59,7 @@ STYLES = _bpc.STYLES
 DEFAULT_DB = ROOT / "output" / "running_coach.db"
 DEFAULT_OUT = ROOT / "output" / "dashboard_offline.html"
 COPY_TO_ENV = "RC_OFFLINE_EXPORT_DIR"
+DEFAULT_KEEP_LONG_KM = 21.0  # 半馬 21.0975 km 以上；--detail-months 時舊場次的長跑仍保留明細
 MODULE_PREFIX = "@rc/js/"
 # 與 app.py 的 DEFAULT_PROFILE_FILENAME 相同語意：學員檔與資料庫放同一個資料夾
 from src.main.python.api.app import DEFAULT_PROFILE_FILENAME  # noqa: E402
@@ -244,6 +245,7 @@ def collect_snapshot(
     athlete_id: int | None = None,
     profile_path: Path | None = None,
     today: datetime.date | None = None,
+    keep_long_km: float = 0.0,
 ) -> tuple[dict, list[str]]:
     """回傳 (快照, 資料庫裡的帳號識別值)。來源資料庫只以唯讀模式開啟。"""
     from fastapi.testclient import TestClient
@@ -321,9 +323,14 @@ def collect_snapshot(
             all_sessions = get("/api/sessions?range=all") if "all" in ranges else {"sessions": []}
             for s in all_sessions.get("sessions") or []:
                 ids.setdefault(s["id"], s.get("date") or "")
+            # 超過 detail_months 的舊場次，距離達 keep_long_km 以上的長跑（半馬、全馬）仍保留明細
+            long_ids = {
+                s["id"] for s in all_sessions.get("sessions") or []
+                if keep_long_km > 0 and (s.get("distance_km") or 0) >= keep_long_km
+            }
             detail_ids = tuple(
                 sid for sid, day in sorted(ids.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
-                if cutoff is None or (day and day >= cutoff.isoformat())
+                if cutoff is None or sid in long_ids or (day and day >= cutoff.isoformat())
             )
             windows = [get(f"/api/wellness-trend?range={r}") for r in ranges]
             prev_ranges = tuple(p for p in (previous_range(w.get("start_date"), w["end_date"]) for w in windows) if p)
@@ -340,6 +347,7 @@ def collect_snapshot(
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "today": today.isoformat(),
         "detail_since": cutoff.isoformat() if cutoff else None,
+        "detail_long_km": keep_long_km if cutoff and keep_long_km > 0 else None,
         "exact": exact,
         "calendar": spans["calendar"],
         "feels": spans["feels"].get("feels") or [],
@@ -484,7 +492,8 @@ LOADER_JS = r"""
     if (/^\/api\/sessions\/\d+$/.test(r.path)) {
       // 前端（shell/loader.js）離線時把這個訊息當說明顯示，不當讀取失敗
       return Promise.reject(new Error('離線檔未包含這場的明細'
-        + (D.detail_since ? '（只保留 ' + D.detail_since + ' 之後的單場明細）' : '')));
+        + (D.detail_since ? '（只保留 ' + D.detail_since + ' 之後'
+          + (D.detail_long_km ? '、以及 ' + D.detail_long_km + ' km 以上長跑' : '') + '的單場明細）' : '')));
     }
     var s = r.p.get('start'), e = r.p.get('end');
     if (r.path === '/api/calendar' && s && e) {
@@ -567,10 +576,11 @@ def build(
     profile_path: Path | None = None,
     today: datetime.date | None = None,
     also_txt: bool = False,
+    keep_long_km: float = 0.0,
 ) -> Path:
     if copy_to is not None and not copy_to.is_dir():
         raise SystemExit(f"--copy-to 指定的資料夾不存在：{copy_to}")
-    snapshot, identity_refs = collect_snapshot(db_path, detail_months, athlete_id, profile_path, today)
+    snapshot, identity_refs = collect_snapshot(db_path, detail_months, athlete_id, profile_path, today, keep_long_km)
     snapshot_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     html, snapshot_json, page_text = build_page(snapshot, snapshot_at, use_gzip)
     security_scan(snapshot_json, page_text, identity_refs)
@@ -602,6 +612,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--txt", action="store_true", help="同時輸出內容相同的 .txt（輸出處與 --copy-to 都會有）")
     parser.add_argument("--detail-months", type=int, default=0,
                         help="只保留近 N 個月的單場明細（0＝全部）")
+    parser.add_argument("--keep-long-km", type=float, default=DEFAULT_KEEP_LONG_KM,
+                        help="搭配 --detail-months：更早的場次中，距離達這個公里數以上的長跑仍保留明細"
+                             f"（預設 {DEFAULT_KEEP_LONG_KM:g}，0＝不保留）")
     parser.add_argument("--no-gzip", action="store_true", help="快照不壓縮（除錯用）")
     parser.add_argument("--athlete-id", type=int, default=None, help="學員 ID（預設第一位）")
     parser.add_argument("--profile-path", type=Path, default=None,
@@ -613,7 +626,8 @@ def main(argv: list[str] | None = None) -> int:
         args.out = args.out.with_stem(f"{args.out.stem}_{datetime.date.today().isoformat()}")
     try:
         out = build(args.db_path, args.out, args.detail_months, not args.no_gzip,
-                    args.athlete_id, args.copy_to, args.profile_path, also_txt=args.txt)
+                    args.athlete_id, args.copy_to, args.profile_path, also_txt=args.txt,
+                    keep_long_km=args.keep_long_km)
     except SecurityScanError as exc:
         print(str(exc), file=sys.stderr)
         return 2
