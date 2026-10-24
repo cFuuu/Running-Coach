@@ -1045,22 +1045,38 @@ function vdotCard(vdot) {
     var hi = Math.max.apply(null, vals);
     refText = 'Garmin 對照 ' + C.formatNumber(lo, 1) + (hi !== lo ? '–' + C.formatNumber(hi, 1) : '');
   }
+  var history = (vdot.history || []).map(function (x) { return x.vdot; });
+  // 參考值放最上面：目前採用的值、歷年比賽的範圍、Garmin 對照（僅供對照）
+  var refLines = [];
+  if (race.value) {
+    refLines.push('目前採用 ' + C.formatNumber(race.value.value, 1)
+      + '（依 ' + C.shortDate(race.basis.date) + ' ' + race.basis.distance + '）');
+  } else {
+    refLines.push('目前未評：' + race.reason);
+  }
+  if (history.length > 1) {
+    refLines.push('歷年比賽 ' + C.formatNumber(Math.min.apply(null, history), 1) + ' ～ '
+      + C.formatNumber(Math.max.apply(null, history), 1) + '（共 ' + history.length + ' 場）');
+  }
+  if (refText) refLines.push(refText + '（僅供對照）');
   var tip = [
-    'Jack Daniels 的跑力指數：用一場全力成績反推的有氧能力分數。',
-    '只採用標記為比賽或全力測驗的成績（3K／5K／10K 需在 90 天內，半馬／全馬 180 天內），'
-    + '把實際距離與完賽時間代入 Daniels & Gilbert 公式：VDOT ＝ 該配速的攝氧成本 ÷ 能持續該時間的最大攝氧比例。'
-    + '有手動計時成績的場次用手動計時成績。',
-    '走勢線是歷年每場比賽各自算出的 VDOT（不受新鮮度門檻限制）。',
-    '不採用一般訓練經心率換算的推估：那是次最大強度推估，對訓練量少的跑者會偏高。'
+    tipSection('參考值', refLines),
+    tipSection('定義', 'Jack Daniels 的跑力指數：用一場全力成績反推的有氧能力分數。'),
+    tipSection('怎麼算', [
+      '只採用標記為比賽或全力測驗的成績；有手動計時成績的場次用手動計時成績',
+      '新鮮度：3K／5K／10K 在 90 天內，半馬／全馬在 180 天內',
+      '公式（Daniels & Gilbert）：VDOT ＝ 該配速的攝氧成本 ÷ 能持續該時間的最大攝氧比例',
+      '基準成績之後若有停跑，會依 Daniels 的折減表打折（超過 5 天後每天約 −0.3%），信賴度標籤的已知偏誤會標明',
+      '不採用一般訓練經心率換算的推估：那是次最大強度推估，對訓練量少的跑者會偏高'
+    ]),
+    tipSection('走勢線', '歷年每場比賽各自算出的 VDOT，不受新鮮度門檻限制。')
   ];
   if (ref) {
-    tip.push('Garmin 對照值：把手錶 ' + ref.as_of + ' 的完賽預測（'
-      + ref.predictions.map(function (p) {
+    tip.push(tipSection('Garmin 對照值',
+      ref.predictions.map(function (p) {
         return p.distance + ' ' + C.formatDuration(p.time_sec) + ' → ' + C.formatNumber(p.vdot, 1);
-      }).join('、')
-      + '）用同一公式換算。Garmin 演算法未公開，僅供對照，不作為依據。');
+      }), { note: '把手錶 ' + ref.as_of + ' 的完賽預測用同一公式換算。Garmin 演算法未公開，僅供對照，不作為依據。' }));
   }
-  var history = (vdot.history || []).map(function (x) { return x.vdot; });
   if (!race.value) {
     return kpiCard({
       label: '跑力', abbr: 'VDOT', value: '未評',

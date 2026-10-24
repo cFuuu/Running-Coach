@@ -349,6 +349,18 @@ function loadDefs() {
   return defs;
 }
 
+/** 跑力說明的參考值：此區間最近一場，與截至區間結束的歷年範圍。 */
+function vdotRefLines(lastVd, all) {
+  var lines = [lastVd
+    ? '此區間最近一場 ' + C.formatNumber(lastVd.vdot, 1) + '（依 ' + C.shortDate(lastVd.date) + ' ' + lastVd.distance + '）'
+    : '此區間內無比賽成績'];
+  if (all.length > 1) {
+    lines.push('歷年比賽 ' + C.formatNumber(Math.min.apply(null, all), 1) + ' ～ '
+      + C.formatNumber(Math.max.apply(null, all), 1) + '（共 ' + all.length + ' 場）');
+  }
+  return lines;
+}
+
 /** 恢復時間的區間統計：平均（含已恢復的日子）與已恢復天數，補足「期末值」看不到的整段情形。 */
 function recoveryRangeLines(vals) {
   var nums = vals.filter(isNum);
@@ -555,8 +567,11 @@ function renderAbilitySection(body) {
     trendKpi({ label: '跑力', abbr: 'VDOT', value: lastVd ? lastVd.vdot : null, fmt: fmt1, prev: prevVd,
       note: lastVd ? '依 ' + C.shortDate(lastVd.date) + ' ' + lastVd.distance : '此區間內無比賽成績',
       series: vdotInWindow(null, win.end).map(function (x) { return x.vdot; }),
-      tip: ['區間內最近一場比賽（或全力測驗）成績，以 Jack Daniels 公式換算的跑力指數。',
-        '走勢線是截至區間結束的歷年每場比賽 VDOT。'] }),
+      tip: [
+        tipSection('參考值', vdotRefLines(lastVd, vdotInWindow(null, win.end).map(function (x) { return x.vdot; }))),
+        tipSection('定義', '區間內最近一場比賽（或全力測驗）成績，以 Jack Daniels 公式換算的跑力指數。'),
+        tipSection('走勢線', '截至區間結束的歷年每場比賽各自算出的 VDOT。')
+      ] }),
     trendKpi({ label: '平均配速', value: avgPace(sessions), fmt: C.formatPace, unit: '/km', prev: prevSessions(avgPace),
       note: '總時間 ÷ 總距離', invert: true,
       series: values(seriesFromSessions('avg_pace_sec_per_km', sessions)) }),
