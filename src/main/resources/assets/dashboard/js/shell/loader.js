@@ -39,7 +39,10 @@ export function renderMeta() {
     node.appendChild(h('span', 'badge badge-offline', label));
     var stamp = $('offline-stamp');
     if (stamp) {
-      stamp.textContent = label;
+      // 頂列（手機／平板）與大標題、齒輪同一行，寬度有限：省略年份，寫成「更新於 MM/DD HH:MM」
+      // （2026-10-24 Fu）。offline.at 為 'YYYY-MM-DD HH:MM'；完整日期放 title
+      stamp.textContent = '更新於 ' + offline.at.slice(5, 10).replace('-', '/') + offline.at.slice(10);
+      stamp.title = label;
       stamp.hidden = false;
     }
   } else if (useMock) {
