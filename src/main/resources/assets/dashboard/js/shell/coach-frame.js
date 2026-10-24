@@ -93,11 +93,16 @@ export function bindAnalysisButtons() {
   if (history) history.addEventListener('click', function () { showAnalyses(); });
 }
 
-// 視窗尺寸改變時重繪（X 軸刻度數量依容器寬度決定，需重算）
+// 視窗寬度改變時重繪（X 軸刻度數量依容器寬度決定，需重算）
 // 只重繪目前 view——隱藏的 view 寬度為 0，畫了也是空的，改標髒等切過去再畫。
+// 只看寬度：iPhone Safari 捲動時網址列伸縮只改高度也會觸發 resize，若照樣整頁重畫，
+// 慣性捲動中途 DOM 被替換、Safari 又沒有捲動錨定，畫面就會跳（2026-10-24 Fu 實機回報）。
 export var resizeTimer = null;
 export function bindResize() {
+  var lastWidth = window.innerWidth;
   window.addEventListener('resize', function () {
+    if (window.innerWidth === lastWidth) return;
+    lastWidth = window.innerWidth;
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
       // 有圖表的 view 全部標髒，再交給路由的補畫邏輯：目前 view 立刻重畫，
