@@ -110,7 +110,20 @@ export function applyRoute() {
 
   // 頂列：標題與 range 切換（只有吃 range 的 view 顯示區間切換）
   var titleEl = $('content-title');
-  if (titleEl) titleEl.textContent = VIEWS[view].title;
+  if (titleEl) {
+    titleEl.textContent = '';
+    // 標題前放該頁在底部分頁列（系統設定則是右上齒輪）的同一個圖示，手機上與選取中的分頁對得起來
+    // （2026-10-24 Fu 選 B）。直接複製導覽列的 SVG，不另存一份；只在手機顯示，見 styles.css
+    var iconSrc = document.querySelector('.tab-link[data-view="' + view + '"] svg, .tool-btn[data-view="' + view + '"] svg');
+    if (iconSrc) {
+      var icon = document.createElement('span');
+      icon.className = 'content-title-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.appendChild(iconSrc.cloneNode(true));
+      titleEl.appendChild(icon);
+    }
+    titleEl.appendChild(document.createTextNode(VIEWS[view].title));
+  }
   var controls = $('topbar-controls');
   if (controls) controls.hidden = !VIEWS[view].hasRange;
   document.title = VIEWS[view].title + '｜' + APP_NAME;

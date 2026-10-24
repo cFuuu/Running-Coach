@@ -757,6 +757,11 @@ h3 {
   margin-right: auto;
 }
 
+/* 標題前的分頁圖示（js/shell/router.js 從導覽列複製）：只在手機顯示，平板／桌機有側邊列標示 */
+.content-title-icon {
+  display: none;
+}
+
 .topbar-controls {
   display: flex;
   flex-wrap: wrap;
@@ -772,8 +777,32 @@ h3 {
    （原本換成兩列，加上工具列，首屏約 170px 都是按鈕）。自訂區間鈕留在列外，
    它的下拉面板才不會被捲動容器裁掉。 */
 @media (max-width: 767px) {
+  /* 手機頁面標題（2026-10-24 Fu 選 B）：大標題＋與底部選取分頁同一個圖示，一眼知道在哪一頁 */
   .content-title {
     order: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-left: 4px;
+    font-size: 26px;
+    font-weight: 800;
+  }
+
+  .content-title-icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+
+  .content-title-icon svg {
+    width: 22px;
+    height: 22px;
   }
 
   .topbar-tools,
@@ -6655,11 +6684,12 @@ button.recent-row .rc-dist {
   display: none !important;
 }
 
+/* 資料時間只是說明、不是警告，用中性灰而非提醒黃（2026-10-24 Fu） */
 .badge-offline,
 .offline-stamp {
-  background: var(--notice-bg);
-  border: 1px solid var(--notice-border);
-  color: var(--notice-text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
 }
 
 .offline-stamp {
