@@ -1321,13 +1321,15 @@ body.coach-open .coach-panel {
   border-radius: 999px;
   color: var(--text-muted);
   font-size: var(--fs-xs);
+  /* 12px 細字在毛玻璃底上不好辨認，稍微加粗（2026-10-24 Fu） */
+  font-weight: 500;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
 
 .tab-link.is-active {
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .tab-link:focus-visible {
@@ -3619,8 +3621,31 @@ body.coach-open .coach-panel {
     text-align: right;
   }
 
+  /* 實際靠左與課表文字對齊，距離／暖身／配速／心率同一行、放不下才換行；
+     沒有跑步的日子不留一整行破折號；課表備註可到兩行（2026-10-24 Fu：手機原本置中像跑版） */
   .wp-actual {
     grid-column: 2 / -1;
+    text-align: left;
+  }
+
+  .wp-actual.is-empty {
+    display: none;
+  }
+
+  .wp-actual-link {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+    margin: 0;
+  }
+
+  .wp-plan-note {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
   }
 }
 

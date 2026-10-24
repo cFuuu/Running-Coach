@@ -177,6 +177,8 @@ function actualNode(day) {
   var runs = allRuns.filter(function (a) { return !a.warmup_for_activity_id; });
   var cell = h('span', 'wp-actual');
   if (runs.length === 0) {
+    // is-empty：手機兩行排列時這格獨佔一行，只放一個破折號太浪費，由 CSS 隱藏
+    cell.className += ' is-empty';
     cell.textContent = '—';
     return cell;
   }
