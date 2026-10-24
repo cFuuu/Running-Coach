@@ -1003,6 +1003,85 @@ function sparkline(values, opts) {
   return svg;
 }
 
+/**
+ * HRV 趨勢小圖（仿 Garmin 網頁）：灰色帶＝每日平衡區間，圓點＝每日 7 天平均。
+ * 固定最近 28 天（以最後一筆為終點），x 依日期排，缺的日子留白、不補點；
+ * 區間帶只在連續有上下限的日子之間畫。點在帶內綠、帶外橘、當天沒有區間者用主色——
+ * 只標位置，不下判讀。
+ *
+ * @param {Array<{date:string, value:number, low:number, upper:number}>} points 依日期排序
+ * @returns {SVGElement|null} 少於 2 個有效點時回 null
+ */
+function hrvBandChart(points) {
+  var DAYS = 28;
+  var DAY_MS = 86400000;
+  function isNum(v) { return typeof v === 'number' && isFinite(v); }
+  function dayOf(p) { return Date.parse(p.date + 'T00:00:00Z'); }
+
+  var pts = (points || []).filter(function (p) { return isNum(p.value); });
+  if (pts.length < 2) return null;
+  var end = dayOf(pts[pts.length - 1]);
+  var start = end - (DAYS - 1) * DAY_MS;
+  pts = pts.filter(function (p) { return dayOf(p) >= start; });
+  if (pts.length < 2) return null;
+
+  var W = 160;
+  var H = 44;
+  var pad = 5;
+  var lo = Infinity;
+  var hi = -Infinity;
+  pts.forEach(function (p) {
+    [p.value, p.low, p.upper].forEach(function (v) {
+      if (isNum(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    });
+  });
+  var span = hi - lo || 1;
+  function xOf(p) { return pad + (dayOf(p) - start) / DAY_MS / (DAYS - 1) * (W - pad * 2); }
+  function yOf(v) { return H - pad - (v - lo) / span * (H - pad * 2); }
+
+  var svg = el('svg', {
+    viewBox: '0 0 ' + W + ' ' + H,
+    preserveAspectRatio: 'none',
+    class: 'hrv-trend',
+    'aria-hidden': 'true',
+    focusable: 'false'
+  });
+
+  // 區間帶：連續（相差 1 天）且有上下限的點串成一段，上緣往右、下緣往回走成封閉多邊形
+  var segments = [];
+  var current = [];
+  pts.forEach(function (p) {
+    var banded = isNum(p.low) && isNum(p.upper);
+    var gap = current.length && (dayOf(p) - dayOf(current[current.length - 1])) > DAY_MS;
+    if (!banded || gap) {
+      if (current.length) segments.push(current);
+      current = [];
+    }
+    if (banded) current.push(p);
+  });
+  if (current.length) segments.push(current);
+  segments.forEach(function (seg) {
+    if (seg.length < 2) return;
+    var top = seg.map(function (p) { return xOf(p).toFixed(1) + ' ' + yOf(p.upper).toFixed(1); });
+    var bottom = seg.slice().reverse().map(function (p) { return xOf(p).toFixed(1) + ' ' + yOf(p.low).toFixed(1); });
+    svg.appendChild(el('path', { d: 'M' + top.concat(bottom).join(' L') + ' Z', class: 'hrv-trend-band' }));
+  });
+
+  // 圓點：零長度線段加圓端點（理由同 sparkline，preserveAspectRatio:none 會把 <circle> 拉成橢圓）
+  var groups = { in: [], out: [], none: [] };
+  pts.forEach(function (p) {
+    var kind = !(isNum(p.low) && isNum(p.upper)) ? 'none' : (p.value >= p.low && p.value <= p.upper ? 'in' : 'out');
+    var x = xOf(p).toFixed(1);
+    var y = yOf(p.value).toFixed(1);
+    groups[kind].push('M' + x + ' ' + y + ' L' + x + ' ' + y);
+  });
+  Object.keys(groups).forEach(function (kind) {
+    if (!groups[kind].length) return;
+    svg.appendChild(el('path', { d: groups[kind].join(' '), class: 'hrv-trend-dot is-' + kind }));
+  });
+  return svg;
+}
+
 // ---------------------------------------------------------------- Garmin 卡片小圖
 // 以下四個是 Garmin 網頁卡片牆的固定尺寸小圖（views/garmin.js 使用），
 // 與上方的時間序列圖不同：尺寸固定、不吃容器寬度、沒有座標軸。
@@ -1486,6 +1565,7 @@ function lapStrip(laps, opts) {
 export {
   lapPaceChart,
   sparkline,
+  hrvBandChart,
   ringGauge,
   bandArc,
   hypnogram,

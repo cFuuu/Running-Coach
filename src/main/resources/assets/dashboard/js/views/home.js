@@ -171,28 +171,28 @@ function readinessPill(value) {
 
 var READINESS_TIPS = [
   '綜合整備狀態是本專案規則引擎（公開、可重現的規則，不是 AI 判讀）'
-    + '對「今天身體恢復得夠不夠完備」的判定。顏色一看就懂：'
-    + '綠色 ✓ 良好（查過了，沒有異常訊號）；紅色 ▼ 低落（至少一個維度觸發）；'
-    + '橘色 ! 注意（本專案的規則都沒觸發，但 Garmin 手錶的健康狀態有指標落在範圍外）；'
-    + '灰色 – 未評（維度都缺資料、無法評估，不等於良好）。',
+  + '對「今天身體恢復得夠不夠完備」的判定。顏色一看就懂：'
+  + '綠色 ✓ 良好（查過了，沒有異常訊號）；紅色 ▼ 低落（至少一個維度觸發）；'
+  + '橘色 ! 注意（本專案的規則都沒觸發，但 Garmin 手錶的健康狀態有指標落在範圍外）；'
+  + '灰色 – 未評（維度都缺資料、無法評估，不等於良好）。',
   '兩個維度，任一觸發就判為「低落」：①TSB 低於你自己歷史分布的第 10 百分位；'
-    + '②當日 HRV 較 7 日均值下降 15% 以上（這個 7 日均值是 Garmin 提供的，不是本專案算的）。'
-    + '另有「連續訓練」規則（連續訓練達 6 天，預設值可個人化），平常不顯示，觸發時才會多一列。',
+  + '②當日 HRV 較 7 日均值下降 15% 以上（這個 7 日均值是 Garmin 提供的，不是本專案算的）。'
+  + '另有「連續訓練」規則（連續訓練達 6 天，預設值可個人化），平常不顯示，觸發時才會多一列。',
   '各觸發項旁的標籤是信賴度：TSB 取決於最大心率是否實測；HRV 的百分比門檻尚未經文獻驗證，標為低。',
   '資料不足的維度會跳過（例如 HRV 近 7 天少於 3 筆、當天尚未同步）。',
   'HRV 變化列尾的橘色「趨勢偏低」是另一條規則，只是提醒，不計入判定：HRV 7 日平均低於你前 4 週基線'
-    + '（ln 尺度 mean − 0.5×SD）時出現。它補的是 15% 規則抓不到的慢性下滑，'
-    + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。'
-    + '滑鼠移到 HRV 變化列上可看趨勢的數字。',
+  + '（ln 尺度 mean − 0.5×SD）時出現。它補的是 15% 規則抓不到的慢性下滑，'
+  + '但本來就約有四分之一的日子會落在線下，而且不知道原因（熬夜、飲酒、生病也會觸發）。'
+  + '滑鼠移到 HRV 變化列上可看趨勢的數字。',
   '「注意」看的是 Garmin 手錶的「健康狀態」：靜止心率、HRV、呼吸率、血氧四項，'
-    + '各自對照手錶依你個人歷史算出的範圍，任何一項落在範圍外就觸發（其中 HRV 就是這個健康狀態裡的 HRV）。'
-    + '演算法未公開，不是本專案的規則，不會讓狀態變「低落」，只在其他規則都沒觸發時，把「良好」改成「注意」。'
-    + '卡片下方會列出是哪幾項。AI 教練讀得到這份資料，會標明是 Garmin 參考，也不會單憑它建議休息。',
+  + '各自對照手錶依你個人歷史算出的範圍，任何一項落在範圍外就觸發（其中 HRV 就是這個健康狀態裡的 HRV）。'
+  + '演算法未公開，不是本專案的規則，不會讓狀態變「低落」，只在其他規則都沒觸發時，把「良好」改成「注意」。'
+  + '卡片下方會列出是哪幾項。AI 教練讀得到這份資料，會標明是 Garmin 參考，也不會單憑它建議休息。',
   '「HRV 狀態」是 Garmin 手錶（Firstbeat）給的另一個 HRV 分類（平衡／不平衡／偏低／不佳）：'
-    + '把你的 HRV 7 日均值，對照手錶自己算出的個人平衡區間所得到的結果。只供顯示，不影響判定。'
-    + '滑鼠移上去可看 7 日均值與平衡區間。',
+  + '把你的 HRV 7 日均值，對照手錶自己算出的個人平衡區間所得到的結果。只供顯示，不影響判定。'
+  + '滑鼠移上去可看 7 日均值與平衡區間。',
   '這裡只給旗標與原因，不改課表也不給建議；要不要調整交給 AI 教練。'
-    + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
+  + '與 Garmin 的「訓練完備程度」是兩回事，後者是 Garmin 數據，不納入本專案判斷。'
 ];
 
 /** 今天還沒同步、改顯示較早一天資料時的說明文字。 */
@@ -215,12 +215,16 @@ var CONSECUTIVE_ROW = {
 };
 
 var READINESS_ROWS = [
-  { dim: 'tsb', key: 'tsb', label: 'TSB 指標',
-    fmt: function (v) { return signedNumber(v, 1); }, unit: '' },
-  { dim: 'hrv', key: 'hrv_change_pct', label: 'HRV 變化',
+  {
+    dim: 'tsb', key: 'tsb', label: 'TSB 指標',
+    fmt: function (v) { return signedNumber(v, 1); }, unit: ''
+  },
+  {
+    dim: 'hrv', key: 'hrv_change_pct', label: 'HRV 變化',
     fmt: function (v) { return signedNumber(v, 1) + '%'; },
     // 門檻是固定的 −15，不需要小數，省下寬度
-    fmtThreshold: function (v) { return signedNumber(v, 0) + '%'; }, unit: '' }
+    fmtThreshold: function (v) { return signedNumber(v, 0) + '%'; }, unit: ''
+  }
 ];
 
 /** 一列「數值 / 門檻」。觸發的維度整列標紅並附信賴度；未評的顯示「—」，滑鼠移上去看原因。 */
@@ -297,13 +301,15 @@ var FEEL_EYES = '<circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/
 var FEEL_OPTIONS = [
   { value: 'tired', label: '疲憊', icon: FEEL_EYES + '<path d="M8.5 16.5c1-1.6 2.2-2.3 3.5-2.3s2.5.7 3.5 2.3"/>' },
   { value: 'normal', label: '普通', icon: FEEL_EYES + '<path d="M8.5 15.5h7"/>' },
-  { value: 'energetic', label: '充沛',
-    icon: FEEL_EYES + '<path d="M8 14c1 1.8 2.3 2.7 4 2.7s3-.9 4-2.7"/>' }
+  {
+    value: 'energetic', label: '充沛',
+    icon: FEEL_EYES + '<path d="M8 14c1 1.8 2.3 2.7 4 2.7s3-.9 4-2.7"/>'
+  }
 ];
 
 var FEEL_TIPS = [
   '今日體感狀況只是記錄，不影響任何判定（綜合整備狀態、訓練負荷都不讀它）。'
-    + '累積下來用來檢驗規則抓到的日子是不是真的累。',
+  + '累積下來用來檢驗規則抓到的日子是不是真的累。',
   '點一下記錄，再點同一顆取消。記的是「今天」，即使上方因資料未同步而顯示較早一天的判定。'
 ];
 
@@ -607,7 +613,7 @@ function renderFreshness(data) {
   if (f.wellness_latest) parts.push('身體數據 ' + f.wellness_latest);
   node.textContent = parts.length > 0
     ? '資料最後同步：' + parts.join('，')
-      + (days === null || days === undefined ? '' : (days > 0 ? '（' + days + ' 天前）' : '（今天）'))
+    + (days === null || days === undefined ? '' : (days > 0 ? '（' + days + ' 天前）' : '（今天）'))
     : '尚無同步資料';
 }
 
@@ -652,11 +658,11 @@ export var LOAD_TIPS = {
   tsb: [
     'TSB（訓練壓力平衡）＝ CTL − ATL：長期體能基礎減去近期疲勞。負值表示近期負荷高於長期基礎。',
     '負荷採 Banister TRIMP：分鐘 × 心率儲備百分比（%HRR）× 隨強度指數上升的權重，'
-      + '一小時輕鬆跑約 85、一小時閾值跑約 165。另外標出 TSB 佔 CTL 的百分比，讓自訂尺度的數字可讀。',
+    + '一小時輕鬆跑約 85、一小時閾值跑約 165。另外標出 TSB 佔 CTL 的百分比，讓自訂尺度的數字可讀。',
     '參考值（Joe Friel，TrainingPeaks〈Applying the Numbers Part 3〉，原為 TSS 尺度）：'
-      + '比賽日 +15～+25 通常表現最好；−10～+10 是過渡區；負值代表處於疲勞。'
-      + 'TRIMP 與 TSS 定義不同（同一小時閾值跑約為 TSS 的 1.6 倍），絕對值不能直接套用；'
-      + 'intervals.icu 改套在「TSB 佔 CTL 的百分比」，社群常引用 −30% 以下為高風險區——這是社群慣例，不是研究定論。本頁不據此判讀。'
+    + '比賽日 +15～+25 通常表現最好；−10～+10 是過渡區；負值代表處於疲勞。'
+    + 'TRIMP 與 TSS 定義不同（同一小時閾值跑約為 TSS 的 1.6 倍），絕對值不能直接套用；'
+    + 'intervals.icu 改套在「TSB 佔 CTL 的百分比」，社群常引用 −30% 以下為高風險區——這是社群慣例，不是研究定論。本頁不據此判讀。'
   ],
   atl: [
     'ATL（急性訓練負荷）：每日訓練負荷（TRIMP）的 7 日指數加權平均，代表近期疲勞。',
@@ -810,7 +816,7 @@ function zone2Tile() {
   var tile = planWeekTile('Zone 2 輕鬆跑');
   tile.title = '本週跑步在 Z2 的停留時間，百分比的分母是本週 Z1～Z5 的總時間';
   tile.appendChild(planWeekTileValue(C.formatDuration(secs[2] || 0),
-    '占本週跑步 ' + C.formatNumber(pctOf([2]), 0) + '%'));
+    '佔本週跑步 ' + C.formatNumber(pctOf([2]), 0) + '%'));
   tile.appendChild(zoneSplitBar(w.zone_seconds.map(function (z) {
     return { zone: z.zone, pct: z.seconds / total * 100 };
   }), true));
@@ -831,7 +837,7 @@ function zone2Tile() {
       C.formatDuration(secsOf) + '　' + C.formatNumber(pctOf(item.zones), 0) + '%'));
     legend.appendChild(entry);
   });
-  legend.appendChild(h('div', 'pw-legend-note', '黑線＝80% 參考位置（80/20 原則），不是判讀'));
+  legend.appendChild(h('div', 'pw-legend-note', '黑線 = 80% 參考位置'));
   tile.appendChild(legend);
   return tile;
 }
@@ -1000,8 +1006,8 @@ function vdotCard(vdot) {
   var tip = [
     'Jack Daniels 的跑力指數：用一場全力成績反推的有氧能力分數。',
     '只採用標記為比賽或全力測驗的成績（3K／5K／10K 需在 90 天內，半馬／全馬 180 天內），'
-      + '把實際距離與完賽時間代入 Daniels & Gilbert 公式：VDOT ＝ 該配速的攝氧成本 ÷ 能持續該時間的最大攝氧比例。'
-      + '有手動計時成績的場次用手動計時成績。',
+    + '把實際距離與完賽時間代入 Daniels & Gilbert 公式：VDOT ＝ 該配速的攝氧成本 ÷ 能持續該時間的最大攝氧比例。'
+    + '有手動計時成績的場次用手動計時成績。',
     '走勢線是歷年每場比賽各自算出的 VDOT（不受新鮮度門檻限制）。',
     '不採用一般訓練經心率換算的推估：那是次最大強度推估，對訓練量少的跑者會偏高。'
   ];

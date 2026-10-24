@@ -109,12 +109,18 @@
 
   /* 字級：全站只用這 6 階（2026-10-21 方案 A，原本散落約 45 種）。
      SVG 圖表內的文字跟 viewBox 縮放，不在此列。 */
-  --fs-xs: 12px;   /* 標籤、註記、徽章 */
-  --fs-sm: 13px;   /* 次要說明、表格欄名 */
-  --fs-md: 15px;   /* 正文 */
-  --fs-lg: 17px;   /* 面板標題 */
-  --fs-xl: 20px;   /* 頁標題、卡片內數字 */
-  --fs-2xl: 28px;  /* 主要指標數字、個人最佳成績 */
+  --fs-xs: 12px;
+  /* 標籤、註記、徽章 */
+  --fs-sm: 13px;
+  /* 次要說明、表格欄名 */
+  --fs-md: 15px;
+  /* 正文 */
+  --fs-lg: 17px;
+  /* 面板標題 */
+  --fs-xl: 20px;
+  /* 頁標題、卡片內數字 */
+  --fs-2xl: 28px;
+  /* 主要指標數字、個人最佳成績 */
 
   /* 圓角分三層：面板 → 卡片 → 小元件 */
   --radius: 10px;
@@ -281,7 +287,9 @@ body {
   max-width: 100%;
 }
 
-h1, h2, h3 {
+h1,
+h2,
+h3 {
   margin: 0;
   font-weight: 600;
   line-height: 1.3;
@@ -453,7 +461,8 @@ h1, h2, h3 {
 /* ---- 側邊列 ---- */
 
 .sidebar {
-  display: none; /* 手機用底部分頁列，見 .tabbar */
+  display: none;
+  /* 手機用底部分頁列，見 .tabbar */
   flex-direction: column;
   gap: 8px;
   padding: 12px 10px;
@@ -596,9 +605,17 @@ h1, h2, h3 {
   background: var(--text-muted);
 }
 
-.sync-chip.is-fresh .sync-dot { background: var(--pct-green); }
-.sync-chip.is-stale .sync-dot { background: var(--pct-yellow); }
-.sync-chip.is-old .sync-dot { background: var(--pct-red); }
+.sync-chip.is-fresh .sync-dot {
+  background: var(--pct-green);
+}
+
+.sync-chip.is-stale .sync-dot {
+  background: var(--pct-yellow);
+}
+
+.sync-chip.is-old .sync-dot {
+  background: var(--pct-red);
+}
 
 /* 頂列同步鈕的狀態點（js/shell/sync.js markSyncButton）：資料落後才出現，顏色同側邊列圓點 */
 #sync-btn {
@@ -616,8 +633,15 @@ h1, h2, h3 {
   box-shadow: 0 0 0 2px var(--bg);
 }
 
-#sync-btn.is-stale .sync-btn-dot { display: block; background: var(--pct-yellow); }
-#sync-btn.is-old .sync-btn-dot { display: block; background: var(--pct-red); }
+#sync-btn.is-stale .sync-btn-dot {
+  display: block;
+  background: var(--pct-yellow);
+}
+
+#sync-btn.is-old .sync-btn-dot {
+  display: block;
+  background: var(--pct-red);
+}
 
 .sync-status {
   color: var(--text);
@@ -706,9 +730,14 @@ h1, h2, h3 {
    （原本換成兩列，加上工具列，首屏約 170px 都是按鈕）。自訂區間鈕留在列外，
    它的下拉面板才不會被捲動容器裁掉。 */
 @media (max-width: 767px) {
-  .content-title { order: 0; }
+  .content-title {
+    order: 0;
+  }
+
   .topbar-tools,
-  .coach-toggle { order: 1; }
+  .coach-toggle {
+    order: 1;
+  }
 
   .topbar-controls {
     order: 2;
@@ -842,7 +871,8 @@ h1, h2, h3 {
 }
 
 .view[hidden] {
-  display: none; /* 覆蓋 .view 的 display:grid，否則 hidden 不生效 */
+  display: none;
+  /* 覆蓋 .view 的 display:grid，否則 hidden 不生效 */
 }
 
 .panel {
@@ -904,12 +934,19 @@ h1, h2, h3 {
 }
 
 @media (max-width: 767px) {
-  .view-split.stage-list #panel-session { display: none; }
-  .view-split.stage-detail #panel-session-list { display: none; }
+  .view-split.stage-list #panel-session {
+    display: none;
+  }
+
+  .view-split.stage-detail #panel-session-list {
+    display: none;
+  }
 }
 
 @media (min-width: 768px) {
-  .detail-back { display: none; }
+  .detail-back {
+    display: none;
+  }
 }
 
 /* ---- AI 教練面板（S1 只做殼；對話為 S2／S3） ---- */
@@ -1195,7 +1232,8 @@ body.coach-open .coach-panel {
   }
 
   .coach-rail {
-    display: none !important; /* 手機由頂列的 AI 教練鈕開啟，不用直條 */
+    display: none !important;
+    /* 手機由頂列的 AI 教練鈕開啟，不用直條 */
   }
 }
 
@@ -1384,11 +1422,13 @@ body.coach-open .coach-panel {
 
   .sidebar-foot .meta-info,
   .sidebar-foot .notice-bar {
-    display: flex; /* 240px 的完整側邊列放得下，恢復顯示 */
+    display: flex;
+    /* 240px 的完整側邊列放得下，恢復顯示 */
   }
 
   .sidebar-foot .notice-bar:empty {
-    display: none; /* 沒有警語時不留空白塊（勝過上面那條 display:flex） */
+    display: none;
+    /* 沒有警語時不留空白塊（勝過上面那條 display:flex） */
   }
 
   /* 常駐欄，不再是 overlay */
@@ -1401,7 +1441,8 @@ body.coach-open .coach-panel {
   }
 
   .coach-scrim {
-    display: none; /* 桌機面板不遮蓋內容，不需要遮罩 */
+    display: none;
+    /* 桌機面板不遮蓋內容，不需要遮罩 */
   }
 
   .coach-toggle {
@@ -1432,7 +1473,8 @@ body.coach-open .coach-panel {
   flex-direction: column;
   gap: 10px;
   height: 100%;
-  min-height: 0; /* 讓 .coach-log 的 overflow 生效 */
+  min-height: 0;
+  /* 讓 .coach-log 的 overflow 生效 */
 }
 
 /* ---- 對話管理列 ---- */
@@ -1489,7 +1531,8 @@ body.coach-open .coach-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-right: 2px; /* 讓捲軸不貼著氣泡 */
+  padding-right: 2px;
+  /* 讓捲軸不貼著氣泡 */
 }
 
 .coach-empty {
@@ -1513,14 +1556,16 @@ body.coach-open .coach-panel {
   border-radius: var(--radius);
   font-size: var(--fs-sm);
   line-height: 1.6;
-  overflow-wrap: anywhere; /* 長 URL／數字串不撐破面板 */
+  overflow-wrap: anywhere;
+  /* 長 URL／數字串不撐破面板 */
 }
 
 .coach-bubble-user {
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
   color: var(--accent-text);
-  white-space: pre-wrap; /* 使用者原樣輸入，不走 Markdown */
+  white-space: pre-wrap;
+  /* 使用者原樣輸入，不走 Markdown */
 }
 
 .coach-bubble-coach {
@@ -1535,8 +1580,13 @@ body.coach-open .coach-panel {
 }
 
 /* 極簡 Markdown 的排版 */
-.coach-md > *:first-child { margin-top: 0; }
-.coach-md > *:last-child { margin-bottom: 0; }
+.coach-md>*:first-child {
+  margin-top: 0;
+}
+
+.coach-md>*:last-child {
+  margin-bottom: 0;
+}
 
 .coach-md p {
   margin: 0 0 8px;
@@ -1595,7 +1645,9 @@ body.coach-open .coach-panel {
 }
 
 /* 三角形箭頭：Safari 要另外關掉預設 marker */
-.coach-tool-summary::-webkit-details-marker { display: none; }
+.coach-tool-summary::-webkit-details-marker {
+  display: none;
+}
 
 .coach-tool-summary::before {
   content: '▸';
@@ -1603,7 +1655,7 @@ body.coach-open .coach-panel {
   color: var(--text-muted);
 }
 
-.coach-tool[open] > .coach-tool-summary::before {
+.coach-tool[open]>.coach-tool-summary::before {
   content: '▾';
 }
 
@@ -1863,10 +1915,11 @@ body.coach-open .coach-panel {
 @container block (min-width: 940px) {
   .ability-grid {
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    grid-template-rows: none; /* 一列放完，不套用上面兩排的最小高度 */
+    grid-template-rows: none;
+    /* 一列放完，不套用上面兩排的最小高度 */
   }
 
-  .ability-grid > .kpi-card {
+  .ability-grid>.kpi-card {
     grid-column: span 2;
   }
 }
@@ -1913,7 +1966,7 @@ body.coach-open .coach-panel {
 
 /* 趨勢線上下各一條細虛線，把它與上方數字、下方灰字隔開 */
 .home-load-cards .kpi-spark,
-.ability-grid > .kpi-card .kpi-spark {
+.ability-grid>.kpi-card .kpi-spark {
   margin-top: 6px;
   border-top: 1px dashed var(--border);
   border-bottom: 1px dashed var(--border);
@@ -1953,26 +2006,32 @@ body.coach-open .coach-panel {
 }
 
 #block-load {
-  --hdr-bg: var(--cat-load-bg); --hdr-border: var(--cat-load-border);
-  --hdr-text: var(--cat-load-text); --hdr-strong: var(--cat-load-strong);
+  --hdr-bg: var(--cat-load-bg);
+  --hdr-border: var(--cat-load-border);
+  --hdr-text: var(--cat-load-text);
+  --hdr-strong: var(--cat-load-strong);
 }
 
 #block-body {
-  --hdr-bg: var(--cat-body-bg); --hdr-border: var(--cat-body-border);
-  --hdr-text: var(--cat-body-text); --hdr-strong: var(--cat-body-strong);
+  --hdr-bg: var(--cat-body-bg);
+  --hdr-border: var(--cat-body-border);
+  --hdr-text: var(--cat-body-text);
+  --hdr-strong: var(--cat-body-strong);
 }
 
 #block-ability {
-  --hdr-bg: var(--cat-ability-bg); --hdr-border: var(--cat-ability-border);
-  --hdr-text: var(--cat-ability-text); --hdr-strong: var(--cat-ability-strong);
+  --hdr-bg: var(--cat-ability-bg);
+  --hdr-border: var(--cat-ability-border);
+  --hdr-text: var(--cat-ability-text);
+  --hdr-strong: var(--cat-ability-strong);
 }
 
-#block-today > .panel-title,
-#block-week > .panel-title,
-#block-recent > .panel-title,
-#block-load > .panel-title,
-#block-body > .panel-title,
-#block-ability > .panel-title {
+#block-today>.panel-title,
+#block-week>.panel-title,
+#block-recent>.panel-title,
+#block-load>.panel-title,
+#block-body>.panel-title,
+#block-ability>.panel-title {
   border-left: 4px solid var(--hdr-strong);
   padding-left: 10px;
 }
@@ -1985,9 +2044,9 @@ body.coach-open .coach-panel {
 }
 
 /* 標題列貼齊卡片上緣與左右邊：用負 margin 抵銷卡片內距（.kpi-card 12px 14px） */
-#block-load .kpi-card > .kpi-label,
-#block-body .kpi-card > .kpi-label,
-#block-ability .kpi-card > .kpi-label {
+#block-load .kpi-card>.kpi-label,
+#block-body .kpi-card>.kpi-label,
+#block-ability .kpi-card>.kpi-label {
   margin: -12px -14px 10px;
   padding: 9px 14px;
   background: var(--hdr-bg);
@@ -1997,8 +2056,8 @@ body.coach-open .coach-panel {
 
 /* Garmin 卡片放在首頁區塊裡時，標題列也套用該區塊的類別色（訓練負荷橘、體能狀況紫），
    與同區的指標卡一致（.gc-card 內距 12px） */
-#block-load .gc-card > .gc-head,
-#block-body .gc-card > .gc-head {
+#block-load .gc-card>.gc-head,
+#block-body .gc-card>.gc-head {
   margin: -12px -12px 10px;
   padding: 9px 12px;
   background: var(--hdr-bg);
@@ -2024,7 +2083,7 @@ body.coach-open .coach-panel {
   display: none;
 }
 
-#block-ability .pb-card > .pb-card-head {
+#block-ability .pb-card>.pb-card-head {
   width: calc(100% + 24px);
   margin: -14px -12px 8px;
   padding: 9px 12px;
@@ -2032,7 +2091,7 @@ body.coach-open .coach-panel {
   border-bottom: 1px solid var(--hdr-border);
 }
 
-#block-ability .pb-card.is-empty > .pb-card-head {
+#block-ability .pb-card.is-empty>.pb-card-head {
   border-bottom-style: dashed;
 }
 
@@ -2109,11 +2168,26 @@ body.coach-open .coach-panel {
   stroke-linejoin: round;
 }
 
-.hrv-mark-good { color: var(--pct-green); }
-.hrv-mark-warn { color: var(--pct-orange); }
-.hrv-mark-bad { color: var(--pct-red); }
-.hrv-mark-muted { color: var(--text-muted); }
-.hrv-mark-muted svg { fill: none; stroke-width: 1.6; }
+.hrv-mark-good {
+  color: var(--pct-green);
+}
+
+.hrv-mark-warn {
+  color: var(--pct-orange);
+}
+
+.hrv-mark-bad {
+  color: var(--pct-red);
+}
+
+.hrv-mark-muted {
+  color: var(--text-muted);
+}
+
+.hrv-mark-muted svg {
+  fill: none;
+  stroke-width: 1.6;
+}
 
 /* HRV 平衡區間量表：綠帶＝Garmin 平衡區間，圓點＝7 日均值（只標位置，不下判讀） */
 .hrv-gauge {
@@ -2228,6 +2302,11 @@ body.coach-open .coach-panel {
   font-size: var(--fs-xl);
 }
 
+/* 比 sm 再小一級（需寫在 sm 之後才會覆蓋）：睡眠卡的「7時36分」這種含中文單位的長數值 */
+.gc-value-md .gc-value-num {
+  font-size: var(--fs-lg);
+}
+
 .gc-value-unit,
 .gc-caption {
   font-size: var(--fs-xs);
@@ -2241,18 +2320,15 @@ body.coach-open .coach-panel {
   gap: 8px;
 }
 
-.gc-side {
+.gc-lead {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  text-align: right;
+  gap: 2px;
 }
 
-.gc-side-value {
-  font-size: var(--fs-md);
-  font-weight: 700;
-  color: var(--text);
+.gc-lead-end {
+  align-items: flex-end;
+  margin-left: auto;
 }
 
 .gc-stats {
@@ -2265,7 +2341,7 @@ body.coach-open .coach-panel {
   justify-content: space-between;
 }
 
-.gc-stats-ends > :last-child {
+.gc-stats-ends> :last-child {
   text-align: right;
 }
 
@@ -2293,6 +2369,11 @@ body.coach-open .coach-panel {
   align-self: center;
   width: 108px;
   height: 108px;
+}
+
+/* 弧形量表底部（270° 缺口）本來就是空的，把等級字往上收，省掉那段空白 */
+.gc-gauge-wrap.gc-gauge-readiness {
+  margin-bottom: -22px;
 }
 
 .gc-split .gc-gauge-wrap {
@@ -2355,13 +2436,40 @@ body.coach-open .coach-panel {
 }
 
 /* 配色語氣：與 Garmin 網頁同一組色相（紅／橘／黃／綠／藍／紫），沿用專案的 --pct-* 色票 */
-.gc-tone-red { stroke: var(--pct-red); background: var(--pct-red); }
-.gc-tone-orange { stroke: var(--pct-orange); background: var(--pct-orange); }
-.gc-tone-yellow { stroke: var(--pct-yellow); background: var(--pct-yellow); }
-.gc-tone-green { stroke: var(--pct-green); background: var(--pct-green); }
-.gc-tone-blue { stroke: var(--pct-blue); background: var(--pct-blue); }
-.gc-tone-purple { stroke: var(--gc-purple); background: var(--gc-purple); }
-.gc-tone-gray { stroke: var(--c-axis); background: var(--c-axis); }
+.gc-tone-red {
+  stroke: var(--pct-red);
+  background: var(--pct-red);
+}
+
+.gc-tone-orange {
+  stroke: var(--pct-orange);
+  background: var(--pct-orange);
+}
+
+.gc-tone-yellow {
+  stroke: var(--pct-yellow);
+  background: var(--pct-yellow);
+}
+
+.gc-tone-green {
+  stroke: var(--pct-green);
+  background: var(--pct-green);
+}
+
+.gc-tone-blue {
+  stroke: var(--pct-blue);
+  background: var(--pct-blue);
+}
+
+.gc-tone-purple {
+  stroke: var(--gc-purple);
+  background: var(--gc-purple);
+}
+
+.gc-tone-gray {
+  stroke: var(--c-axis);
+  background: var(--c-axis);
+}
 
 /* HRV / 訓練狀態的狀態列 */
 .gc-status {
@@ -2511,19 +2619,57 @@ body.coach-open .coach-panel {
   stroke: none;
 }
 
-.gc-stress-rest { fill: var(--pct-blue); }
-.gc-stress-low { fill: var(--gc-stress-low); }
-.gc-stress-mid { fill: var(--pct-orange); }
-.gc-stress-high { fill: var(--gc-stress-high); }
-.gc-gauge-fill.gc-stress-rest { stroke: var(--pct-blue); fill: none; }
-.gc-gauge-fill.gc-stress-low { stroke: var(--gc-stress-low); fill: none; }
-.gc-gauge-fill.gc-stress-mid { stroke: var(--pct-orange); fill: none; }
-.gc-gauge-fill.gc-stress-high { stroke: var(--gc-stress-high); fill: none; }
+.gc-stress-rest {
+  fill: var(--pct-blue);
+}
 
-.gc-sleep-deep { fill: var(--gc-sleep-deep); }
-.gc-sleep-light { fill: var(--gc-sleep-light); }
-.gc-sleep-rem { fill: var(--gc-sleep-rem); }
-.gc-sleep-awake { fill: var(--gc-sleep-awake); }
+.gc-stress-low {
+  fill: var(--gc-stress-low);
+}
+
+.gc-stress-mid {
+  fill: var(--pct-orange);
+}
+
+.gc-stress-high {
+  fill: var(--gc-stress-high);
+}
+
+.gc-gauge-fill.gc-stress-rest {
+  stroke: var(--pct-blue);
+  fill: none;
+}
+
+.gc-gauge-fill.gc-stress-low {
+  stroke: var(--gc-stress-low);
+  fill: none;
+}
+
+.gc-gauge-fill.gc-stress-mid {
+  stroke: var(--pct-orange);
+  fill: none;
+}
+
+.gc-gauge-fill.gc-stress-high {
+  stroke: var(--gc-stress-high);
+  fill: none;
+}
+
+.gc-sleep-deep {
+  fill: var(--gc-sleep-deep);
+}
+
+.gc-sleep-light {
+  fill: var(--gc-sleep-light);
+}
+
+.gc-sleep-rem {
+  fill: var(--gc-sleep-rem);
+}
+
+.gc-sleep-awake {
+  fill: var(--gc-sleep-awake);
+}
 
 .gc-axis {
   display: flex;
@@ -2581,7 +2727,7 @@ body.coach-open .coach-panel {
 .gc-health-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 6px;
+  gap: 16px 6px;
 }
 
 .gc-health-cell {
@@ -2599,12 +2745,17 @@ body.coach-open .coach-panel {
 }
 
 .gc-gauge-wrap.gc-health-gauge {
-  width: 60px;
-  height: 60px;
+  width: 52px;
+  height: 52px;
 }
 
 .gc-health-gauge .gc-gauge-center {
   font-size: var(--fs-sm);
+}
+
+/* 弧形量表底部有 270° 缺口，單位字上移讓「標題↔量表」與「量表↔單位」的間距看起來一致 */
+.gc-health-gauge+.gc-health-range {
+  margin-top: -12px;
 }
 
 .gc-health-range {
@@ -2614,15 +2765,33 @@ body.coach-open .coach-panel {
   font-variant-numeric: tabular-nums;
 }
 
+/* 健康狀態的總評（範圍內）：與其他卡的主數字同級，並把四個量表往下推開 */
+.gc-status-xl {
+  font-size: var(--fs-xl);
+  line-height: 1.1;
+}
+
+.gc-status-xl+.gc-health-grid {
+  margin-top: 14px;
+}
+
 .gc-health-cell.is-out .gc-gauge-center,
 .gc-health-cell.is-out .gc-health-range,
 .gc-status-text.is-out {
   color: var(--pct-orange);
 }
 
-.gc-focus-anaerobic { background: var(--gc-focus-anaerobic); }
-.gc-focus-high { background: var(--gc-focus-high); }
-.gc-focus-low { background: var(--gc-focus-low); }
+.gc-focus-anaerobic {
+  background: var(--gc-focus-anaerobic);
+}
+
+.gc-focus-high {
+  background: var(--gc-focus-high);
+}
+
+.gc-focus-low {
+  background: var(--gc-focus-low);
+}
 
 /* 訓練完備程度的因素清單：名稱｜數值｜評級文字＋圖示，一列一項，緊湊（貼 Garmin 網頁的排法） */
 .gc-factors {
@@ -2643,6 +2812,61 @@ body.coach-open .coach-panel {
 
 .gc-factor:last-child {
   border-bottom: none;
+}
+
+/* 次要因素預設隱藏，展開（.is-expanded）後留在原本順序；切換鈕固定在清單最下方 */
+.gc-factor-extra {
+  display: none;
+}
+
+.gc-factors.is-expanded .gc-factor-extra {
+  display: grid;
+}
+
+.gc-factors-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin-top: 2px;
+  padding: 4px 0 2px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 自畫 chevron：收合朝下，展開轉向朝上 */
+.gc-factors-toggle::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.gc-factors.is-expanded .gc-factors-toggle::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.gc-factors-toggle:hover {
+  color: var(--text);
+}
+
+.gc-factors-toggle:focus {
+  outline: none;
+}
+
+.gc-factors-toggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .gc-factor-label {
@@ -2699,7 +2923,7 @@ body.coach-open .coach-panel {
 
 /* 負荷焦點：標題列與第一條之間的空白收小（10px→2px），省下的高度分給下面各列的間距。
    要用 ID 選擇器才蓋得過 `#block-load .gc-card > .gc-head` 的 margin（沿用它的負 margin 貼齊卡片邊） */
-#block-load .gc-card-load_focus > .gc-head {
+#block-load .gc-card-load_focus>.gc-head {
   margin: -12px -12px 2px;
 }
 
@@ -2727,6 +2951,47 @@ body.coach-open .coach-panel {
   display: block;
   width: 100%;
   height: 28px;
+}
+
+/* HRV 趨勢：灰帶＝每日平衡區間，點＝每日 7 天平均（帶內綠、帶外橘、無區間用主色） */
+.gc-spark .hrv-trend {
+  display: block;
+  width: 100%;
+  height: 28px;
+}
+
+.hrv-trend-band {
+  fill: var(--bar-track);
+}
+
+/* HRV 卡：剩餘高度分成三等份——狀態與量表之間、量表與平均值之間、平均值與趨勢圖之間，
+   三組資訊均勻分布，平均值不貼著底部的趨勢圖 */
+.gc-body>.hrv-gauge,
+.gc-body>.gc-hrv-averages {
+  margin-top: auto;
+}
+
+.gc-body>.gc-hrv-averages {
+  margin-bottom: auto;
+}
+
+.hrv-trend-dot {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.hrv-trend-dot.is-in {
+  stroke: var(--pct-green);
+}
+
+.hrv-trend-dot.is-out {
+  stroke: var(--pct-orange);
+}
+
+.hrv-trend-dot.is-none {
+  stroke: var(--accent);
 }
 
 /* ---- 今日頁：KPI 條（大數字 + 迷你趨勢線） ---- */
@@ -2838,34 +3103,35 @@ body.coach-open .coach-panel {
    高度，最少 40px）｜底部兩行灰字（註記，固定預留兩行，各卡的灰字起點一致）。
    只動卡片內部，卡片外框與兩排高度不變 */
 .home-load-cards .kpi-card,
-.ability-grid > .kpi-card {
+.ability-grid>.kpi-card {
   display: flex;
   flex-direction: column;
 }
 
 .home-load-cards .kpi-main,
-.ability-grid > .kpi-card .kpi-main {
+.ability-grid>.kpi-card .kpi-main {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
 }
 
 .home-load-cards .kpi-spark,
-.ability-grid > .kpi-card .kpi-spark {
+.ability-grid>.kpi-card .kpi-spark {
   position: relative;
-  flex: 0 0 64px; /* 趨勢線高度固定 64px（比最初吃滿剩餘高度的約 78px 矮） */
+  flex: 0 0 64px;
+  /* 趨勢線高度固定 64px（比最初吃滿剩餘高度的約 78px 矮） */
 }
 
 /* 數字吃掉剩餘高度，在標題列與趨勢線之間水平、垂直置中 */
 .home-load-cards .kpi-value-wrap,
-.ability-grid > .kpi-card .kpi-value-wrap {
+.ability-grid>.kpi-card .kpi-value-wrap {
   flex: 1 1 auto;
   align-items: center;
   justify-content: center;
 }
 
 .home-load-cards .kpi-spark .sparkline,
-.ability-grid > .kpi-card .kpi-spark .sparkline {
+.ability-grid>.kpi-card .kpi-spark .sparkline {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2873,7 +3139,7 @@ body.coach-open .coach-panel {
 }
 
 .home-load-cards .kpi-note,
-.ability-grid > .kpi-card .kpi-note {
+.ability-grid>.kpi-card .kpi-note {
   min-height: 2.8em;
 }
 
@@ -3007,7 +3273,7 @@ body.coach-open .coach-panel {
 }
 
 /* 圖卡內的上下區段：里程在上、完成堂數在下，中間一條分隔線 */
-.pw-sec + .pw-sec {
+.pw-sec+.pw-sec {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px dashed var(--border);
@@ -3024,7 +3290,8 @@ body.coach-open .coach-panel {
 .pw-dots {
   display: flex;
   flex-wrap: nowrap;
-  flex: none; /* 窄卡片裡圓點不換行，改由左邊文字讓位 */
+  flex: none;
+  /* 窄卡片裡圓點不換行，改由左邊文字讓位 */
   justify-content: flex-end;
   gap: 6px;
 }
@@ -3046,7 +3313,8 @@ body.coach-open .coach-panel {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 14px; /* 與上方比例條拉開距離 */
+  margin-top: 14px;
+  /* 與上方比例條拉開距離 */
   font-size: var(--fs-xs);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -3154,7 +3422,7 @@ body.coach-open .coach-panel {
 }
 
 /* 日期、實際、狀態欄（含表頭）一律置中 */
-.wp-row.wp-head > :not(:nth-child(2)),
+.wp-row.wp-head> :not(:nth-child(2)),
 .wp-date,
 .wp-actual,
 .wp-state {
@@ -3170,23 +3438,32 @@ body.coach-open .coach-panel {
   outline-offset: 2px;
 }
 
-.wp-row + .wp-row {
+.wp-row+.wp-row {
   border-top: 1px solid var(--border);
 }
 
 .wp-date,
 .wp-state {
-  white-space: nowrap; /* 「尚未發生」「10/19 (一)」不可折成兩行 */
+  white-space: nowrap;
+  /* 「尚未發生」「10/19 (一)」不可折成兩行 */
   color: var(--text-muted);
   font-size: var(--fs-sm);
   font-weight: 600;
 }
 
 /* 執行狀態文字與格子底色同色系：分類不是評價，刻意不用紅綠 */
-.day-planned_done .wp-state { color: var(--day-planned-done-text); }
-.day-planned_missed .wp-state { color: var(--day-planned-missed-text); }
+.day-planned_done .wp-state {
+  color: var(--day-planned-done-text);
+}
+
+.day-planned_missed .wp-state {
+  color: var(--day-planned-missed-text);
+}
+
 .day-today_pending .wp-state,
-.day-unplanned_activity .wp-state { color: var(--day-unplanned-text); }
+.day-unplanned_activity .wp-state {
+  color: var(--day-unplanned-text);
+}
 
 .wp-actual {
   color: var(--text);
@@ -3236,7 +3513,8 @@ body.coach-open .coach-panel {
 .recent-row {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) 4.4rem 4rem 3.9rem 3.9rem;
-  align-items: center; /* 活動有兩行、日期單行，垂直置中才不會偏上 */
+  align-items: center;
+  /* 活動有兩行、日期單行，垂直置中才不會偏上 */
   gap: 8px;
   width: 100%;
   padding: 8px 12px 8px 6px;
@@ -3256,7 +3534,7 @@ body.coach-open .coach-panel {
   background: var(--surface-sunken);
 }
 
-.recent-row + .recent-row {
+.recent-row+.recent-row {
   border-top: 1px solid var(--border);
 }
 
@@ -3279,7 +3557,7 @@ button.recent-row:focus-visible {
 }
 
 /* 日期欄（含表頭）置中 */
-.recent-head > :nth-child(1),
+.recent-head> :nth-child(1),
 .rc-date {
   text-align: center;
 }
@@ -3342,7 +3620,7 @@ button.recent-row .rc-dist {
 }
 
 /* 表頭與資料：距離｜時間｜配速｜心率都在各自的欄裡置中 */
-.recent-head > :nth-child(n + 3),
+.recent-head> :nth-child(n + 3),
 .rc-dist,
 .rc-time,
 .rc-pace,
@@ -3381,11 +3659,11 @@ button.recent-row .rc-dist {
   }
 
   /* 表頭只剩「距離／時間」一格（右對齊），配速、心率的表頭收掉 */
-  .recent-head > :nth-child(n + 4) {
+  .recent-head> :nth-child(n + 4) {
     display: none;
   }
 
-  .recent-head > :nth-child(3) {
+  .recent-head> :nth-child(3) {
     text-align: right;
   }
 
@@ -3535,7 +3813,7 @@ button.recent-row .rc-dist {
   background: var(--surface);
 }
 
-.race-list-row + .race-list-row {
+.race-list-row+.race-list-row {
   border-top: 1px solid var(--border);
 }
 
@@ -3601,11 +3879,25 @@ button.recent-row .rc-dist {
   white-space: nowrap;
 }
 
-.race-dist-ultra { color: var(--dist-ultra); }
-.race-dist-full { color: var(--dist-full); }
-.race-dist-half { color: var(--dist-half); }
-.race-dist-ten { color: var(--dist-ten); }
-.race-dist-short { color: var(--dist-short); }
+.race-dist-ultra {
+  color: var(--dist-ultra);
+}
+
+.race-dist-full {
+  color: var(--dist-full);
+}
+
+.race-dist-half {
+  color: var(--dist-half);
+}
+
+.race-dist-ten {
+  color: var(--dist-ten);
+}
+
+.race-dist-short {
+  color: var(--dist-short);
+}
 
 .race-icon {
   display: inline-flex;
@@ -3849,7 +4141,7 @@ button.recent-row .rc-dist {
 }
 
 /* 標題第一行固定高度：有 ⓘ 按鈕的（綜合整備狀態）與沒有的（本週訓練狀況）一樣高 */
-.fig-block .today-block-title > :first-child {
+.fig-block .today-block-title> :first-child {
   min-height: 24px;
   line-height: 24px;
 }
@@ -3971,16 +4263,40 @@ button.recent-row .rc-dist {
 }
 
 /* 紅黃綠：圖示平時就是該色線條，選中時整格填色、圖示反白（黃色底對比不足，圖示改深色） */
-.feel-btn.feel-tired { color: var(--pct-red); }
-.feel-btn.feel-normal { color: var(--pct-yellow); }
-.feel-btn.feel-energetic { color: var(--pct-green); }
+.feel-btn.feel-tired {
+  color: var(--pct-red);
+}
 
-.feel-btn.is-active { color: #fff; }
-.feel-btn.feel-normal.is-active { color: #3a2f00; }
+.feel-btn.feel-normal {
+  color: var(--pct-yellow);
+}
 
-.feel-btn.feel-tired.is-active { background: var(--pct-red); border-color: var(--pct-red); }
-.feel-btn.feel-normal.is-active { background: var(--pct-yellow); border-color: var(--pct-yellow); }
-.feel-btn.feel-energetic.is-active { background: var(--pct-green); border-color: var(--pct-green); }
+.feel-btn.feel-energetic {
+  color: var(--pct-green);
+}
+
+.feel-btn.is-active {
+  color: #fff;
+}
+
+.feel-btn.feel-normal.is-active {
+  color: #3a2f00;
+}
+
+.feel-btn.feel-tired.is-active {
+  background: var(--pct-red);
+  border-color: var(--pct-red);
+}
+
+.feel-btn.feel-normal.is-active {
+  background: var(--pct-yellow);
+  border-color: var(--pct-yellow);
+}
+
+.feel-btn.feel-energetic.is-active {
+  background: var(--pct-green);
+  border-color: var(--pct-green);
+}
 
 /* 判定圖示：形狀（圓／圓角方／三角／虛線圓）＋單色線條圖示，下方一行文字。
    顏色由狀態 class 帶入三個變數：底色、邊線、前景 */
@@ -3993,10 +4309,29 @@ button.recent-row .rc-dist {
   color: var(--st-fg);
 }
 
-.rd-ok { --st-bg: var(--ready-ok-bg); --st-bd: var(--ready-ok-border); --st-fg: var(--ready-ok-text); }
-.rd-caution { --st-bg: var(--ready-caution-bg); --st-bd: var(--ready-caution-border); --st-fg: var(--ready-caution-text); }
-.rd-low { --st-bg: var(--ready-low-bg); --st-bd: var(--ready-low-border); --st-fg: var(--ready-low-text); }
-.rd-none { --st-bg: var(--conf-none-bg); --st-bd: var(--conf-none-border); --st-fg: var(--conf-none-text); }
+.rd-ok {
+  --st-bg: var(--ready-ok-bg);
+  --st-bd: var(--ready-ok-border);
+  --st-fg: var(--ready-ok-text);
+}
+
+.rd-caution {
+  --st-bg: var(--ready-caution-bg);
+  --st-bd: var(--ready-caution-border);
+  --st-fg: var(--ready-caution-text);
+}
+
+.rd-low {
+  --st-bg: var(--ready-low-bg);
+  --st-bd: var(--ready-low-border);
+  --st-fg: var(--ready-low-text);
+}
+
+.rd-none {
+  --st-bg: var(--conf-none-bg);
+  --st-bd: var(--conf-none-border);
+  --st-fg: var(--conf-none-text);
+}
 
 .rd-status svg {
   display: block;
@@ -4120,11 +4455,25 @@ button.recent-row .rc-dist {
 }
 
 /* 完成率分級色：≥80 藍、≥60 綠、≥40 黃、≥20 橘、<20 紅 */
-.wt-ring.pct-blue .wt-ring-fill { stroke: var(--pct-blue); }
-.wt-ring.pct-green .wt-ring-fill { stroke: var(--pct-green); }
-.wt-ring.pct-yellow .wt-ring-fill { stroke: var(--pct-yellow); }
-.wt-ring.pct-orange .wt-ring-fill { stroke: var(--pct-orange); }
-.wt-ring.pct-red .wt-ring-fill { stroke: var(--pct-red); }
+.wt-ring.pct-blue .wt-ring-fill {
+  stroke: var(--pct-blue);
+}
+
+.wt-ring.pct-green .wt-ring-fill {
+  stroke: var(--pct-green);
+}
+
+.wt-ring.pct-yellow .wt-ring-fill {
+  stroke: var(--pct-yellow);
+}
+
+.wt-ring.pct-orange .wt-ring-fill {
+  stroke: var(--pct-orange);
+}
+
+.wt-ring.pct-red .wt-ring-fill {
+  stroke: var(--pct-red);
+}
 
 .wt-ring-pct {
   position: absolute;
@@ -4159,7 +4508,8 @@ button.recent-row .rc-dist {
 }
 
 .conf-badge.conf-high {
-  display: none; /* 方案 A：可信是預期狀態，不需要徽章提醒 */
+  display: none;
+  /* 方案 A：可信是預期狀態，不需要徽章提醒 */
   background: var(--conf-high-bg);
   border: 1px solid var(--conf-high-border);
   color: var(--conf-high-text);
@@ -4208,8 +4558,13 @@ button.recent-row .rc-dist {
 /* 手機：390px 寬時每格只剩約 33px，三個字（輕鬆跑）會折成兩行；
    收窄間距與內距讓三字類型放得下一行 */
 @media (max-width: 560px) {
-  .week-strip { gap: 4px; }
-  .week-cell { padding: 6px 2px; }
+  .week-strip {
+    gap: 4px;
+  }
+
+  .week-cell {
+    padding: 6px 2px;
+  }
 }
 
 .week-cell.is-clickable {
@@ -4453,7 +4808,7 @@ button.recent-row .rc-dist {
   color: var(--text-muted);
 }
 
-.calendar-day-section + .calendar-day-section {
+.calendar-day-section+.calendar-day-section {
   margin-top: 14px;
 }
 
@@ -4476,7 +4831,7 @@ button.recent-row .rc-dist {
   background: var(--surface-sunken);
 }
 
-.calendar-day-row + .calendar-day-row {
+.calendar-day-row+.calendar-day-row {
   margin-top: 6px;
 }
 
@@ -4573,8 +4928,13 @@ button.recent-row .rc-dist {
    實際寬度由 grid 自動分配（7 欄在 320px 螢幕約 40px 寬，配合較高的
    min-height 讓點擊面積足夠，寬度不足時仍優先保證不橫向捲動）。 */
 @media (max-width: 480px) {
-  .week-cell { min-height: 52px; }
-  .calendar-cell { min-height: 44px; }
+  .week-cell {
+    min-height: 52px;
+  }
+
+  .calendar-cell {
+    min-height: 44px;
+  }
 }
 
 /* ------------------------------------------------------------ 圖表容器 */
@@ -4673,50 +5033,142 @@ button.recent-row .rc-dist {
   fill: none;
 }
 
-.line-primary { stroke: var(--accent); }
-.line-pace { stroke: var(--c-pace); }
-.line-hr { stroke: var(--c-hr); }
-.line-distance { stroke: var(--c-distance); }
-.line-te { stroke: var(--c-te); }
+.line-primary {
+  stroke: var(--accent);
+}
 
-.line-metric-hrv_ms { stroke: var(--c-metric-hrv_ms); }
-.line-metric-resting_hr_bpm { stroke: var(--c-metric-resting_hr_bpm); }
-.line-metric-spo2_pct { stroke: var(--c-metric-spo2_pct); }
-.line-metric-sleep_score { stroke: var(--c-metric-sleep_score); }
-.line-metric-training_readiness_score { stroke: var(--c-metric-training_readiness_score); }
-.line-metric-stress_avg { stroke: var(--c-metric-stress_avg); }
-.line-metric-all_day_stress_avg { stroke: var(--c-metric-all_day_stress_avg); }
-.line-metric-steps { stroke: var(--c-metric-steps); }
-.line-metric-sleep_duration_sec { stroke: var(--c-metric-sleep_duration_sec); }
-.line-metric-hrv_weekly_avg_ms { stroke: var(--c-metric-hrv_weekly_avg_ms); }
-.line-metric-recovery_time_hours { stroke: var(--c-metric-recovery_time_hours); }
-.line-metric-acwr { stroke: var(--c-metric-acwr); }
-.line-metric-respiration_rate { stroke: var(--c-metric-respiration_rate); }
+.line-pace {
+  stroke: var(--c-pace);
+}
+
+.line-hr {
+  stroke: var(--c-hr);
+}
+
+.line-distance {
+  stroke: var(--c-distance);
+}
+
+.line-te {
+  stroke: var(--c-te);
+}
+
+.line-metric-hrv_ms {
+  stroke: var(--c-metric-hrv_ms);
+}
+
+.line-metric-resting_hr_bpm {
+  stroke: var(--c-metric-resting_hr_bpm);
+}
+
+.line-metric-spo2_pct {
+  stroke: var(--c-metric-spo2_pct);
+}
+
+.line-metric-sleep_score {
+  stroke: var(--c-metric-sleep_score);
+}
+
+.line-metric-training_readiness_score {
+  stroke: var(--c-metric-training_readiness_score);
+}
+
+.line-metric-stress_avg {
+  stroke: var(--c-metric-stress_avg);
+}
+
+.line-metric-all_day_stress_avg {
+  stroke: var(--c-metric-all_day_stress_avg);
+}
+
+.line-metric-steps {
+  stroke: var(--c-metric-steps);
+}
+
+.line-metric-sleep_duration_sec {
+  stroke: var(--c-metric-sleep_duration_sec);
+}
+
+.line-metric-hrv_weekly_avg_ms {
+  stroke: var(--c-metric-hrv_weekly_avg_ms);
+}
+
+.line-metric-recovery_time_hours {
+  stroke: var(--c-metric-recovery_time_hours);
+}
+
+.line-metric-acwr {
+  stroke: var(--c-metric-acwr);
+}
+
+.line-metric-respiration_rate {
+  stroke: var(--c-metric-respiration_rate);
+}
 
 .dot {
   fill: var(--dot-fill);
   stroke-width: 1.4;
 }
 
-.dot-primary { stroke: var(--accent); }
-.dot-pace { stroke: var(--c-pace); }
-.dot-hr { stroke: var(--c-hr); }
-.dot-distance { stroke: var(--c-distance); }
-.dot-te { stroke: var(--c-te); }
-.dot-metric { stroke: var(--text-muted); }
+.dot-primary {
+  stroke: var(--accent);
+}
+
+.dot-pace {
+  stroke: var(--c-pace);
+}
+
+.dot-hr {
+  stroke: var(--c-hr);
+}
+
+.dot-distance {
+  stroke: var(--c-distance);
+}
+
+.dot-te {
+  stroke: var(--c-te);
+}
+
+.dot-metric {
+  stroke: var(--text-muted);
+}
 
 .bar {
   fill: var(--accent);
 }
 
 /* 分圈配速長條用主題色（強調色），不另用綠色；折線與圖例的配速色 --c-pace 不變 */
-.bar-pace { fill: var(--accent); }
+.bar-pace {
+  fill: var(--accent);
+}
+
 /* 分圈配速：恢復／走路等明顯慢圈畫成淡色短柱；柱頂標配速；主要圈平均線（2026-10-24） */
-.bar-pace-slow { fill: var(--accent); opacity: 0.35; }
-.bar-value { font-size: 11px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
-.pace-avg-line { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 3; }
-.pace-avg-label { font-size: 11px; fill: var(--text-muted); }
-.bar-volume { fill: var(--c-volume); }
+.bar-pace-slow {
+  fill: var(--accent);
+  opacity: 0.35;
+}
+
+.bar-value {
+  font-size: 11px;
+  fill: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pace-avg-line {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.pace-avg-label {
+  font-size: 11px;
+  fill: var(--text-muted);
+}
+
+.bar-volume {
+  fill: var(--c-volume);
+}
 
 /* 不足 1km 的最後一圈：用半透明條紋區隔，避免誤讀為完整一圈 */
 .bar-partial {
@@ -4727,12 +5179,29 @@ button.recent-row .rc-dist {
   fill: var(--bar-track);
 }
 
-.bar-zone-0 { fill: var(--c-zone-0); }
-.bar-zone-1 { fill: var(--c-zone-1); }
-.bar-zone-2 { fill: var(--c-zone-2); }
-.bar-zone-3 { fill: var(--c-zone-3); }
-.bar-zone-4 { fill: var(--c-zone-4); }
-.bar-zone-5 { fill: var(--c-zone-5); }
+.bar-zone-0 {
+  fill: var(--c-zone-0);
+}
+
+.bar-zone-1 {
+  fill: var(--c-zone-1);
+}
+
+.bar-zone-2 {
+  fill: var(--c-zone-2);
+}
+
+.bar-zone-3 {
+  fill: var(--c-zone-3);
+}
+
+.bar-zone-4 {
+  fill: var(--c-zone-4);
+}
+
+.bar-zone-5 {
+  fill: var(--c-zone-5);
+}
 
 /* 訓練日整欄背景色帶：淡色、低透明度，不能蓋過折線視覺焦點，
    只需讓使用者一眼分辨「這天有練」而不必 hover。 */
@@ -4807,10 +5276,22 @@ button.recent-row .rc-dist {
   border-radius: 2px;
 }
 
-.swatch-pace { background: var(--c-pace); }
-.swatch-hr { background: var(--c-hr); }
+.swatch-pace {
+  background: var(--c-pace);
+}
+
+.swatch-hr {
+  background: var(--c-hr);
+}
+
 /* 呼應圖表內訓練日背景色帶的樣式（同色、低透明度），高度加大成色塊 */
-.swatch-training { background: var(--c-hr); opacity: 0.35; height: 10px; width: 10px; border-radius: 2px; }
+.swatch-training {
+  background: var(--c-hr);
+  opacity: 0.35;
+  height: 10px;
+  width: 10px;
+  border-radius: 2px;
+}
 
 /* ------------------------------------------------------------ 總覽
  *
@@ -4819,22 +5300,54 @@ button.recent-row .rc-dist {
  * 與心率區間列的顏色語彙一致，深色模式也隨 --c-zone-* 自動切換。
  * 未分類用軸線色：它是「沒有資料」而不是一種強度，不該搶眼。
  */
-.bar-intensity-low { fill: var(--c-zone-2); background: var(--c-zone-2); }
-.bar-intensity-mid { fill: var(--c-zone-3); background: var(--c-zone-3); }
-.bar-intensity-high { fill: var(--c-zone-5); background: var(--c-zone-5); }
-.bar-intensity-unknown { fill: var(--c-axis); background: var(--c-axis); }
+.bar-intensity-low {
+  fill: var(--c-zone-2);
+  background: var(--c-zone-2);
+}
+
+.bar-intensity-mid {
+  fill: var(--c-zone-3);
+  background: var(--c-zone-3);
+}
+
+.bar-intensity-high {
+  fill: var(--c-zone-5);
+  background: var(--c-zone-5);
+}
+
+.bar-intensity-unknown {
+  fill: var(--c-axis);
+  background: var(--c-axis);
+}
 
 .swatch-bar-intensity-low,
 .swatch-bar-intensity-mid,
 .swatch-bar-intensity-high,
-.swatch-bar-intensity-unknown { width: 10px; height: 10px; }
-.swatch-bar-intensity-low { background: var(--c-zone-2); }
-.swatch-bar-intensity-mid { background: var(--c-zone-3); }
-.swatch-bar-intensity-high { background: var(--c-zone-5); }
-.swatch-bar-intensity-unknown { background: var(--c-axis); }
+.swatch-bar-intensity-unknown {
+  width: 10px;
+  height: 10px;
+}
+
+.swatch-bar-intensity-low {
+  background: var(--c-zone-2);
+}
+
+.swatch-bar-intensity-mid {
+  background: var(--c-zone-3);
+}
+
+.swatch-bar-intensity-high {
+  background: var(--c-zone-5);
+}
+
+.swatch-bar-intensity-unknown {
+  background: var(--c-axis);
+}
 
 /* 不完整週（被區間切到或還沒過完）：半透明，與完整週區分 */
-.bar-partial-week { opacity: 0.5; }
+.bar-partial-week {
+  opacity: 0.5;
+}
 
 /* 週跑量圖上的課表目標虛線 */
 .bar-target {
@@ -4890,7 +5403,7 @@ button.recent-row .rc-dist {
   min-width: 0;
 }
 
-.strip-cell + .strip-cell {
+.strip-cell+.strip-cell {
   border-left: 1px solid var(--border);
 }
 
@@ -4917,7 +5430,8 @@ button.recent-row .rc-dist {
   .overview-strip {
     grid-template-columns: minmax(0, 1fr);
   }
-  .strip-cell + .strip-cell {
+
+  .strip-cell+.strip-cell {
     border-left: none;
     border-top: 1px solid var(--border);
   }
@@ -5023,8 +5537,15 @@ button.recent-row .rc-dist {
   height: 100%;
 }
 
-.zone-split-seg.is-first { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
-.zone-split-seg.is-last { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+.zone-split-seg.is-first {
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
+}
+
+.zone-split-seg.is-last {
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
 
 .zone-split-ref {
   position: absolute;
@@ -5081,11 +5602,25 @@ button.recent-row .rc-dist {
   border-radius: 4px;
 }
 
-.bar-zone-fill-1 { background: var(--c-zone-1); }
-.bar-zone-fill-2 { background: var(--c-zone-2); }
-.bar-zone-fill-3 { background: var(--c-zone-3); }
-.bar-zone-fill-4 { background: var(--c-zone-4); }
-.bar-zone-fill-5 { background: var(--c-zone-5); }
+.bar-zone-fill-1 {
+  background: var(--c-zone-1);
+}
+
+.bar-zone-fill-2 {
+  background: var(--c-zone-2);
+}
+
+.bar-zone-fill-3 {
+  background: var(--c-zone-3);
+}
+
+.bar-zone-fill-4 {
+  background: var(--c-zone-4);
+}
+
+.bar-zone-fill-5 {
+  background: var(--c-zone-5);
+}
 
 .zone-pct {
   text-align: right;
@@ -5097,7 +5632,10 @@ button.recent-row .rc-dist {
   .zone-row {
     grid-template-columns: minmax(0, 1fr) 56px 44px;
   }
-  .zone-row .zone-track { display: none; }
+
+  .zone-row .zone-track {
+    display: none;
+  }
 }
 
 /* ⓘ 定義按鈕。視覺上是 20px 小圓，但用透明 padding 把觸控區撐到 44px
@@ -5222,7 +5760,7 @@ button.recent-row .rc-dist {
   margin: 0;
 }
 
-.info-popover-body p + p {
+.info-popover-body p+p {
   margin-top: 8px;
 }
 
@@ -5692,8 +6230,13 @@ button.recent-row .rc-dist {
 }
 
 /* delta 僅用顏色區分正負「方向」，不含任何好壞判斷文字 */
-.stat-card.delta-up .stat-value { color: var(--up); }
-.stat-card.delta-down .stat-value { color: var(--down); }
+.stat-card.delta-up .stat-value {
+  color: var(--up);
+}
+
+.stat-card.delta-down .stat-value {
+  color: var(--down);
+}
 
 /* ------------------------------------------------------------ 場次選擇與標記 */
 
@@ -5737,10 +6280,29 @@ button.recent-row .rc-dist {
   font-weight: 600;
 }
 
-.tag-type-interval { background: var(--tag-interval-bg); border-color: var(--tag-interval-border); color: var(--tag-interval-text); }
-.tag-type-tempo { background: var(--tag-tempo-bg); border-color: var(--tag-tempo-border); color: var(--tag-tempo-text); }
-.tag-type-race { background: var(--tag-race-bg); border-color: var(--tag-race-border); color: var(--tag-race-text); }
-.tag-type-unknown { background: var(--tag-unknown-bg); border-color: var(--border); color: var(--text-muted); }
+.tag-type-interval {
+  background: var(--tag-interval-bg);
+  border-color: var(--tag-interval-border);
+  color: var(--tag-interval-text);
+}
+
+.tag-type-tempo {
+  background: var(--tag-tempo-bg);
+  border-color: var(--tag-tempo-border);
+  color: var(--tag-tempo-text);
+}
+
+.tag-type-race {
+  background: var(--tag-race-bg);
+  border-color: var(--tag-race-border);
+  color: var(--tag-race-text);
+}
+
+.tag-type-unknown {
+  background: var(--tag-unknown-bg);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
 
 .tag-planned {
   background: var(--tag-planned-bg);
@@ -5853,13 +6415,16 @@ button.recent-row .rc-dist {
     grid-template-columns: 1.1fr 1fr 0.9fr 1fr 1fr 0.9fr;
     align-items: center;
   }
+
   .sc-cell {
     flex-direction: row;
     align-items: baseline;
     gap: 6px;
   }
+
   .sc-key {
-    display: none; /* 夠寬時欄位語意由順序表達，隱藏重複標籤 */
+    display: none;
+    /* 夠寬時欄位語意由順序表達，隱藏重複標籤 */
   }
 }
 
@@ -5996,9 +6561,11 @@ button.recent-row .rc-dist {
   :root {
     --gap: 12px;
   }
+
   .stat-grid {
     grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
   }
+
   .stat-value {
     font-size: var(--fs-lg);
   }
@@ -6126,16 +6693,16 @@ button.recent-row .rc-dist {
   transition: transform 0.15s ease;
 }
 
-.switch input:checked + .switch-track {
+.switch input:checked+.switch-track {
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.switch input:checked + .switch-track::after {
+.switch input:checked+.switch-track::after {
   transform: translateX(18px);
 }
 
-.switch input:focus-visible + .switch-track {
+.switch input:focus-visible+.switch-track {
   outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -6191,7 +6758,9 @@ button.recent-row .rc-dist {
 /* 同步中的轉圈。prefers-reduced-motion 時停止旋轉但保留 disabled 與文字，
    狀態仍然看得出來——動畫是輔助，不是唯一的訊號。 */
 @keyframes rc-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tool-btn.is-syncing svg,
@@ -6201,6 +6770,7 @@ button.recent-row .rc-dist {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .tool-btn.is-syncing svg,
   .setting-btn.is-syncing svg {
     animation: none;
@@ -6215,7 +6785,8 @@ button.recent-row .rc-dist {
 }
 
 .setting-sync-message:empty {
-  display: none; /* 沒有訊息時不留空白塊 */
+  display: none;
+  /* 沒有訊息時不留空白塊 */
 }
 
 .setting-sync-message.is-error {
@@ -6276,10 +6847,12 @@ button.recent-row .rc-dist {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: auto auto 1fr;
   }
-  .tools-grid > * {
+
+  .tools-grid>* {
     grid-column: 1;
   }
-  .tools-grid > :nth-child(2) {
+
+  .tools-grid> :nth-child(2) {
     grid-column: 2;
     grid-row: 1 / span 3;
   }
@@ -6315,23 +6888,31 @@ button.recent-row .rc-dist {
 }
 
 .tools-theme-pace {
-  --tp-bg: var(--cat-week-bg); --tp-border: var(--cat-week-border);
-  --tp-text: var(--cat-week-text); --tp-strong: var(--cat-week-strong);
+  --tp-bg: var(--cat-week-bg);
+  --tp-border: var(--cat-week-border);
+  --tp-text: var(--cat-week-text);
+  --tp-strong: var(--cat-week-strong);
 }
 
 .tools-theme-track {
-  --tp-bg: var(--cat-recent-bg); --tp-border: var(--cat-recent-border);
-  --tp-text: var(--cat-recent-text); --tp-strong: var(--cat-recent-strong);
+  --tp-bg: var(--cat-recent-bg);
+  --tp-border: var(--cat-recent-border);
+  --tp-text: var(--cat-recent-text);
+  --tp-strong: var(--cat-recent-strong);
 }
 
 .tools-theme-finish {
-  --tp-bg: var(--cat-body-bg); --tp-border: var(--cat-body-border);
-  --tp-text: var(--cat-body-text); --tp-strong: var(--cat-body-strong);
+  --tp-bg: var(--cat-body-bg);
+  --tp-border: var(--cat-body-border);
+  --tp-text: var(--cat-body-text);
+  --tp-strong: var(--cat-body-strong);
 }
 
 .tools-theme-treadmill {
-  --tp-bg: var(--cat-ability-bg); --tp-border: var(--cat-ability-border);
-  --tp-text: var(--cat-ability-text); --tp-strong: var(--cat-ability-strong);
+  --tp-bg: var(--cat-ability-bg);
+  --tp-border: var(--cat-ability-border);
+  --tp-text: var(--cat-ability-text);
+  --tp-strong: var(--cat-ability-strong);
 }
 
 .tools-panel-body {
@@ -6593,17 +7174,50 @@ button.recent-row .rc-dist {
   height: 100%;
 }
 
-.sport-chip--run { --sport-chip-bg: var(--sport-run-bg); --sport-chip-fg: var(--sport-run-fg); }
-.sport-chip--strength { --sport-chip-bg: var(--sport-strength-bg); --sport-chip-fg: var(--sport-strength-fg); }
-.sport-chip--walk { --sport-chip-bg: var(--sport-walk-bg); --sport-chip-fg: var(--sport-walk-fg); }
-.sport-chip--hike { --sport-chip-bg: var(--sport-hike-bg); --sport-chip-fg: var(--sport-hike-fg); }
-.sport-chip--bike { --sport-chip-bg: var(--sport-bike-bg); --sport-chip-fg: var(--sport-bike-fg); }
-.sport-chip--swim { --sport-chip-bg: var(--sport-swim-bg); --sport-chip-fg: var(--sport-swim-fg); }
-.sport-chip--race { --sport-chip-bg: var(--sport-race-bg); --sport-chip-fg: var(--sport-race-fg); }
-.sport-chip--other { --sport-chip-bg: var(--sport-other-bg); --sport-chip-fg: var(--sport-other-fg); }
+.sport-chip--run {
+  --sport-chip-bg: var(--sport-run-bg);
+  --sport-chip-fg: var(--sport-run-fg);
+}
+
+.sport-chip--strength {
+  --sport-chip-bg: var(--sport-strength-bg);
+  --sport-chip-fg: var(--sport-strength-fg);
+}
+
+.sport-chip--walk {
+  --sport-chip-bg: var(--sport-walk-bg);
+  --sport-chip-fg: var(--sport-walk-fg);
+}
+
+.sport-chip--hike {
+  --sport-chip-bg: var(--sport-hike-bg);
+  --sport-chip-fg: var(--sport-hike-fg);
+}
+
+.sport-chip--bike {
+  --sport-chip-bg: var(--sport-bike-bg);
+  --sport-chip-fg: var(--sport-bike-fg);
+}
+
+.sport-chip--swim {
+  --sport-chip-bg: var(--sport-swim-bg);
+  --sport-chip-fg: var(--sport-swim-fg);
+}
+
+.sport-chip--race {
+  --sport-chip-bg: var(--sport-race-bg);
+  --sport-chip-fg: var(--sport-race-fg);
+}
+
+.sport-chip--other {
+  --sport-chip-bg: var(--sport-other-bg);
+  --sport-chip-fg: var(--sport-other-fg);
+}
 
 /* 賽事的淺色 fg 是白字（實心紫底），虛線改用紫色底色本身 */
-.sport-chip--race { --sport-chip-line: var(--sport-race-bg); }
+.sport-chip--race {
+  --sport-chip-line: var(--sport-race-bg);
+}
 
 /* 深色：fg 可能是黑字（深底上看不見），虛線改用底色並提亮一些，讓細線與字在深底上讀得到 */
 :root[data-theme="dark"] .sport-chip {
@@ -6649,13 +7263,29 @@ button.recent-row .rc-dist {
 
 /* === W0 charts === */
 /* charts.multiLineChart：TSB 等 bar-zero 系列的正負柱（綠＝正、紅＝負，只標方向不判讀）。 */
-.mlc-bar-pos { fill: var(--pct-green); opacity: 0.8; }
-.mlc-bar-neg { fill: var(--pct-red); opacity: 0.8; }
-.mlc-zero-line { stroke: var(--c-axis); stroke-width: 1; }
-.mlc-line { stroke-width: 2; }
+.mlc-bar-pos {
+  fill: var(--pct-green);
+  opacity: 0.8;
+}
+
+.mlc-bar-neg {
+  fill: var(--pct-red);
+  opacity: 0.8;
+}
+
+.mlc-zero-line {
+  stroke: var(--c-axis);
+  stroke-width: 1;
+}
+
+.mlc-line {
+  stroke-width: 2;
+}
 
 /* 多列游標標籤（multiLineChart 的 tip.rows）：每列前面一個系列色小方塊 */
-.sync-cursor-label .sync-cursor-swatch { opacity: 1; }
+.sync-cursor-label .sync-cursor-swatch {
+  opacity: 1;
+}
 
 /* charts.lapStrip：每圈一根柱，高度＝速度，顏色＝心率區間 */
 .chart-svg.lap-strip {
@@ -6663,7 +7293,9 @@ button.recent-row .rc-dist {
   width: 100%;
 }
 
-.lap-strip-bar-none { fill: var(--c-axis); }
+.lap-strip-bar-none {
+  fill: var(--c-axis);
+}
 
 /* ------------------------------------------------------------ 深色模式
  *
@@ -6965,19 +7597,19 @@ button.recent-row .rc-dist {
   align-items: flex-start;
 }
 
-#view-calendar > #panel-calendar {
+#view-calendar>#panel-calendar {
   flex: 1.5 1 560px;
   min-width: 0;
 }
 
-#view-calendar > .calendar-day-panel {
+#view-calendar>.calendar-day-panel {
   flex: 1 1 340px;
   min-width: 0;
   margin-top: 0;
 }
 
 @media (min-width: 1100px) {
-  #view-calendar > .calendar-day-panel {
+  #view-calendar>.calendar-day-panel {
     position: sticky;
     top: var(--gap);
     max-height: calc(100vh - 2 * var(--gap));
@@ -7166,7 +7798,7 @@ button.recent-row .rc-dist {
   color: var(--text-muted);
 }
 
-.cal-plan-row + .cal-plan-row {
+.cal-plan-row+.cal-plan-row {
   margin-top: 8px;
 }
 
@@ -7410,31 +8042,41 @@ button.recent-row .rc-dist {
 }
 
 .trend-sec-load {
-  --hdr-bg: var(--cat-load-bg); --hdr-border: var(--cat-load-border);
-  --hdr-text: var(--cat-load-text); --hdr-strong: var(--cat-load-strong);
+  --hdr-bg: var(--cat-load-bg);
+  --hdr-border: var(--cat-load-border);
+  --hdr-text: var(--cat-load-text);
+  --hdr-strong: var(--cat-load-strong);
 }
 
 .trend-sec-body {
-  --hdr-bg: var(--cat-body-bg); --hdr-border: var(--cat-body-border);
-  --hdr-text: var(--cat-body-text); --hdr-strong: var(--cat-body-strong);
+  --hdr-bg: var(--cat-body-bg);
+  --hdr-border: var(--cat-body-border);
+  --hdr-text: var(--cat-body-text);
+  --hdr-strong: var(--cat-body-strong);
 }
 
 .trend-sec-ability {
-  --hdr-bg: var(--cat-ability-bg); --hdr-border: var(--cat-ability-border);
-  --hdr-text: var(--cat-ability-text); --hdr-strong: var(--cat-ability-strong);
+  --hdr-bg: var(--cat-ability-bg);
+  --hdr-border: var(--cat-ability-border);
+  --hdr-text: var(--cat-ability-text);
+  --hdr-strong: var(--cat-ability-strong);
 }
 
 .trend-sec-volume {
-  --hdr-bg: var(--cat-week-bg); --hdr-border: var(--cat-week-border);
-  --hdr-text: var(--cat-week-text); --hdr-strong: var(--cat-week-strong);
+  --hdr-bg: var(--cat-week-bg);
+  --hdr-border: var(--cat-week-border);
+  --hdr-text: var(--cat-week-text);
+  --hdr-strong: var(--cat-week-strong);
 }
 
 .trend-sec-garmin {
-  --hdr-bg: var(--cat-overview-bg); --hdr-border: var(--cat-overview-border);
-  --hdr-text: var(--cat-overview-text); --hdr-strong: var(--cat-overview-strong);
+  --hdr-bg: var(--cat-overview-bg);
+  --hdr-border: var(--cat-overview-border);
+  --hdr-text: var(--cat-overview-text);
+  --hdr-strong: var(--cat-overview-strong);
 }
 
-.trend-sec > .panel-title {
+.trend-sec>.panel-title {
   border-left: 4px solid var(--hdr-strong);
   padding-left: 10px;
 }
@@ -7464,7 +8106,7 @@ button.recent-row .rc-dist {
   min-width: 0;
 }
 
-.trend-kpis .kpi-card > .kpi-label {
+.trend-kpis .kpi-card>.kpi-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -7576,11 +8218,11 @@ button.recent-row .rc-dist {
   min-width: 0;
 }
 
-.trend-chart-block > .chart-note {
+.trend-chart-block>.chart-note {
   margin-top: 4px;
 }
 
-.trend-subchart + .trend-subchart {
+.trend-subchart+.trend-subchart {
   margin-top: 16px;
 }
 
@@ -7721,7 +8363,7 @@ button.recent-row .rc-dist {
   min-width: 0;
 }
 
-.slog-group + .slog-group {
+.slog-group+.slog-group {
   margin-top: 18px;
 }
 
@@ -7766,12 +8408,29 @@ button.recent-row .rc-dist {
   scroll-margin-top: 12px;
 }
 
-.slog-wt-easy { --slog-wt: var(--pct-green); }
-.slog-wt-recovery { --slog-wt: var(--c-zone-1); }
-.slog-wt-tempo { --slog-wt: var(--pct-yellow); }
-.slog-wt-interval { --slog-wt: var(--pct-red); }
-.slog-wt-lsd { --slog-wt: var(--pct-blue); }
-.slog-wt-race { --slog-wt: var(--tag-race-text); }
+.slog-wt-easy {
+  --slog-wt: var(--pct-green);
+}
+
+.slog-wt-recovery {
+  --slog-wt: var(--c-zone-1);
+}
+
+.slog-wt-tempo {
+  --slog-wt: var(--pct-yellow);
+}
+
+.slog-wt-interval {
+  --slog-wt: var(--pct-red);
+}
+
+.slog-wt-lsd {
+  --slog-wt: var(--pct-blue);
+}
+
+.slog-wt-race {
+  --slog-wt: var(--tag-race-text);
+}
 
 .slog-item.is-expanded {
   margin: 4px 0;
@@ -7896,9 +8555,17 @@ button.recent-row .rc-dist {
   white-space: nowrap;
 }
 
-.slog-dist { grid-area: dist; }
-.slog-time { grid-area: time; }
-.slog-pace { grid-area: pace; }
+.slog-dist {
+  grid-area: dist;
+}
+
+.slog-time {
+  grid-area: time;
+}
+
+.slog-pace {
+  grid-area: pace;
+}
 
 /* 圈數少時柱子不拉寬：最寬 = 圈數 × 16px（--slog-laps 由 JS 設定） */
 .slog-strip {

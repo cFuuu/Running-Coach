@@ -36,11 +36,21 @@ var READINESS_FACTOR_TONE = { VERY_GOOD: 'good', GOOD: 'good', MODERATE: 'warn',
 // 代碼放在滑鼠提示，不自己翻譯。看到新的組合再補。
 var READINESS_FACTOR_TEXT = {
   sleep: { GOOD: '良好' },
-  recovery: { GOOD: '低度需求' },
+  recovery: { GOOD: '已恢復' },
   load: { GOOD: '極佳' },
-  sleep_history: { MODERATE: '普通' },
+  sleep_history: { GOOD: '良好', MODERATE: '普通' },
   stress: { GOOD: '低' }
 };
+// 睡眠分數區間：Garmin 公布的分級（90–100 優異、80–89 良好、60–79 一般、0–59 差）。
+// 由分數在前端對照，不是 API 回傳的評級。
+var SLEEP_SCORE_BANDS = [[90, '優異'], [80, '良好'], [60, '一般'], [0, '差']];
+function sleepScoreBand(score) {
+  if (typeof score !== 'number') return '';
+  for (var i = 0; i < SLEEP_SCORE_BANDS.length; i++) {
+    if (score >= SLEEP_SCORE_BANDS[i][0]) return SLEEP_SCORE_BANDS[i][1];
+  }
+  return '';
+}
 // 耐力分數分級（共 7 級）。只收錄對照過網頁的 3＝進階，其餘顯示級數。
 var ENDURANCE_CLASS_LABEL = { 3: '進階' };
 // 訓練狀態色條的配色：只分語氣，不代表本專案的判讀
@@ -104,6 +114,28 @@ function gaugeWithCenter(svg, centerText) {
   return wrap;
 }
 
+/**
+ * 卡片上方的「左大右小」數值對（心率、HRV、睡眠共用）：數字大、單位小，下方各一行灰字說明。
+ * 每側 {value, unit, caption, title, small, compact}；右側可省略。右側預設比左側小一級，
+ * small 讓左側也縮小一級（上下堆疊的數值用），compact 再縮小一級。
+ */
+function metricCell(m, isSecondary) {
+  var cell = h('div', 'gc-lead' + (isSecondary ? ' gc-lead-end' : ''));
+  var size = (isSecondary || m.small ? 'gc-value-sm ' : '') + (m.compact ? 'gc-value-md' : '');
+  cell.appendChild(bigValue(m.value, m.unit, size));
+  var caption = h('div', 'gc-caption', m.caption || '');
+  if (m.title) caption.title = m.title;
+  cell.appendChild(caption);
+  return cell;
+}
+
+function metricPair(primary, secondary) {
+  var row = h('div', 'gc-split');
+  if (primary) row.appendChild(metricCell(primary, false));
+  if (secondary) row.appendChild(metricCell(secondary, true));
+  return row;
+}
+
 function labelled(value, label) {
   var cell = h('div', 'gc-stat');
   cell.appendChild(h('div', 'gc-stat-value', value));
@@ -142,7 +174,7 @@ function weekChecks(items) {
  * 24 小時日內圖。date 是今天時，在最後一個資料點畫虛線、之後到 24:00 畫點狀基線並註明資料時間——
  * 今天還沒過完、也還沒同步到的時段，不能看起來像「這段時間沒資料」。
  */
-function intraday(points, opts, date) {
+function intraday(points, opts, date, hideUpdateNote) {
   var last = (points || []).length ? points[points.length - 1][0] : null;
   var pending = date === todayISO() && last !== null && last < 1439;
   var svg = C.intradayChart(points, pending ? Object.assign({ pendingFrom: last + 1 }, opts) : opts);
@@ -154,7 +186,7 @@ function intraday(points, opts, date) {
   axis.appendChild(h('span', null, '24:00'));
   wrap.appendChild(axis);
   // 說明自成一行：塞在 00:00 與 24:00 之間會在窄卡片上被截斷
-  if (pending) wrap.appendChild(h('div', 'gc-axis-pending', '資料到 ' + minuteToClock(last) + '，虛線後尚未同步'));
+  if (pending && !hideUpdateNote) wrap.appendChild(h('div', 'gc-axis-pending', '最後更新時間 ' + minuteToClock(last)));
   return wrap;
 }
 
@@ -165,17 +197,33 @@ function renderHrv(c, body) {
   var mark = hrvStatusMark(c.status);
   if (mark) status.appendChild(mark);
   status.appendChild(h('span', null, HRV_STATUS_LABEL[c.status] || c.status || '—'));
+  // 由上往下一路排：狀態、平衡區間量表、7 天平均、夜間平均（數值在上、灰字說明在下）
   body.appendChild(status);
-  body.appendChild(bigValue(num(c.weekly_avg_ms), '毫秒'));
-  body.appendChild(h('div', 'gc-caption', '7 天平均'));
   if (c.baseline_balanced_low && c.baseline_balanced_upper) {
     body.appendChild(hrvRangeGauge(c.weekly_avg_ms, c.baseline_balanced_low, c.baseline_balanced_upper));
   }
-  var stats = h('div', 'gc-stats');
-  if (c.last_night_ms !== null) stats.appendChild(labelled(num(c.last_night_ms) + ' ms', '夜間平均'));
-  if (c.last_night_5min_high_ms !== null) stats.appendChild(labelled(num(c.last_night_5min_high_ms) + ' ms', '最高 5 分鐘平均'));
-  if (stats.childNodes.length) body.appendChild(stats);
-  return sparkFrom(c.series, 'hrv_weekly_avg_ms');
+  var averages = h('div', 'gc-split gc-hrv-averages');
+  averages.appendChild(metricCell({ value: num(c.weekly_avg_ms), unit: 'ms', caption: '7 天平均', small: true }, false));
+  if (c.last_night_ms !== null) {
+    averages.appendChild(metricCell({ value: num(c.last_night_ms), unit: 'ms', caption: '夜間平均' }, true));
+  }
+  body.appendChild(averages);
+  return hrvTrend(c.series);
+}
+
+/** HRV 趨勢：灰色區間帶＋7 天平均點，下方標註涵蓋期間（仿 Garmin 網頁） */
+function hrvTrend(series) {
+  var svg = C.hrvBandChart((series || []).map(function (p) {
+    return {
+      date: p.date, value: p.hrv_weekly_avg_ms,
+      low: p.hrv_baseline_balanced_low, upper: p.hrv_baseline_balanced_upper
+    };
+  }));
+  if (!svg) return null;
+  var wrap = h('div', 'gc-spark');
+  wrap.title = '過去 4 週：灰帶＝每日平衡區間，圓點＝每日 7 天平均';
+  wrap.appendChild(svg);
+  return wrap;
 }
 
 /**
@@ -214,20 +262,30 @@ function present(v) { return v !== null && v !== undefined; }
 
 function readinessFactors(c) {
   var rows = [
-    { key: 'sleep', label: '睡眠分數', feedback: c.sleep_feedback,
-      value: present(c.sleep_score) ? num(c.sleep_score) : '' },
-    { key: 'recovery', label: '恢復時間', feedback: c.recovery_feedback,
-      value: present(c.recovery_time_hours) ? Math.round(c.recovery_time_hours) + ' 時' : '' },
-    { key: 'hrv', label: 'HRV 狀態', feedback: c.hrv_feedback,
-      value: present(c.hrv_weekly_avg_ms) ? num(c.hrv_weekly_avg_ms) + ' 毫秒' : '',
-      text: HRV_STATUS_LABEL[c.hrv_status] },
-    { key: 'load', label: '短期負荷', feedback: c.load_feedback,
-      value: present(c.acute_load) ? num(c.acute_load) : '' },
-    { key: 'sleep_history', label: '最近的睡眠分數', feedback: c.sleep_history_feedback, value: '' },
-    { key: 'stress', label: '最近的壓力', feedback: c.stress_feedback, value: '' }
+    {
+      key: 'sleep', label: '睡眠分數', feedback: c.sleep_feedback,
+      value: present(c.sleep_score) ? num(c.sleep_score) : ''
+    },
+    {
+      key: 'recovery', label: '恢復時間', feedback: c.recovery_feedback, primary: true,
+      value: present(c.recovery_time_hours) ? Math.round(c.recovery_time_hours) + ' 時' : ''
+    },
+    {
+      key: 'hrv', label: 'HRV 狀態', feedback: c.hrv_feedback,
+      value: present(c.hrv_weekly_avg_ms) ? num(c.hrv_weekly_avg_ms) + ' ms' : '',
+      text: HRV_STATUS_LABEL[c.hrv_status]
+    },
+    {
+      key: 'load', label: '短期負荷', feedback: c.load_feedback,
+      value: present(c.acute_load) ? num(c.acute_load) : ''
+    },
+    { key: 'sleep_history', label: '近期睡眠', feedback: c.sleep_history_feedback, primary: true, value: '' },
+    { key: 'stress', label: '近期壓力', feedback: c.stress_feedback, value: '' }
   ].filter(function (r) { return r.feedback; });
   if (!rows.length) return null;
   var list = h('div', 'gc-factors');
+  // 預設只顯示兩項主要因素（恢復時間、近期睡眠），其餘收進「更多因素」，避免這張卡把同列的卡片撐高
+  var hasExtra = false;
   rows.forEach(function (r) {
     var row = h('div', 'gc-factor');
     row.appendChild(h('span', 'gc-factor-label', r.label));
@@ -239,13 +297,31 @@ function readinessFactors(c) {
     if (mark) verdict.appendChild(mark);
     row.title = 'Garmin 評級：' + r.feedback;
     row.appendChild(verdict);
+    if (!r.primary) {
+      row.classList.add('gc-factor-extra');
+      hasExtra = true;
+    }
     list.appendChild(row);
   });
+  if (hasExtra) {
+    // 展開後次要因素留在原本的順序裡，切換鈕固定在清單最下方
+    var toggle = h('button', 'gc-factors-toggle', '更多因素');
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.addEventListener('click', function () {
+      var open = list.classList.toggle('is-expanded');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.textContent = open ? '收合' : '更多因素';
+    });
+    list.appendChild(toggle);
+  }
   return list;
 }
 
 function renderReadiness(c, body) {
-  body.appendChild(gaugeWithCenter(C.bandArc(c.score, { min: 0, max: 100, bands: READINESS_BANDS }), num(c.score)));
+  var gauge = gaugeWithCenter(C.bandArc(c.score, { min: 0, max: 100, bands: READINESS_BANDS }), num(c.score));
+  gauge.classList.add('gc-gauge-readiness');
+  body.appendChild(gauge);
   if (c.level) body.appendChild(h('div', 'gc-center-label', READINESS_LEVEL_LABEL[c.level] || c.level));
   var feedback = READINESS_FEEDBACK_LABEL[c.feedback_short];
   if (feedback) body.appendChild(h('div', 'gc-center-caption', feedback));
@@ -256,13 +332,12 @@ function renderReadiness(c, body) {
 }
 
 function renderSleep(c, body) {
-  var top = h('div', 'gc-split');
-  top.appendChild(bigValue(num(c.score)));
-  var dur = h('div', 'gc-side');
-  dur.appendChild(h('div', 'gc-side-value', hm(c.duration_sec)));
-  dur.appendChild(h('div', 'gc-caption', '持續時間'));
-  top.appendChild(dur);
-  body.appendChild(top);
+  body.appendChild(metricPair(
+    {
+      value: num(c.score), caption: sleepScoreBand(c.score),
+      title: '依 Garmin 公布的睡眠分數區間對照（非 Garmin 回傳的評級）'
+    },
+    { value: hm(c.duration_sec), caption: '持續時間', compact: true }));
   var hyp = C.hypnogram(c.levels);
   if (hyp) {
     var wrap = h('div', 'gc-intraday-wrap');
@@ -321,11 +396,13 @@ function renderBodyBattery(c, body) {
 }
 
 function renderHeartRate(c, body) {
-  var stats = h('div', 'gc-stack');
-  if (c.resting_7day_avg !== null) stats.appendChild(labelled(num(c.resting_7day_avg) + ' bpm', '平均 7 天靜止'));
-  stats.appendChild(labelled(num(c.resting) + ' bpm', '靜止'));
-  body.appendChild(stats);
-  var chart = intraday(c.intraday, { mode: 'line' }, c.date);
+  // 兩個靜止心率上下排：並排時在窄卡裡太擠
+  if (c.resting_7day_avg !== null) {
+    body.appendChild(metricCell({ value: num(c.resting_7day_avg), unit: 'bpm', caption: '平均 7 天靜止', small: true }, false));
+  }
+  body.appendChild(metricCell({ value: num(c.resting), unit: 'bpm', caption: '靜止', small: true }, false));
+  // 心率卡不寫「最後更新時間」：圖上的虛線已標出資料到哪裡
+  var chart = intraday(c.intraday, { mode: 'line' }, c.date, true);
   if (chart) body.appendChild(chart);
   return sparkFrom(c.series, 'resting_hr_bpm');
 }
@@ -349,7 +426,7 @@ function renderCalories(c, body) {
 // 健康狀態的指標名稱與單位（順序由後端依 Garmin 網頁排好）
 var HEALTH_METRIC = {
   HR: { label: '心率', unit: 'bpm', decimals: 0 },
-  HRV: { label: 'HRV', unit: '毫秒', decimals: 0 },
+  HRV: { label: 'HRV', unit: 'ms', decimals: 0 },
   RESPIRATION: { label: '呼吸', unit: 'brpm', decimals: 1 },
   SPO2: { label: '脈搏血氧', unit: '%', decimals: 0 },
   SKIN_TEMP_C: { label: '皮膚溫度', unit: '°C', decimals: 1 }
@@ -363,7 +440,7 @@ var HEALTH_STATUS_LABEL = { IN_RANGE: '在範圍內', BELOW: '低於範圍', ABO
  */
 function renderHealthStatus(c, body) {
   // 「範圍內」對照 Garmin 網頁；有超出時寫出項數
-  body.appendChild(h('div', 'gc-status-text' + (c.outliers ? ' is-out' : ''),
+  body.appendChild(h('div', 'gc-status-text gc-status-xl' + (c.outliers ? ' is-out' : ''),
     c.outliers ? c.outliers + ' 項超出範圍' : '範圍內'));
   var grid = h('div', 'gc-health-grid');
   (c.metrics || []).forEach(function (m) {
@@ -557,54 +634,93 @@ function renderLoadFocus(c, body) {
  * tip 只講「這是什麼、怎麼來的」，不寫好壞。
  */
 export var GARMIN_CARD_DEFS = [
-  { key: 'hrv', label: 'HRV 狀態', render: renderHrv,
+  {
+    key: 'hrv', label: 'HRV 狀態', render: renderHrv,
     tip: ['Garmin 依睡眠期間的心率變異度（RMSSD）算出 7 天平均，對照它推算的個人平衡區間判定狀態。',
-      '量表的綠帶是平衡區間，圓點是 7 天平均。'] },
-  { key: 'training_readiness', label: '訓練完備程度', render: renderReadiness,
+      '量表的綠帶是平衡區間，圓點是 7 天平均。',
+      '最下方是過去 4 週的趨勢：灰帶是每天的平衡區間，圓點是每天的 7 天平均。']
+  },
+  {
+    key: 'training_readiness', label: '訓練完備程度', render: renderReadiness,
     tip: ['Garmin 的訓練準備度：綜合睡眠、恢復時間、HRV 與近期負荷的 0–100 分數，演算法未公開。',
-      '取起床時的那一筆。與首頁的「綜合整備狀態」（本專案規則引擎）是兩回事。'] },
-  { key: 'sleep', label: '睡眠分數', render: renderSleep,
+      '取起床時的那一筆。與首頁的「綜合整備狀態」（本專案規則引擎）是兩回事。']
+  },
+  {
+    key: 'sleep', label: '睡眠分數', render: renderSleep,
     tip: ['Garmin 依睡眠時長、各階段比例、壓力與中斷次數算出的 0–100 分數，演算法未公開。',
-      '下方是睡眠階段：由低到高為深眠、淺眠、REM、清醒。'] },
-  { key: 'steps', label: '步數總計', render: renderSteps,
-    tip: ['當日步數與 Garmin 設定的每日目標；下方為近 7 天，達標的日子打勾。'] },
-  { key: 'training_status', label: '訓練狀態', render: renderTrainingStatus,
+      '下方是睡眠階段：由低到高為深眠、淺眠、REM、清醒。']
+  },
+  {
+    key: 'steps', label: '步數總計', render: renderSteps,
+    tip: ['當日步數與 Garmin 設定的每日目標；下方為近 7 天，達標的日子打勾。']
+  },
+  {
+    key: 'training_status', label: '訓練狀態', render: renderTrainingStatus,
     tip: ['Garmin 綜合 VO2max 走勢與訓練負荷給出的狀態分類；「自何時起」是 Garmin 給的日期。',
-      '下方色條是近 4 週每天的狀態。'] },
-  { key: 'body_battery', label: '身體能量指數', render: renderBodyBattery,
-    tip: ['Garmin 依 HRV、壓力與活動推估的 0–100 能量值，演算法未公開。下方為當日走勢。'] },
-  { key: 'heart_rate', label: '心率', render: renderHeartRate,
-    tip: ['靜止心率與 Garmin 算的近 7 天靜止心率平均；下方為當日心率走勢。'] },
-  { key: 'calories', label: '燃燒的卡路里', render: renderCalories,
-    tip: ['活躍卡路里（活動消耗）與靜態卡路里（基礎代謝），皆為 Garmin 的推估。'] },
-  { key: 'health_status', label: '健康狀態', render: renderHealthStatus,
+      '下方色條是近 4 週每天的狀態。']
+  },
+  {
+    key: 'body_battery', label: '身體能量指數', render: renderBodyBattery,
+    tip: ['Garmin 依 HRV、壓力與活動推估的 0–100 能量值，演算法未公開。下方為當日走勢。']
+  },
+  {
+    key: 'heart_rate', label: '心率', render: renderHeartRate,
+    tip: ['靜止心率與 Garmin 算的近 7 天靜止心率平均；下方為當日心率走勢。']
+  },
+  {
+    key: 'calories', label: '燃燒的卡路里', render: renderCalories,
+    tip: ['活躍卡路里（活動消耗）與靜態卡路里（基礎代謝），皆為 Garmin 的推估。']
+  },
+  {
+    key: 'health_status', label: '健康狀態', render: renderHealthStatus,
     tip: ['Garmin 把睡眠期間的心率、HRV、呼吸與血氧，和它依你近幾週資料推算的個人範圍比較。',
-      '範圍與判定都是 Garmin 給的（不是一般人的健康標準，而是「你平常落在哪裡」）；本頁不自行計算。'] },
-  { key: 'stress', label: '壓力', render: renderStress,
+      '範圍與判定都是 Garmin 給的（不是一般人的健康標準，而是「你平常落在哪裡」）；本頁不自行計算。']
+  },
+  {
+    key: 'stress', label: '壓力', render: renderStress,
     tip: ['Garmin 依 HRV 推估的全天平均壓力（0–100）。0–25 休息、26–50 低、51–75 中、76–100 高。',
-      '下方為當日每 3 分鐘的壓力值；活動中無法量測的時段留白。'] },
-  { key: 'intensity_minutes', label: '熱血時間', render: renderIntensity,
-    tip: ['中高強度活動的分鐘數。本週累計依 Garmin 的規則計算：週一起算、高強度分鐘數計兩倍。'] },
-  { key: 'floors', label: '樓層', render: renderFloors,
-    tip: ['手錶氣壓計偵測的爬升樓層數與每日目標。'] },
-  { key: 'spo2', label: '脈搏血氧', render: renderSpo2,
-    tip: ['手錶量測的血氧飽和度：主數字為最新一筆，另列當日平均與最低。'] },
-  { key: 'vo2max', label: '跑步最大攝氧量', render: renderVo2max,
+      '下方為當日每 3 分鐘的壓力值；活動中無法量測的時段留白。']
+  },
+  {
+    key: 'intensity_minutes', label: '熱血時間', render: renderIntensity,
+    tip: ['中高強度活動的分鐘數。本週累計依 Garmin 的規則計算：週一起算、高強度分鐘數計兩倍。']
+  },
+  {
+    key: 'floors', label: '樓層', render: renderFloors,
+    tip: ['手錶氣壓計偵測的爬升樓層數與每日目標。']
+  },
+  {
+    key: 'spo2', label: '脈搏血氧', render: renderSpo2,
+    tip: ['手錶量測的血氧飽和度：主數字為最新一筆，另列當日平均與最低。']
+  },
+  {
+    key: 'vo2max', label: '跑步最大攝氧量', render: renderVo2max,
     tip: ['Garmin 推估的跑步 VO2max（ml/kg/min）。',
       '分級不是 Garmin API 提供的：本頁依 Garmin 網站刊載的 Cooper Institute 分級表，按你的年齡與性別查得'
-        + '（優異＝前 5%、傑出＝前 20%、良好＝前 40%、普通＝前 60%）。'] },
-  { key: 'respiration', label: '呼吸', render: renderRespiration,
-    tip: ['每分鐘呼吸次數：清醒時平均、睡眠時平均，以及當日最低／最高。'] },
-  { key: 'lactate_threshold', label: '跑步乳酸閾值', render: renderLactate,
-    tip: ['Garmin 偵測的乳酸閾值心率、配速與功率。'] },
-  { key: 'endurance_score', label: '耐力分數', render: renderEndurance,
-    tip: ['Garmin 綜合長期訓練量與強度的耐力評分與分級（共 7 級）。'] },
-  { key: 'training_load', label: '訓練負荷', render: renderTrainingLoad,
+      + '（優異＝前 5%、傑出＝前 20%、良好＝前 40%、普通＝前 60%）。']
+  },
+  {
+    key: 'respiration', label: '呼吸', render: renderRespiration,
+    tip: ['每分鐘呼吸次數：清醒時平均、睡眠時平均，以及當日最低／最高。']
+  },
+  {
+    key: 'lactate_threshold', label: '跑步乳酸閾值', render: renderLactate,
+    tip: ['Garmin 偵測的乳酸閾值心率、配速與功率。']
+  },
+  {
+    key: 'endurance_score', label: '耐力分數', render: renderEndurance,
+    tip: ['Garmin 綜合長期訓練量與強度的耐力評分與分級（共 7 級）。']
+  },
+  {
+    key: 'training_load', label: '訓練負荷', render: renderTrainingLoad,
     tip: ['Garmin 的短期（7 天）與長期（4 週）訓練負荷及兩者比值，尺度與本專案的 TRIMP 不同。',
-      '下方趨勢線是短期負荷的每日走勢。'] },
-  { key: 'load_focus', label: '負荷焦點', render: renderLoadFocus,
+      '下方趨勢線是短期負荷的每日走勢。']
+  },
+  {
+    key: 'load_focus', label: '負荷焦點', render: renderLoadFocus,
     tip: ['Garmin 把近 4 週的訓練負荷分成無氧、高強度有氧、低強度有氧三類，各自附上依你的訓練歷史推算的目標範圍。',
-      '長條是實際負荷，淡色框是目標範圍；三條共用同一個刻度。'] }
+      '長條是實際負荷，淡色框是目標範圍；三條共用同一個刻度。']
+  }
 ];
 
 var DEF_BY_KEY = {};
