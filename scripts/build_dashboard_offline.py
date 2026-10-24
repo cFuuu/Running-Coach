@@ -598,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
         "--copy-to", type=Path, default=os.environ.get(COPY_TO_ENV) or None,
         help=f"另外複製一份到這個資料夾（例如 iCloud Drive），預設讀環境變數 {COPY_TO_ENV}，沒設就不複製",
     )
+    parser.add_argument("--dated", action="store_true", help="檔名加上匯出日期（dashboard_offline_YYYY-MM-DD.html）")
     parser.add_argument("--txt", action="store_true", help="同時輸出內容相同的 .txt（輸出處與 --copy-to 都會有）")
     parser.add_argument("--detail-months", type=int, default=0,
                         help="只保留近 N 個月的單場明細（0＝全部）")
@@ -608,6 +609,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.detail_months < 0:
         parser.error("--detail-months 不可為負數")
+    if args.dated:
+        args.out = args.out.with_stem(f"{args.out.stem}_{datetime.date.today().isoformat()}")
     try:
         out = build(args.db_path, args.out, args.detail_months, not args.no_gzip,
                     args.athlete_id, args.copy_to, args.profile_path, also_txt=args.txt)

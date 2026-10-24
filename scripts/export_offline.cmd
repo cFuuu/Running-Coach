@@ -47,5 +47,5 @@ goto loop
 
 :run
 if not exist "%DEST%" mkdir "%DEST%"
-"%RC_PYTHON%" scripts\build_dashboard_offline.py --db-path "%RC_DB_PATH%" --copy-to "%DEST%"%EXTRA%
+"%RC_PYTHON%" scripts\build_dashboard_offline.py --db-path "%RC_DB_PATH%" --copy-to "%DEST%" --dated%EXTRA%
 exit /b %errorlevel%

@@ -195,6 +195,18 @@ class TestCli(BuildDashboardOfflineTestCase):
         self.assertEqual((dest / self.out.name).read_bytes(), html)
         self.assertEqual((dest / self.out.with_suffix(".txt").name).read_bytes(), html)
 
+    def test_dated_filename(self):
+        dest = self.tmp / "icloud"
+        dest.mkdir()
+        name = f"{self.out.stem}_{datetime.date.today().isoformat()}.html"
+        with mock.patch("builtins.print"):
+            code = offline.main(["--db-path", str(self.db_path), "--out", str(self.out),
+                                 "--copy-to", str(dest), "--dated"])
+        self.assertEqual(code, 0)
+        self.assertTrue((self.out.parent / name).is_file())
+        self.assertTrue((dest / name).is_file())
+        self.assertFalse(self.out.exists())
+
     def test_no_copy_when_env_unset(self):
         env = {k: v for k, v in os.environ.items() if k != offline.COPY_TO_ENV}
         with mock.patch.dict(os.environ, env, clear=True), mock.patch("builtins.print"):
