@@ -7,7 +7,8 @@
  *
  * 四區共用一個速度（tools.secPerKm）：改任何一格都先換算成每公里秒數，再回填
  * 其他所有欄位——正在打字的那格不回填，免得游標被打斷，離開欄位時才整理格式。
- * 時間類欄位是分段輸入（分／秒、時／分／秒各一格，見 core/clock-field.js）。
+ * 時間類欄位是分段輸入（分／秒、時／分／秒各一格，見 core/clock-field.js）；
+ * 田徑場的每圈改成單一「秒數」輸入（田徑場習慣直接講秒），算出每 100m 各段秒數與配速。
  *
  * 全是純算術、不打 API、不讀訓練資料，所以這支檔案同時是 dashboard 的一頁，
  * 也是離線單檔 pace-calculator.html 的主體（scripts/build_pace_calculator.py 打包）。
@@ -16,7 +17,8 @@
 
 import { $, h } from '../core/dom.js';
 import { clockField } from '../core/clock-field.js';
-import { KM_PER_MILE, laneLengthM, formatSplit, paceToKmh, kmhToPace } from '../core/pace.js';
+// 打包腳本只支援單行 import，勿拆行
+import { KM_PER_MILE, laneLengthM, parseClock, formatSplit, formatMinSec, paceToKmh, kmhToPace } from '../core/pace.js';
 
 var RACE_DISTANCES = [
   { km: 0.8, label: '800m' },
@@ -33,8 +35,10 @@ var TRACK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8].map(function (lane) {
   return { meters: laneLengthM(lane), label: '第 ' + lane + ' 道' };
 }).concat([{ meters: WARMUP_TRACK_M, label: '暖身場' }]);
 
-// 田徑場分段表的列：一圈的幾分之幾（1 圈以下是 100／200／300m 分段）
-var LAP_FRACTIONS = [0.25, 0.5, 0.75, 1, 2, 3, 4, 5];
+// 田徑場：一圈 400m 內每 100m 的分段，以及「多圈時間」表列出的圈數
+var SPLIT_M = 100;
+var SPLITS_PER_LAP = 4;
+var MULTI_LAPS = [1, 2, 3, 4, 5];
 
 // 標題列的單色 icon（24x24、stroke 用 currentColor，顏色跟著標題列文字色）
 var ICONS = {
@@ -124,8 +128,21 @@ function bindClock(clock, toTotal, fromTotal) {
   return clock.node;
 }
 
-/** 單一數字欄（跑步機時速）。行為同 bindClock，只是整欄一個 input。 */
-function bindNumber(input, toText, fromNumber) {
+function parseDecimal(raw) {
+  return /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
+}
+
+/** 每圈秒數：填「96」「96.5」或「1:36.5」都可以。看不懂回 NaN。 */
+function parseLapText(raw) {
+  var sec = parseClock(raw, 1);
+  return sec === null ? NaN : sec;
+}
+
+/**
+ * 單一輸入欄（跑步機時速、每圈秒數）。行為同 bindClock，只是整欄一個 input。
+ * @param {function} [parse] 文字 → 數值，看不懂回 NaN；預設只收一般小數
+ */
+function bindNumber(input, toText, fromNumber, parse) {
   var field = {
     owner: input,
     write: function (s) {
@@ -141,7 +158,7 @@ function bindNumber(input, toText, fromNumber) {
       setSpeed(null, input);
       return;
     }
-    var n = /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
+    var n = (parse || parseDecimal)(raw);
     var ok = n > 0 && isFinite(n);
     input.classList.toggle('is-invalid', !ok);
     if (ok) setSpeed(fromNumber(n), input);
@@ -257,8 +274,22 @@ function buildPacePanel() {
   return p.sec;
 }
 
+/** 一圈的秒數 → 輸入欄的顯示：純秒數、最多一位小數（96、96.5）。 */
+function formatLapSeconds(sec) {
+  return String(Number(sec.toFixed(1)));
+}
+
+/** 田徑場的一個結果欄：只在換算時由 syncFields 更新文字。 */
+function outputCell(tag, className, toText) {
+  var node = h(tag, className, '—');
+  tools.outputs.push({ node: node, toText: toText });
+  return node;
+}
+
 function buildTrackPanel() {
   var p = panel('track', '田徑場');
+  // 每圈長度隨道次變（外道較長），所以「每 100m」與「每圈」都從同一個速度算，不直接互除
+  var lapKm = function () { return tools.trackM / 1000; };
 
   p.body.appendChild(selectField('道次',
     TRACK_OPTIONS.map(function (opt) { return opt.label + '（' + Number(opt.meters.toFixed(1)) + 'm）'; }),
@@ -269,50 +300,92 @@ function buildTrackPanel() {
       syncFields(null);
     }));
 
-  var clock = bindClock(
-    clockField({
-      parts: ['m', 's'], ariaLabel: '每圈時間', decimalSeconds: true, blankLeadingZero: true,
-      placeholders: ['0', '96'], plainUnitSec: 1, size: 'lg'
-    }),
-    function (s) { return s * tools.trackM / 1000; },
-    function (t) { return t / (tools.trackM / 1000); }
+  // 田徑場習慣直接講秒數，所以這格是單一輸入（96、96.5，也收 1:36.5）
+  var input = h('input', 'tools-input');
+  input.type = 'text';
+  input.inputMode = 'decimal';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.placeholder = '96';
+  input.setAttribute('aria-label', '每圈秒數');
+  bindNumber(
+    input,
+    function (s) { return formatLapSeconds(s * lapKm()); },
+    function (lapSec) { return lapSec / lapKm(); },
+    parseLapText
   );
-  p.body.appendChild(inputRow(clock, '/圈').row);
+  p.body.appendChild(inputRow(input, '秒/圈').row);
 
-  // 分段時間預設收合（手機上省空間），按「＋」展開
-  var toggle = h('button', 'tools-expand', '分段時間');
+  // 換算結果：每 100m 秒數與配速（同一個速度的不同說法）
+  var stats = h('div', 'tools-stats');
+  [
+    ['每 100m（秒）', function (s) { return formatSplit(s * SPLIT_M / 1000); }],
+    ['配速（/km）', function (s) { return formatMinSec(s); }],
+    ['配速（/mile）', function (s) { return formatMinSec(s * KM_PER_MILE); }],
+    ['時速（km/h）', function (s) { return paceToKmh(s).toFixed(2); }]
+  ].forEach(function (spec) {
+    var tile = h('div', 'tools-stat');
+    tile.appendChild(h('span', 'tools-stat-label', spec[0]));
+    tile.appendChild(outputCell('span', 'tools-stat-value', spec[1]));
+    stats.appendChild(tile);
+  });
+  p.body.appendChild(stats);
+
+  // 一圈內每 100m：該段秒數與累計（等速，所以每段一樣）
+  var splitTable = h('table', 'tools-table');
+  var head = h('tr');
+  ['區間', '該段（秒）', '累計（秒）'].forEach(function (text, i) {
+    var th = h('th', i > 0 ? 'tools-num' : null, text);
+    th.scope = 'col';
+    head.appendChild(th);
+  });
+  splitTable.appendChild(h('thead')).appendChild(head);
+  var splitBody = h('tbody');
+  for (var k = 1; k <= SPLITS_PER_LAP; k++) {
+    (function (k) {
+      var tr = h('tr');
+      var th = h('th', null, (k - 1) * SPLIT_M + '–' + k * SPLIT_M + ' m');
+      th.scope = 'row';
+      tr.appendChild(th);
+      tr.appendChild(outputCell('td', 'tools-num', function (s) { return formatSplit(s * SPLIT_M / 1000); }));
+      tr.appendChild(outputCell('td', 'tools-num', function (s) { return formatSplit(s * k * SPLIT_M / 1000); }));
+      splitBody.appendChild(tr);
+    })(k);
+  }
+  splitTable.appendChild(splitBody);
+  p.body.appendChild(splitTable);
+
+  // 多圈時間預設收合（手機上省空間），按「＋」展開
+  var toggle = h('button', 'tools-expand', '多圈時間');
   toggle.type = 'button';
   toggle.setAttribute('aria-expanded', 'false');
   p.body.appendChild(toggle);
 
-  var table = h('table', 'tools-table');
-  table.hidden = true;
-  var tbody = h('tbody');
+  var lapTable = h('table', 'tools-table');
+  lapTable.hidden = true;
+  var lapBody = h('tbody');
   var labels = [];
-  LAP_FRACTIONS.forEach(function (frac) {
+  MULTI_LAPS.forEach(function (laps) {
     var tr = h('tr');
     var th = h('th');
     th.scope = 'row';
-    labels.push({ node: th, frac: frac });
+    labels.push({ node: th, laps: laps });
     tr.appendChild(th);
-    var td = h('td', 'tools-num', '—');
-    tools.outputs.push({ node: td, toText: function (s) { return formatSplit(s * tools.trackM * frac / 1000); } });
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+    tr.appendChild(outputCell('td', 'tools-num', function (s) { return formatSplit(s * lapKm() * laps); }));
+    lapBody.appendChild(tr);
   });
-  table.appendChild(tbody);
-  p.body.appendChild(table);
+  lapTable.appendChild(lapBody);
+  p.body.appendChild(lapTable);
 
   toggle.addEventListener('click', function () {
-    var open = table.hidden;
-    table.hidden = !open;
+    var open = lapTable.hidden;
+    lapTable.hidden = !open;
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 
   function renderLapLabels() {
     labels.forEach(function (l) {
-      var meters = Math.round(tools.trackM * l.frac);
-      l.node.textContent = l.frac < 1 ? meters + ' m' : l.frac + ' 圈 · ' + meters + ' m';
+      l.node.textContent = l.laps + ' 圈 · ' + Math.round(tools.trackM * l.laps) + ' m';
     });
   }
   renderLapLabels();

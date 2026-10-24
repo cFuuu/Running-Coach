@@ -63,6 +63,14 @@ export function formatSplit(sec) {
   return m > 0 ? m + ':' + (s < 10 ? '0' : '') + sText : sText;
 }
 
+/** 秒 → 「m:ss」，四捨五入到整秒（59.5 秒進位成 1:00）。配速顯示用。 */
+export function formatMinSec(sec) {
+  if (sec === null || sec === undefined || !isFinite(sec)) return '—';
+  var total = Math.round(sec);
+  var s = total % 60;
+  return Math.floor(total / 60) + ':' + (s < 10 ? '0' : '') + s;
+}
+
 /** 每公里秒數 ↔ 時速（km/h）。兩個方向是同一條式子。 */
 export function paceToKmh(secPerKm) {
   return 3600 / secPerKm;

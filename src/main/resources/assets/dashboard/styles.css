@@ -6964,7 +6964,15 @@ button.recent-row .rc-dist {
  * 手機優先：四張卡單欄由上而下（配速／田徑場／完成時間／跑步機）；≥900px 兩欄。
  * 標題列用首頁同一組類別色（--cat-*），左側短條與 icon 用該類的 strong 色。
  * 數字一律 tabular-nums，連動換算時欄寬不會跳動。
+ * 計算機的內容不多，寬螢幕上限制內容寬度並置中，卡片才不會被拉成大片空白。
  */
+#tools-body {
+  /* width:100% 是必要的：#view-tools 是 flex 容器，只有 margin:auto 會縮成內容寬度 */
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
 .tools-intro {
   margin: 0 0 12px;
   font-size: var(--fs-sm);
@@ -7264,8 +7272,52 @@ button.recent-row .rc-dist {
   white-space: nowrap;
 }
 
+.tools-table thead th {
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* 數字欄靠右（含欄名），小數點上下對齊才好比較 */
+.tools-table .tools-num {
+  text-align: right;
+}
+
 .tools-num {
   font-variant-numeric: tabular-nums;
+}
+
+/* 田徑場的換算結果：每 100m 秒數與配速／時速，2×2 小卡 */
+.tools-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-self: stretch;
+}
+
+.tools-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+.tools-stat-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.tools-stat-value {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tools-panel-body > .tools-table {
+  align-self: stretch;
 }
 
 /* === W0 sport chip === */
