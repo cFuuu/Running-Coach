@@ -461,6 +461,10 @@ CREATE TABLE IF NOT EXISTS activity_records (
     pace_sec_per_km     INTEGER,
     cadence_spm         INTEGER,
     altitude_m          REAL,
+    -- 2026-10-24（N-32）：經緯度（度，小數 5 位約 1 m），供路線地圖。
+    -- 跑步機、室內活動沒有 GPS 時為 NULL。
+    lat                 REAL,
+    lon                 REAL,
     UNIQUE (activity_id, elapsed_sec)
 );
 

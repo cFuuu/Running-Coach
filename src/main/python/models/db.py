@@ -99,6 +99,9 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     # 2026-10-23：課種先看外部課表（N-28，見 schema.sql 註解）
     ("activities", "detected_workout_type", "TEXT"),
     ("activities", "workout_type_basis", "TEXT"),
+    # 2026-10-24：逐點經緯度，供路線地圖（N-32，見 schema.sql 註解）
+    ("activity_records", "lat", "REAL"),
+    ("activity_records", "lon", "REAL"),
 ]
 
 

@@ -165,14 +165,16 @@ def store_laps(conn: sqlite3.Connection, activity_id: int, laps: list[dict]) -> 
     return len(laps)
 
 
-def _store_records(conn: sqlite3.Connection, activity_id: int, records: list[dict]) -> int:
+def store_records(conn: sqlite3.Connection, activity_id: int, records: list[dict]) -> int:
+    """覆寫單場的逐點紀錄。FIT 匯入與 API 同步（N-32）共用。"""
     conn.execute("DELETE FROM activity_records WHERE activity_id = ?", (activity_id,))
     for rec in records:
         conn.execute(
             """
             INSERT INTO activity_records
-                (activity_id, elapsed_sec, distance_km, hr_bpm, pace_sec_per_km, cadence_spm, altitude_m)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (activity_id, elapsed_sec, distance_km, hr_bpm, pace_sec_per_km, cadence_spm,
+                 altitude_m, lat, lon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 activity_id,
@@ -182,6 +184,8 @@ def _store_records(conn: sqlite3.Connection, activity_id: int, records: list[dic
                 rec["pace_sec_per_km"],
                 rec["cadence_spm"],
                 rec["altitude_m"],
+                rec.get("lat"),
+                rec.get("lon"),
             ),
         )
     return len(records)
@@ -390,7 +394,7 @@ def import_fit_files(
                 laps = parsed["laps"]
                 records = fit_parser.downsample_records(parsed["records"], sample_every_sec)
                 stats["laps_written"] += store_laps(conn, activity_id, laps)
-                stats["records_written"] += _store_records(conn, activity_id, records)
+                stats["records_written"] += store_records(conn, activity_id, records)
 
                 if sport in classifiable_sports:
                     wtype = update_workout_type(conn, activity_id, laps)

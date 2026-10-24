@@ -22,6 +22,11 @@ import fitparse
 # 公分/毫秒完全不同（那邊的換算見 garmin_export_parser.py）。
 _M_PER_KM = 1000
 
+# FIT 的經緯度單位是 semicircles（2^31 對應 180 度）。
+_DEG_PER_SEMICIRCLE = 180 / 2**31
+# 經緯度存到小數 5 位（約 1 m）：GPS 本身有 3–5 m 誤差，更多位數只是雜訊（N-32）。
+COORD_DECIMALS = 5
+
 # 低於此檔案大小的 FIT 幾乎都是每日監測片段而非運動活動，掃描時可先略過。
 # 依據：實測 20,778 個 FIT 檔的大小中位數僅 793 bytes（多為每日監測），
 # 而資料庫中最短的跑步活動為 107 秒，逐秒紀錄約 69 bytes/筆 → 推估約 7KB。
@@ -40,6 +45,12 @@ def _duration_to_pace_sec_per_km(distance_m: float | None, duration_sec: float |
     if not distance_m or distance_m <= 0 or not duration_sec or duration_sec <= 0:
         return None
     return round(duration_sec / (distance_m / _M_PER_KM))
+
+
+def _semicircles_to_deg(value: int | None) -> float | None:
+    if value is None:
+        return None
+    return round(value * _DEG_PER_SEMICIRCLE, COORD_DECIMALS)
 
 
 def _msg_to_dict(message: Any) -> dict:
@@ -104,6 +115,8 @@ def parse_fit(source: bytes | BinaryIO) -> dict | None:
                 "pace_sec_per_km": _mps_to_pace_sec_per_km(speed),
                 "cadence_spm": r.get("cadence"),
                 "altitude_m": r.get("enhanced_altitude", r.get("altitude")),
+                "lat": _semicircles_to_deg(r.get("position_lat")),
+                "lon": _semicircles_to_deg(r.get("position_long")),
             }
         )
 
