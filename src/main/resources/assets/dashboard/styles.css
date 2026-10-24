@@ -7811,11 +7811,11 @@ button.recent-row .rc-dist {
   cursor: pointer;
 }
 
-.cal-month-short {
+.cal-month-icon {
   display: none;
 }
 
-.cal-month-trigger svg {
+.cal-month-chevron {
   width: 12px;
   height: 12px;
   color: var(--text-muted);
@@ -8354,16 +8354,25 @@ button.recent-row .rc-dist {
 
 /* 手機：格子結構同桌機，膠囊縮小、最多 2 筆＋「+N」、空的課表膠囊只留外框 */
 @media (max-width: 600px) {
-  .cal-month-full {
+  /* 月份鈕只剩日曆圖示，與左右箭頭（.calendar-nav-btn）同為 40×40（2026-10-24 Fu） */
+  .cal-month-full,
+  .cal-month-chevron {
     display: none;
   }
 
-  .cal-month-short {
-    display: inline;
+  .cal-month-trigger {
+    justify-content: center;
+    width: 40px;
+    padding: 0;
   }
 
-  .cal-month-trigger {
-    padding: 0 8px;
+  .cal-month-icon {
+    display: inline-flex;
+  }
+
+  .cal-month-icon svg {
+    width: 18px;
+    height: 18px;
   }
 
   .cal-stats {

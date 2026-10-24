@@ -799,10 +799,18 @@ function buildMonthPicker(currentMonth, todayMonth) {
   trigger.setAttribute('aria-label', '選擇月份');
   trigger.setAttribute('aria-haspopup', 'dialog');
   trigger.setAttribute('aria-expanded', 'false');
-  // 手機寬度不夠放完整文字，改用精簡的「2026/10」（CSS 依寬度切換）
+  trigger.title = '選擇月份';
   trigger.appendChild(h('span', 'cal-month-full', currentMonth.slice(0, 4) + ' 年 ' + parseInt(currentMonth.slice(5, 7), 10) + ' 月'));
-  trigger.appendChild(h('span', 'cal-month-short', currentMonth.slice(0, 4) + '/' + currentMonth.slice(5, 7)));
-  trigger.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">'
+  // 手機標題列放不下文字（會與標題的 ⓘ 重疊），改成與左右箭頭同尺寸的日曆圖示鈕（CSS 依寬度切換，
+  // 2026-10-24 Fu）。圖示複製底部分頁列「行事曆」的 SVG，不另存一份
+  var calIcon = document.querySelector('.tab-link[data-view="calendar"] svg');
+  if (calIcon) {
+    var iconWrap = h('span', 'cal-month-icon');
+    iconWrap.setAttribute('aria-hidden', 'true');
+    iconWrap.appendChild(calIcon.cloneNode(true));
+    trigger.appendChild(iconWrap);
+  }
+  trigger.insertAdjacentHTML('beforeend', '<svg class="cal-month-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">'
     + '<path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" '
     + 'stroke-linecap="round" stroke-linejoin="round"/></svg>');
   wrap.appendChild(trigger);
