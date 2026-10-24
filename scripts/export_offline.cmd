@@ -1,5 +1,5 @@
 @echo off
-rem Export the offline dashboard (HTML + TXT) to a folder, e.g. an iCloud Drive folder.
+rem Export the offline dashboard (HTML) to a folder, e.g. an iCloud Drive folder.
 rem Keep this file ASCII-only: cmd.exe parses it in the console codepage (cp950).
 rem
 rem Usage (from the project root):
@@ -47,5 +47,5 @@ goto loop
 
 :run
 if not exist "%DEST%" mkdir "%DEST%"
-"%RC_PYTHON%" scripts\build_dashboard_offline.py --db-path "%RC_DB_PATH%" --copy-to "%DEST%" --txt%EXTRA%
+"%RC_PYTHON%" scripts\build_dashboard_offline.py --db-path "%RC_DB_PATH%" --copy-to "%DEST%"%EXTRA%
 exit /b %errorlevel%
