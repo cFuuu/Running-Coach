@@ -3940,6 +3940,11 @@ button.recent-row .rc-dist {
   border-top: 1px solid var(--border);
 }
 
+/* 預設只列最近幾場（js/views/home.js RACE_LIST_DEFAULT），按「全部賽事」才展開其餘 */
+.race-list:not(.is-expanded)>.race-list-row.is-extra {
+  display: none;
+}
+
 .race-list-row.is-target {
   box-shadow: inset 4px 0 0 var(--text);
 }

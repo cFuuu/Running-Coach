@@ -598,25 +598,32 @@ export function renderRaceCountdownBlock(races) {
   }
   block.appendChild(grid);
 
-  // 卡片已顯示的場次（合併時 1 場、否則最多 2 場）以外還有別場，才需要「全部賽事」
+  // 卡片已顯示的場次（合併時 1 場、否則最多 2 場）以外還有別場，才需要清單
   var all = (races && races.all) || [];
   var shownCount = grid.classList.contains('is-merged') ? 1 : (next ? 1 : 0) + (target ? 1 : 0);
   if (all.length > shownCount) {
+    // 清單預設展開、只列最近 RACE_LIST_DEFAULT 場；更多的才需要「全部賽事」鈕（2026-10-24 Fu）
     var panel = raceListPanel(all);
-    panel.hidden = true;
-    var toggle = h('button', 'race-all-btn', '全部賽事（' + all.length + '）');
-    toggle.type = 'button';
-    toggle.setAttribute('aria-expanded', 'false');
-    toggle.addEventListener('click', function () {
-      panel.hidden = !panel.hidden;
-      toggle.setAttribute('aria-expanded', String(!panel.hidden));
-      toggle.classList.toggle('is-open', !panel.hidden);
-    });
-    title.appendChild(toggle);
+    var rows = Array.prototype.slice.call(panel.children);
+    if (rows.length > RACE_LIST_DEFAULT) {
+      rows.slice(RACE_LIST_DEFAULT).forEach(function (row) { row.classList.add('is-extra'); });
+      var toggle = h('button', 'race-all-btn', '全部賽事（' + all.length + '）');
+      toggle.type = 'button';
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.addEventListener('click', function () {
+        var expanded = panel.classList.toggle('is-expanded');
+        toggle.setAttribute('aria-expanded', String(expanded));
+        toggle.classList.toggle('is-open', expanded);
+      });
+      title.appendChild(toggle);
+    }
     block.appendChild(panel);
   }
   return block;
 }
+
+// 全部賽事清單預設顯示的場數（依日期由近到遠）
+var RACE_LIST_DEFAULT = 4;
 
 /** 首頁頂端的資料新鮮度。 */
 function renderFreshness(data) {
