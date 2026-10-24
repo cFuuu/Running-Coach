@@ -311,6 +311,48 @@ h3 {
   max-width: 100%;
 }
 
+/* 側邊列學員卡（js/shell/loader.js renderMeta）：只在桌機完整側邊列看得到 */
+.meta-athlete {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+}
+
+.meta-avatar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.meta-athlete-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.meta-athlete-role {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.meta-athlete-name {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* range 切換：觸控目標 ≥ 44px */
 .range-switch {
   display: flex;
@@ -696,8 +738,8 @@ h3 {
   min-width: 0;
   max-width: 100%;
   padding: var(--gap);
-  /* 讓開手機底部分頁列與其上方的 AI 浮動鈕（56px + 間距），最後一列才捲得到浮動鈕上方 */
-  padding-bottom: calc(56px + 56px + 2 * var(--gap));
+  /* 讓開手機浮動分頁列（高度＋離底距離＋iPhone home indicator 安全區），最後一列才捲得到分頁列上方 */
+  padding-bottom: calc(var(--tabbar-h) + var(--tabbar-bottom) + 2 * var(--gap));
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -1184,26 +1226,71 @@ body.coach-open .coach-panel {
 
 /* ---- 手機底部分頁列與 FAB ---- */
 
+/* 浮動膠囊分頁列（2026-10-24 Fu：仿 iOS Liquid Glass）。
+   列本身接近不透明＋輕度模糊：完全透明時，底下的高彩度膠囊會讓標籤字對比不足。 */
+:root {
+  --tabbar-h: 60px;
+  --tabbar-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
 .tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 12px;
+  right: 12px;
+  bottom: var(--tabbar-bottom);
   z-index: 100;
-  height: 56px;
+  height: var(--tabbar-h);
+  padding: 4px;
   display: grid;
-  /* 5 格（首頁／行事曆／趨勢／紀錄／配速）：390px 寬每格約 78px */
+  /* 5 格（首頁／趨勢／行事曆／紀錄／配速）：390px 寬每格約 72px */
   grid-template-columns: repeat(5, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: var(--surface);
-  border-top: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar {
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+  }
+}
+
+/* 選取膠囊：單一元素，router 設 --tab-index 後滑到該格。
+   寬度＝內容區的 1/5，translateX(100%) 剛好移一格；不在分頁列的 view（系統設定）就隱藏 */
+.tabbar-pill {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / 5);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  transform: translateX(calc(var(--tab-index, 0) * 100%));
+  transition: transform 0.38s cubic-bezier(0.3, 1.25, 0.5, 1), opacity 0.2s;
+}
+
+.tabbar:not([data-tab-index]) .tabbar-pill {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabbar-pill {
+    transition: none;
+  }
 }
 
 .tab-link {
+  /* 疊在選取膠囊之上 */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  border-radius: 999px;
   color: var(--text-muted);
   font-size: var(--fs-xs);
   text-decoration: none;

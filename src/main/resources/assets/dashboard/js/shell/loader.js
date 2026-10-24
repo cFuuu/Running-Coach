@@ -19,6 +19,18 @@ export function renderMeta() {
   var athlete = state.meta.athlete || {};
   var athleteNode = $('settings-athlete');
   if (athleteNode) athleteNode.textContent = athlete.name || '—';
+  if (athlete.name) {
+    // 側邊列學員卡（2026-10-24 Fu：桌機仍要頭像）。meta-info 只在 ≥1280px 的完整側邊列顯示，
+    // 平板圖示欄與手機看不到，名稱仍以系統設定頁為準。
+    // 左側圓形頭像（取名字第一個字），右側「學員」小標＋名字
+    var chip = h('div', 'meta-athlete');
+    chip.appendChild(h('span', 'meta-avatar', Array.from(athlete.name)[0]));
+    var text = h('span', 'meta-athlete-text');
+    text.appendChild(h('span', 'meta-athlete-role', '學員'));
+    text.appendChild(h('span', 'meta-athlete-name', athlete.name));
+    chip.appendChild(text);
+    node.appendChild(chip);
+  }
   var offline = offlineSnapshotInfo();
   if (offline) {
     // 離線快照：側邊列與頂列（手機沒有側邊列）都標資料時間，避免把舊資料當成今天

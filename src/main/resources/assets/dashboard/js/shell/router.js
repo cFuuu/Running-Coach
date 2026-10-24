@@ -94,6 +94,20 @@ export function applyRoute() {
     else link.removeAttribute('aria-current');
   });
 
+  // 底部分頁列的選取膠囊滑到目前那格；view 不在分頁列（系統設定）時拿掉 data-tab-index 隱藏膠囊
+  var tabbar = $('tabbar');
+  if (tabbar) {
+    var tabIndex = Array.prototype.findIndex.call(tabbar.querySelectorAll('.tab-link'), function (t) {
+      return t.getAttribute('data-view') === view;
+    });
+    if (tabIndex < 0) {
+      tabbar.removeAttribute('data-tab-index');
+    } else {
+      tabbar.setAttribute('data-tab-index', String(tabIndex));
+      tabbar.style.setProperty('--tab-index', String(tabIndex));
+    }
+  }
+
   // 頂列：標題與 range 切換（只有吃 range 的 view 顯示區間切換）
   var titleEl = $('content-title');
   if (titleEl) titleEl.textContent = VIEWS[view].title;

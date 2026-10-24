@@ -597,8 +597,10 @@
   </div>
 
   <!-- ------------------------------------------------------------ 手機 -->
-  <!-- 底部分頁列（<768px 顯示）：5 格等寬、56px 高、圖示＋文字 -->
+  <!-- 底部分頁列（<768px 顯示）：浮動膠囊、5 格等寬、圖示＋文字。
+       .tabbar-pill 是滑動的選取底塊，位置由 js/shell/router.js 設 --tab-index -->
   <nav class="tabbar" id="tabbar" aria-label="主導覽（手機）">
+    <span class="tabbar-pill" aria-hidden="true"></span>
     <a class="tab-link" href="#/home" data-view="home">
       <span class="tab-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"
