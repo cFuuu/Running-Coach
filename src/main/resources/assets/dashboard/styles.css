@@ -1230,7 +1230,8 @@ body.coach-open .coach-panel {
    列本身接近不透明＋輕度模糊：完全透明時，底下的高彩度膠囊會讓標籤字對比不足。 */
 :root {
   --tabbar-h: 60px;
-  --tabbar-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  /* 2026-10-24 Fu：10px 太高，往下貼近底部 */
+  --tabbar-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 }
 
 .tabbar {
@@ -1247,7 +1248,10 @@ body.coach-open .coach-panel {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+  /* 陰影往上帶：列離可視範圍底部只有幾 px，原本往下擴散約 30px 的陰影會被 Safari
+     底緣切掉，看起來像斷了一截（2026-10-24 Fu 實機回報）。負擴散讓往下只延伸約 6px
+     （16 模糊 − 4 擴散 − 6 上移） */
+  box-shadow: 0 -6px 16px -4px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
