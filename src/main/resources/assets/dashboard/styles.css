@@ -7219,6 +7219,12 @@ button.recent-row .rc-dist {
   max-width: 100%;
 }
 
+/* 並排的多組輸入（田徑場「秒/圈」與「分:秒/圈」），放不下時換行 */
+.tools-row.is-wrap {
+  flex-wrap: wrap;
+  gap: 10px 28px;
+}
+
 .tools-unit {
   font-size: var(--fs-md);
   color: var(--text-muted);

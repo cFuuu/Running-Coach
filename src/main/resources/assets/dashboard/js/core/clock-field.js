@@ -155,8 +155,9 @@ export function clockField(opts) {
       var isLast = i === parts.length - 1;
       var text;
       if (isLast && opts.decimalSeconds) {
+        // 整數秒不帶「.0」（1:36、1:36.5），與田徑場「秒/圈」欄的 96、96.5 一致
         var sec = tenths / 10;
-        text = (sec < 10 && i > 0 ? '0' : '') + sec.toFixed(1);
+        text = (sec < 10 && i > 0 ? '0' : '') + (tenths % 10 === 0 ? String(sec) : sec.toFixed(1));
       } else {
         var unitTenths = UNIT_SEC[part] * 10;
         var v = Math.floor(tenths / unitTenths);

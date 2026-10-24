@@ -314,7 +314,16 @@ function buildTrackPanel() {
     function (lapSec) { return lapSec / lapKm(); },
     parseLapText
   );
-  p.body.appendChild(inputRow(input, '秒/圈').row);
+  // 同一圈速的「分:秒」寫法（96 ⇄ 1:36），兩格互相連動（2026-10-24 Fu）；放不下時換到下一行
+  var lapClock = bindClock(
+    clockField({ parts: ['m', 's'], ariaLabel: '每圈分秒', placeholders: ['1', '36'], decimalSeconds: true, plainUnitSec: 1, size: 'lg' }),
+    function (s) { return s * lapKm(); },
+    function (t) { return t / lapKm(); }
+  );
+  var lapRows = h('div', 'tools-row is-wrap');
+  lapRows.appendChild(inputRow(input, '秒/圈').row);
+  lapRows.appendChild(inputRow(lapClock, '分:秒/圈').row);
+  p.body.appendChild(lapRows);
 
   // 換算結果：每 100m 秒數與配速（同一個速度的不同說法）
   var stats = h('div', 'tools-stats');
