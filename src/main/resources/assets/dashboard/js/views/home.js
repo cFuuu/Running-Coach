@@ -318,11 +318,21 @@ var FEEL_OPTIONS = [
   }
 ];
 
-var FEEL_TIPS = [
-  '今日體感狀況只是記錄，不影響任何判定（綜合整備狀態、訓練負荷都不讀它）。'
-  + '累積下來用來檢驗規則抓到的日子是不是真的累。',
-  '點一下記錄，再點同一顆取消。記的是「今天」，即使上方因資料未同步而顯示較早一天的判定。'
-];
+/** 今日體感狀況的 ⓘ 說明：三段，先講三個等級（圖示對應），再講怎麼記、最後講用途。 */
+function feelTips() {
+  return [
+    tipSection('三個等級（由累到好）', [
+      '疲憊（嘴角向下）',
+      '普通（嘴角平）',
+      '充沛（嘴角向上）'
+    ]),
+    tipSection('怎麼記', [
+      '點一下記錄，再點同一顆取消',
+      '記的是「今天」，即使上方因資料未同步而顯示較早一天的判定'
+    ]),
+    tipSection('用途', '只是記錄，不影響任何判定（綜合整備狀態、訓練負荷都不讀它）。累積下來用來檢驗規則抓到的日子是不是真的累。')
+  ];
+}
 
 /**
  * 「今日體感狀況」獨立區塊：三段式選擇，點一下記錄、再點同一段取消。
@@ -332,7 +342,7 @@ function renderFeelBlock(dateStr) {
   var block = h('div', 'today-block feel-block');
   var title = h('div', 'today-block-title');
   title.appendChild(h('span', null, '今日體感狀況'));
-  title.appendChild(infoTip('今日體感狀況', FEEL_TIPS));
+  title.appendChild(infoTip('今日體感狀況', feelTips()));
   block.appendChild(title);
   block.appendChild(h('div', 'feel-sub', '自行評估今天身體狀況'));
 
