@@ -63,7 +63,7 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 **W4b 離線模式（2026-10-24）**
 - **唯一判斷**：`core/api.js` 的 `isOfflineSnapshot()`（＝`window.MOCK_API.isOffline`）與 `offlineSnapshotInfo()`（`{at, today}`），其他地方不直接讀 `window.MOCK_API`。
 - **隱藏線上功能**：`main.js` 離線時在 `<html>` 加 `.is-offline`，`index.html` 中需要伺服器的元素標 `data-online-only`（同步鈕兩顆、分析近況、AI 教練面板／開關／直條／FAB／遮罩、自訂區間、設定頁的 AI 教練區塊與立即同步），`styles.css` 一條規則隱藏。動態產生的今日體感區塊與行事曆「這場是課表」／「取消」按鈕在 JS 不產生（行事曆仍顯示「已確認為課表」／「待確認」狀態文字）。AI 教練不啟動、同步狀態不查詢，所以離線時沒有任何寫入或聊天請求。網址或偏好裡的 `custom:` 區間離線時不還原。後端的區網警語（`meta.notice`）離線不顯示。
-- **資料截至**：側邊列的「開發用假資料」徽章改為「資料截至 YYYY-MM-DD HH:MM」；手機與平板看不到側邊列的 meta，頂列另顯示一份（`#offline-stamp`，≥1280px 隱藏）。載入程式的臨時浮動徽章已移除。
+- **最後更新**：側邊列的「開發用假資料」徽章改為「最後更新 YYYY/MM/DD HH:MM」（2026-10-24 由「資料截至」改名、改灰色）；手機與平板看不到側邊列的 meta，頂列另顯示一份（`#offline-stamp`，≥1280px 隱藏）。載入程式的臨時浮動徽章已移除。
 - **今天＝匯出日期**：匯出腳本寫入 `window.__SNAPSHOT_TODAY__`（快照的 `today`），掛成 `MOCK_API.today`；`format.js` 的 `todayISO()` 離線時回傳它，`garmin.js` 原本自己的 `todayIso()` 刪掉改用 `todayISO()`。行事曆的今天、連續週數、資料新鮮度本來就取自匯出當下的 API 回應，與此一致。
 - **缺明細的場次**：訊息改為「離線檔未包含這場的明細（只保留 YYYY-MM-DD 之後的單場明細）」，訓練紀錄展開列與完整單場以說明框（非「讀取失敗」）顯示，完整單場的各圖收掉載入中、隔天恢復照常顯示。
 - **請求稽核**（真實資料庫副本，390×844 與 1280 各一輪）：六個 view、五個區間、趨勢開關全部切換、行事曆往前 14 個月再往後 16 個月並點選日期、訓練紀錄展開 5 場與完整單場，共 169 個請求、111 個不同 URL，**快照答不出的請求 0 個**、console 0 錯誤、無橫向捲動、無可見的線上功能。W1～W3 新增的請求（前期比較的 `custom:`、課表週、連續週數的行事曆區段）都已被 `snapshot_requests()`／`span_requests()` 涵蓋，不需要新增 URL。
@@ -89,7 +89,7 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 - 同步資料、分析近況、AI 教練面板、今日體感按鈕、自訂區間
 - 自訂區間在快照裡沒有對應資料，只保留預先匯出的區間
 
-**頁首**：固定顯示「資料截至 YYYY-MM-DD HH:MM」。行事曆的「今天」標記改用匯出日期，避免隔幾天打開時產生誤會。
+**頁首**：固定顯示「最後更新 YYYY/MM/DD HH:MM」。行事曆的「今天」標記改用匯出日期，避免隔幾天打開時產生誤會。
 
 ---
 
@@ -131,9 +131,10 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 
 ```powershell
 # 電腦端（專案根目錄）。先同步最新資料（dashboard 的「同步資料」或 sync CLI）
-& "C:\Users\cFu\anaconda3\envs\rc\python.exe" scripts/build_dashboard_offline.py --db-path output/running_coach.db
-# 有設 RC_OFFLINE_EXPORT_DIR 時，會自動複製到 iCloud
+scripts\export_offline
 ```
+
+指令與參數的完整說明見 [SCRIPTS.md](SCRIPTS.md)。
 
 1. 執行上面的指令，等 iCloud 同步完成（檔案總管的圖示變成已同步）。
 2. iPhone 點捷徑，就會開啟最新版本。頁首會顯示資料時間。
