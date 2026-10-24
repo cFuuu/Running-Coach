@@ -18,6 +18,15 @@ export function warmupsByMain(activities) {
   return map;
 }
 
+/**
+ * Garmin 恢復時間（小時）的顯示：整數小時；不到 1 小時寫「< 1」。
+ * Garmin 在完全恢復時回傳約 1 分鐘（0.017 小時），直接四捨五入會變成「0」，
+ * 看起來像沒有資料。訓練完備程度卡與趨勢頁的恢復時間共用，兩處才不會不一致。
+ */
+export function recoveryHoursText(v) {
+  return v < 1 ? '< 1' : String(Math.round(v));
+}
+
 /** '含暖身 1.3 km' */
 export function warmupLabel(warmup) {
   return '含暖身 ' + C.formatNumber(warmup.distance_km || 0, 1) + ' km';

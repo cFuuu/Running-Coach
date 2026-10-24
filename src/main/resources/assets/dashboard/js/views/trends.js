@@ -24,7 +24,8 @@ import * as Theme from '../theme.js';
 import { state, wellnessMetricDefs, CONFIDENCE_LABEL } from '../core/state.js';
 import { api } from '../core/api.js';
 import { $, clear, h, showLoading, showUnavailable, widthOf, wrapChart } from '../core/dom.js';
-import { closeInfoPopover, kpiCard } from '../core/facts.js';
+import { closeInfoPopover, kpiCard, tipSection } from '../core/facts.js';
+import { recoveryHoursText } from '../core/format.js';
 import { customizer, visibleDefs } from '../core/customize.js';
 import { renderOrDefer } from '../shell/router.js';
 import { loadSeriesToChartSeries, garminLoadNote, seriesFromSessions, SESSION_TRENDS } from './load.js';
@@ -348,6 +349,15 @@ function loadDefs() {
   return defs;
 }
 
+/** 恢復時間的區間統計：平均（含已恢復的日子）與已恢復天數，補足「期末值」看不到的整段情形。 */
+function recoveryRangeLines(vals) {
+  var nums = vals.filter(isNum);
+  if (!nums.length) return '此區間沒有資料';
+  var recovered = nums.filter(function (v) { return v < 1; }).length;
+  return ['區間平均 ' + C.formatNumber(mean(nums), 1) + ' hr（含已恢復的日子）',
+    '已恢復（< 1 hr）' + recovered + ' 天／共 ' + nums.length + ' 天'];
+}
+
 function lastFact(rows, key) {
   for (var i = rows.length - 1; i >= 0; i -= 1) if (rows[i][key] && isNum(rows[i][key].value)) return rows[i][key];
   return null;
@@ -379,10 +389,15 @@ function renderLoadSection(body) {
     trendKpi({ label: '長期體能', abbr: 'CTL', value: ctlFact && ctlFact.value, fmt: fmt1, prev: prevLast('ctl'),
       note: '期末值', series: rows.map(function (r) { return r.ctl ? r.ctl.value : null; }),
       tip: loadTip('ctl', rows, '此區間').concat(confidenceTip(ctlFact)) }),
-    trendKpi({ label: '恢復時間', value: mean(values(recPts)), fmt: fmt1, unit: 'hr',
-      prev: recDef ? prevValue('wellness', function (d) { return mean(values(wellnessPoints(d, recDef))); }) : null,
-      note: '期間平均', series: values(recPts),
-      tip: ['Garmin 估計的恢復所需時數（每日一筆），這裡取區間內有資料日子的平均。'] })
+    // 期末值：與同一排的 TSB／ATL／CTL、訓練完備程度卡的恢復時間同口徑（都是最新一天）。
+    // 原本顯示區間平均，Garmin 恢復日回傳約 0，平均 12.9 hr 與卡片的「0」像是兩個矛盾的數字。
+    trendKpi({ label: '恢復時間', value: lastValue(recPts), fmt: recoveryHoursText, unit: 'hr',
+      prev: recDef ? prevValue('wellness', function (d) { return lastValue(wellnessPoints(d, recDef)); }) : null,
+      note: '期末值', series: values(recPts),
+      tip: [
+        tipSection('定義', 'Garmin 估計還要幾小時才完全恢復，每天一筆（早上的快照）。0 表示已恢復，不到 1 小時顯示「< 1」。'),
+        tipSection('區間統計', recoveryRangeLines(values(recPts)))
+      ] })
   ]));
 
   var host = h('div', 'trend-chart-block');

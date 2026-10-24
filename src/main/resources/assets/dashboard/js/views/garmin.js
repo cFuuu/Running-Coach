@@ -13,7 +13,7 @@
 
 import * as C from '../charts.js';
 import { h, clear, showLoading, showUnavailable } from '../core/dom.js';
-import { todayISO, displayDate } from '../core/format.js';
+import { todayISO, displayDate, recoveryHoursText } from '../core/format.js';
 import { infoTip, hrvStatusMark, toneMark } from '../core/facts.js';
 import { HRV_STATUS_LABEL, GARMIN_TRAINING_STATUS_LABEL, GARMIN_ACWR_STATUS_LABEL } from '../core/state.js';
 
@@ -268,7 +268,7 @@ function readinessFactors(c) {
     },
     {
       key: 'recovery', label: '恢復時間', feedback: c.recovery_feedback, primary: true,
-      value: present(c.recovery_time_hours) ? Math.round(c.recovery_time_hours) + ' 時' : ''
+      value: present(c.recovery_time_hours) ? recoveryHoursText(c.recovery_time_hours) + ' hr' : ''
     },
     {
       key: 'hrv', label: 'HRV 狀態', feedback: c.hrv_feedback,
