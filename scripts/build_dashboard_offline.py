@@ -510,7 +510,7 @@ LOADER_JS = r"""
   window.MOCK_API = {
     isMock: true,
     isOffline: true,
-    snapshotAt: window.__SNAPSHOT_AT__,      // 頁首「資料截至」
+    snapshotAt: window.__SNAPSHOT_AT__,      // 頁首「最後更新」
     today: window.__SNAPSHOT_TODAY__,        // 前端 todayISO() 的「今天」＝匯出日期
     request: function (raw, body) { return ready.then(function () { return routeNow(raw, body); }); },
     chatRequest: function (path) {

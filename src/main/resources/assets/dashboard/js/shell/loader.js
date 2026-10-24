@@ -35,7 +35,7 @@ export function renderMeta() {
   var offline = offlineSnapshotInfo();
   if (offline) {
     // 離線快照：側邊列與頂列（手機沒有側邊列）都標資料時間，避免把舊資料當成今天
-    var label = '資料截至 ' + displayDate(offline.at);
+    var label = '最後更新 ' + displayDate(offline.at);
     node.appendChild(h('span', 'badge badge-offline', label));
     var stamp = $('offline-stamp');
     if (stamp) {

@@ -6678,7 +6678,7 @@ button.recent-row .rc-dist {
  *
  * scripts/build_dashboard_offline.py 產生的單一 HTML：main.js 在 <html> 加 .is-offline，
  * 需要連伺服器的控制項（同步、AI 教練、自訂區間…）在 HTML 標 data-online-only，這裡一次隱藏。
- * 「資料截至」用提示列的色票（舊資料提醒，不是錯誤）。
+ * 「最後更新」徽章用中性灰（只是說明資料時間，不是警告；2026-10-24 Fu）。
  */
 .is-offline [data-online-only] {
   display: none !important;
