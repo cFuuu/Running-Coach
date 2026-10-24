@@ -12,7 +12,7 @@ import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, activityColorVar, DAY_STATE_LABEL } from '../core/state.js';
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError } from '../core/dom.js';
-import { sundayOf, mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote } from '../core/format.js';
+import { sundayOf, mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote, raceDisplayName } from '../core/format.js';
 import { infoTip } from '../core/facts.js';
 import { sportOf, sportIconNode, SPORT_KEYS, SPORT_LABEL } from '../core/sport-icons.js';
 import { navigate, renderOrDefer } from '../shell/router.js';
@@ -124,21 +124,12 @@ function sportChip(sport, text, extra) {
   return chip;
 }
 
-/**
- * 膠囊上的賽事名稱拿掉開頭的西元年（「2026 長榮馬拉松」→「長榮馬拉松」），格子窄，年份是贅字。
- * 只用在膠囊；tooltip 與當日明細保留完整名稱。拿掉後是空字串就保留原名。
- */
-function chipRaceName(name) {
-  var short = String(name).replace(/^\s*(19|20)\d{2}\s*年?\s*/, '');
-  return short || name;
-}
-
 /** 空的課表膠囊（未到／未執行／賽事）。文字包在 .cal-ghost-text，手機上隱藏只留外框。 */
 function ghostChip(ghost) {
   var cls = ghost.kind === 'missed' ? 'is-missed' : (ghost.kind === 'race' ? 'is-race-planned' : 'is-planned');
   var chip = h('span', 'sport-chip sport-chip--' + ghost.sport + ' ' + cls + ' cal-ghost');
   if (ghost.kind === 'race') chip.appendChild(sportIconNode('race'));
-  chip.appendChild(h('span', 'cal-ghost-text', ghost.kind === 'race' ? chipRaceName(ghost.label) : ghost.label));
+  chip.appendChild(h('span', 'cal-ghost-text', ghost.kind === 'race' ? raceDisplayName(ghost.label) : ghost.label));
   chip.title = ghost.title || ghost.label;
   return chip;
 }

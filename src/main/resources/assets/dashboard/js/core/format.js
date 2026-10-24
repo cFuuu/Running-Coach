@@ -108,6 +108,17 @@ export function shortPlanNote(notes) {
   return cut > 0 ? text.slice(0, cut) : text;
 }
 
+/**
+ * 畫面用的賽事名稱：拿掉開頭的西元年（「2026 長榮馬拉松」→「長榮馬拉松」）。
+ * 顯示處旁邊都有日期，年份是贅字，手機上還會擠到換行。只影響顯示，學員檔原文不動；
+ * 呼叫端應把完整名稱放在 title。拿掉後是空字串就保留原名。
+ */
+export function raceDisplayName(name) {
+  if (!name) return '';
+  var short = String(name).replace(/^\s*(19|20)\d{2}\s*年?\s*/, '');
+  return short || name;
+}
+
 export function planSummary(p) {
   var parts = [WORKOUT_TYPE_LABEL[p.workout_type] || p.workout_type];
   if (p.planned_distance_km) parts.push(C.formatNumber(p.planned_distance_km, 1) + ' km');

@@ -17,7 +17,7 @@ import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFID
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark } from '../core/facts.js';
-import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel } from '../core/format.js';
+import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel, raceDisplayName } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
 import { activityDots, firstRunningActivity } from './calendar.js';
@@ -526,9 +526,10 @@ function raceCard(iconKind, label, race, extraClass) {
   return card;
 }
 
-/** 賽事名稱＋距離標籤。距離接在名稱後面、字級相同，只靠顏色分級。 */
+/** 賽事名稱（去掉西元年，完整名稱放 title）＋距離標籤。距離接在名稱後面、字級相同，只靠顏色分級。 */
 function raceNameRow(race, className) {
-  var nameRow = h('div', className, race.name);
+  var nameRow = h('div', className, raceDisplayName(race.name));
+  if (race.name) nameRow.title = race.name;
   if (race.distance) {
     nameRow.appendChild(document.createTextNode(' '));
     nameRow.appendChild(h('span', 'race-distance race-dist-' + raceDistanceTier(race.distance_km), race.distance));
