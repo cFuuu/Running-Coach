@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Running Coach 訓練儀表板</title>
   <!-- 不引用任何 CDN：離線與區網皆可運作，個人資料不外流 -->
+  <!-- 分頁小圖示：側邊列品牌圖（跑者＋跑道弧）的白色版放在主色圓角方塊上，內嵌避免多一個檔案 -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect width=%2224%22 height=%2224%22 rx=%225.5%22 fill=%22%232563a8%22/%3E%3Cg transform=%22translate(2.4 1.6) scale(.8)%22 fill=%22none%22 stroke=%22%23fff%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cg transform=%22translate(2.4 -0.4) scale(.82)%22 stroke-width=%223.1%22%3E%3Ccircle cx=%2216%22 cy=%223.9%22 r=%222.4%22 fill=%22%23fff%22 stroke=%22none%22/%3E%3Cpath d=%22M13.6 8.1 10 8.7 8.1 11.3M11.2 12.6 8.8 16.6 4.7 17.5%22 stroke-opacity=%22.4%22/%3E%3Cpath d=%22M14.2 7.3 11.2 12.6l3.4 2.8-1.2 5.4M13.9 8l2.9 2.7 2.8-.5%22/%3E%3C/g%3E%3Cpath d=%22M2 21.5c5.6-2.6 14.4-2.6 20 0%22 stroke-width=%221.8%22/%3E%3Cpath d=%22M6.5 23.2c3.6-.9 7.4-.9 11 0%22 stroke-width=%221.4%22 stroke-opacity=%22.5%22/%3E%3C/g%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
   <!--
     在首次繪製前就套用主題，避免「先閃一下淺色再變深色」的 FOUC。
@@ -84,20 +86,19 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
         <!--
-        單色品牌圖：向前傾的跑者（實心頭、四肢線條）、左側三條速度線、腳下兩道跑道弧線。
-        stroke 用 currentColor，顏色由 .sidebar-brand-mark 的 color 決定（深淺色自動跟著變）。
+        品牌圖（2026-10-24 Fu 選 Ⓑ）：P2 跑者（與運動圖示 js/core/sport-icons.js 的跑步同一個人形，
+        縮小放上方）＋腳下兩道跑道弧線。stroke 用 currentColor，顏色由 .sidebar-brand-mark 決定。
+        分頁小圖示（<head> 的 rel="icon"）是同一個圖形的白色版本放在主色圓角方塊上。
       -->
-        <svg class="sidebar-brand-mark" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"
+        <svg class="sidebar-brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="20.5" cy="6.5" r="2.7" fill="currentColor" stroke="none"></circle>
-          <path d="M18.4 11.6 14.6 18"></path>
-          <path d="M17.6 12.6 21.6 15.2 24.8 13"></path>
-          <path d="M17.6 12.6 13.4 13.2 11.4 16.4"></path>
-          <path d="M14.6 18 19.4 20.2 17.4 25.2"></path>
-          <path d="M14.6 18 10.8 21.6 7.6 20.6"></path>
-          <path d="M2.5 9.5h4M1.5 13.5h3.6M3.5 17.5h2.6" stroke-width="1.6"></path>
-          <path d="M4.5 27c7.4 2.2 15.6 2.2 23 0" stroke-width="1.7"></path>
-          <path d="M11 30.6c3.4 .8 6.6 .8 10 0" stroke-width="1.5"></path>
+          <g transform="translate(2.4 -0.4) scale(.82)" stroke-width="3.1">
+            <circle cx="16" cy="3.9" r="2.4" fill="currentColor" stroke="none"></circle>
+            <path d="M13.6 8.1 10 8.7 8.1 11.3M11.2 12.6 8.8 16.6 4.7 17.5" stroke-opacity=".4"></path>
+            <path d="M14.2 7.3 11.2 12.6l3.4 2.8-1.2 5.4M13.9 8l2.9 2.7 2.8-.5"></path>
+          </g>
+          <path d="M2 21.5c5.6-2.6 14.4-2.6 20 0" stroke-width="1.8"></path>
+          <path d="M6.5 23.2c3.6-.9 7.4-.9 11 0" stroke-width="1.4" stroke-opacity=".5"></path>
         </svg>
         <span class="sidebar-brand-text">Running Coach</span>
       </div>
