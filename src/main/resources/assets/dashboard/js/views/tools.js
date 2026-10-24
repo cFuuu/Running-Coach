@@ -25,7 +25,7 @@ var RACE_DISTANCES = [
   { km: 1.5, label: '1500m' },
   { km: 3, label: '3000m' },
   { km: 5, label: '5000m' },
-  { km: 10, label: '10K', note: '10 km' },
+  { km: 10, label: '10 km' },
   { km: 21.0975, label: '半馬', note: '21.0975 km' },
   { km: 42.195, label: '全馬', note: '42.195 km' }
 ];
