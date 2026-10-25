@@ -1096,7 +1096,7 @@ function vdotCard(vdot) {
     tipSection('參考值', refLines),
     tipSection('定義', 'Jack Daniels 的跑力指數：用一場全力成績反推的有氧能力分數。'),
     tipSection('怎麼算', [
-      '只採用標記為比賽或全力測驗的成績；有手動計時成績的場次用手動計時成績',
+      '只採用標記為比賽或全力測驗的成績；有官方成績的場次用官方成績',
       '新鮮度：3K／5K／10K 在 90 天內，半馬／全馬在 180 天內',
       '公式（Daniels & Gilbert）：VDOT ＝ 該配速的攝氧成本 ÷ 能持續該時間的最大攝氧比例',
       '基準成績之後若有停跑，會依 Daniels 的折減表打折（超過 5 天後每天約 −0.3%），信賴度標籤的已知偏誤會標明',
@@ -1203,8 +1203,8 @@ function pbDetail(pb) {
     row.appendChild(h('span', 'pb-row-rank', String(i + 1)));
     var time = h('span', 'pb-row-time', C.formatDuration(r.time_sec));
     if (r.official) {
-      var manual = h('span', 'pb-manual', '手動');
-      manual.title = '時間為人工填入（大會成績或現場計時），非手錶紀錄';
+      var manual = h('span', 'pb-manual', '官方');
+      manual.title = '時間為大會成績或現場計時，非手錶紀錄';
       time.appendChild(manual);
     }
     row.appendChild(time);
