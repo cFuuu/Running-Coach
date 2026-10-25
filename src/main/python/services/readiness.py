@@ -77,6 +77,13 @@ TSB_LOW_PERCENTILE = 10.0
 # 樣本數不足此值時不以百分位法判斷 TSB（分布本身不可靠），該維度標為資料不足。
 MIN_TSB_SAMPLES_FOR_PERCENTILE = 60
 
+# 每天的 TSB 門檻只取「截至當天（含）往回這麼多天」的 TSB 算 P10（2026-10-25／N-34）。
+# 先前取整段輸入序列，序列長度隨查詢區間而變，同一天查 14 天與 60 天門檻就不同
+# （實測 −15.5 vs −13.9），首頁與 MCP 判讀可能互相矛盾。168 天（4 倍 CTL 時間常數）
+# 沿用改版前首頁查詢的取樣量級。⚠️ 查詢層必須據此往前多抓序列。
+# 🔴 工程決策，無文獻依據。
+TSB_PERCENTILE_WINDOW_DAYS = 168
+
 # 當日 HRV 相對 7 日均值的下降幅度超過此比例，視為自律神經恢復不足的訊號。
 #
 # 🔴 無文獻依據的工程決策。docs/research/physiological-thresholds.md 主題四
@@ -174,7 +181,7 @@ def _evaluate_tsb(
         "dimension": "tsb",
         "detail": (
             f"TSB 為 {tsb:.1f}，低於個人分布門檻 {threshold:.1f}"
-            f"（該學員歷史 TSB 的第 {TSB_LOW_PERCENTILE:.0f} 百分位）"
+            f"（該學員近 {TSB_PERCENTILE_WINDOW_DAYS} 天 TSB 的第 {TSB_LOW_PERCENTILE:.0f} 百分位）"
         ),
         # TSB 由 ATL/CTL 遞推而來，而每日負荷是用 %HRR 算的強度——
         # HRmax 若非實測，整條負荷序列都帶著同一個系統性偏移。
@@ -332,7 +339,7 @@ def assess_readiness(
             "consecutive_training_days": int,
             "measurements": {  # 各維度「數值 / 觸發門檻」，未評的維度 value 為 None
                 "consecutive_training_days": {"value", "threshold"},  # 天
-                "tsb": {"value", "threshold"},  # 門檻為個人 TSB 分布 P10，樣本不足為 None
+                "tsb": {"value", "threshold"},  # 門檻為截至當天 168 天 TSB 的 P10，樣本不足為 None
                 "hrv_change_pct": {"value", "threshold"},  # 當日較 7 日均值變化 %，門檻 -15
             },
         }
@@ -358,9 +365,9 @@ def assess_readiness(
     daily_loads_by_date = {day["date"]: day["load"] for day in training_load_series}
     wellness_by_date = {day["date"]: day for day in daily_wellness}
 
-    # TSB 門檻由該學員自己的完整 TSB 分布決定（含暖機期，樣本越多分布越穩），
-    # 而非寫死的絕對值——理由見 TSB_LOW_PERCENTILE 的說明。
-    tsb_threshold = _tsb_threshold([day["tsb"] for day in training_load_series])
+    # TSB 門檻由該學員自己的 TSB 分布決定，而非寫死的絕對值——理由見
+    # TSB_LOW_PERCENTILE 的說明。每天各自取截至當天的固定窗，見 TSB_PERCENTILE_WINDOW_DAYS。
+    tsb_by_date = {day["date"]: day["tsb"] for day in training_load_series}
 
     # 每天各自數「過去 7 天內有幾個有效 HRV 測量點」，供充足度檢查使用。
     hrv_dates = {
@@ -377,6 +384,11 @@ def assess_readiness(
         if output_from_date is not None and date < output_from_date:
             continue
         consecutive_days = _consecutive_training_days_ending_at(daily_loads_by_date, date)
+        tsb_threshold = _tsb_threshold([
+            tsb_by_date[d]
+            for d in (date - datetime.timedelta(days=offset) for offset in range(TSB_PERCENTILE_WINDOW_DAYS))
+            if d in tsb_by_date
+        ])
         wellness = wellness_by_date.get(date, {})
         no_data_today = date in dates_without_any_data
 

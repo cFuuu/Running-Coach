@@ -179,7 +179,7 @@ function readinessTips(entry) {
   var tsbNow = tsb && typeof tsb.threshold === 'number' ? '（目前 ' + signedNumber(tsb.threshold, 1) + '）' : '';
   return [
     tipSection('判定門檻（任一觸發就是「低落」）', [
-      'TSB 低於你自己歷史的第 10 百分位' + tsbNow,
+      'TSB 低於你自己近 168 天的第 10 百分位' + tsbNow,
       '當日 HRV 較 7 日均值下降 15% 以上',
       '連續訓練達 6 天（可個人化，平常不顯示）'
     ], {

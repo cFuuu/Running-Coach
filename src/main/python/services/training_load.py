@@ -87,19 +87,6 @@ ATL_TIME_CONSTANT_DAYS = 7
 # 累積與消退速度皆遠慢於 ATL。
 CTL_TIME_CONSTANT_DAYS = 42
 
-# CTL 需要多少天的暖機資料才算充分收斂（供呼叫端抓「序列起點之前」的資料用）。
-# EWMA 要收斂到初始值影響可忽略，經驗上須抓時間常數的數倍（3~5 倍為業界慣例
-# 下界），只抓 1 倍 CTL_TIME_CONSTANT_DAYS（如 compute_readiness_for_athlete()
-# 先前的做法）對 ATL（7 天常數）夠用，但對 CTL 自己（42 天常數）遠遠不夠：
-# 實測同一天分別用兩種不同長度的暖機期起算，ATL 幾乎一致，但 CTL 仍相差
-# 逾 70（TSB = CTL − ATL 因此被連帶拉出不合理差異），代表 1 倍暖機期沒有真的
-# 解決「同一天判讀結果依呼叫端傳入的 start_date 不同而改變」的問題。取 4 倍
-# 作為此處的收斂門檻。
-# 2026-10-25 起 ATL/CTL 改從固定起點遞推（training_load_queries.get_load_recursion_start），
-# 數值已與暖機長度無關；本常數只剩一個用途：交給 readiness 的序列往前涵蓋多少天
-# （TSB P10 門檻與連續訓練天數的取樣範圍），沿用原值以免門檻跟著改變。
-CTL_WARMUP_DAYS = CTL_TIME_CONSTANT_DAYS * 4
-
 
 def compute_hrr_intensity_pct(
     avg_hr_bpm: float,

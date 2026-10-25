@@ -298,6 +298,23 @@ class TestComputeTrainingLoadForAthlete(unittest.TestCase):
 
 
 class TestComputeReadinessForAthlete(unittest.TestCase):
+    def test_same_day_threshold_and_verdict_do_not_depend_on_start_date(self):
+        """首頁（14 天）與 MCP（較長區間）查同一天，TSB 門檻與判讀必須相同。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        first = START - datetime.timedelta(days=400)
+        for i in range(0, 400, 2):
+            _insert_activity(conn, athlete_id, first + datetime.timedelta(days=i), avg_hr_bpm=130 + (i * 7) % 40)
+        conn.commit()
+
+        short = compute_readiness_for_athlete(conn, athlete_id, START - datetime.timedelta(days=14), START)
+        long = compute_readiness_for_athlete(conn, athlete_id, START - datetime.timedelta(days=60), START)
+        self.assertIsNotNone(short[-1]["measurements"]["tsb"]["threshold"])
+        self.assertEqual(short[-1]["measurements"]["tsb"], long[-1]["measurements"]["tsb"])
+        self.assertEqual(short[-1]["readiness"], long[-1]["readiness"])
+
     def test_end_to_end_produces_nonempty_series(self):
         conn = get_connection(":memory:")
         athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)

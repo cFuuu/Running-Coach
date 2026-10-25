@@ -23,9 +23,12 @@ import datetime
 import sqlite3
 from typing import Any
 
-from src.main.python.services.readiness import HRV_TREND_LOOKBACK_DAYS, assess_readiness
+from src.main.python.services.readiness import (
+    HRV_TREND_LOOKBACK_DAYS,
+    TSB_PERCENTILE_WINDOW_DAYS,
+    assess_readiness,
+)
 from src.main.python.services.training_load import (
-    CTL_WARMUP_DAYS,
     compute_daily_loads,
     compute_training_load_series,
 )
@@ -75,7 +78,7 @@ def get_load_recursion_start(
     """ATL/CTL 遞推的固定起點：該學員第一筆活動的前一天（不晚於 start_date）。
 
     EWMA 的值取決於從哪一天開始遞推。先前起點是「start_date 往前推
-    CTL_WARMUP_DAYS 天」，起點隨查詢區間移動，同一天在首頁（14 天窗）與趨勢頁
+    168 天」，起點隨查詢區間移動，同一天在首頁（14 天窗）與趨勢頁
     （30／90 天）算出不同的 CTL／TSB（2026-10-25 實測 CTL 40.4 vs 39.6）。
     改從固定起點算：前一天沒有活動、負荷為 0，序列第一天的種子即為 0，
     更早的起點只會多一串 0、結果完全相同，因此任何 start_date 都得到同一組數值。
@@ -214,7 +217,7 @@ def compute_training_load_for_athlete(
     改變，故一律從 get_load_recursion_start() 的固定起點遞推，再只取使用者要的
     [start_date, end_date] 切片回傳，暖機期本身不出現在回傳結果中。
 
-    （2026-08-21 由 1 倍時間常數改抓 CTL_WARMUP_DAYS；2026-10-25 改為固定起點：
+    （2026-08-21 由 1 倍時間常數改抓 4 倍（168 天）；2026-10-25 改為固定起點：
     起點隨 start_date 移動時，即使暖機 4 倍時間常數仍殘留約 2% 的差異，
     首頁與趨勢頁的 CTL 因此對不上，見 get_load_recursion_start()。）
     """
@@ -264,12 +267,10 @@ def compute_readiness_for_athlete(
     """
     max_hr_bpm, resting_hr_bpm = get_hr_params(conn, athlete_id)
 
-    # ATL/CTL/TSB 從固定起點遞推（與 compute_training_load_for_athlete() 同值），
-    # 但交給 assess_readiness() 的序列仍切在 start_date 往前 CTL_WARMUP_DAYS 天：
-    # TSB 的 P10 門檻與連續訓練天數都取自這段序列，若改成整段歷史（2019 起，
-    # 含大量未訓練的 TSB≈0 日子），門檻會被連帶改掉。2026-10-25 只修數值一致，
-    # 不動門檻的取樣範圍。
-    warmup_start = start_date - datetime.timedelta(days=CTL_WARMUP_DAYS)
+    # ATL/CTL/TSB 從固定起點遞推（與 compute_training_load_for_athlete() 同值）；
+    # 交給 assess_readiness() 的序列只需往前涵蓋 TSB_PERCENTILE_WINDOW_DAYS 天，
+    # 讓 start_date 當天的 P10 門檻窗口完整（每天的門檻只看截至當天的固定窗）。
+    warmup_start = start_date - datetime.timedelta(days=TSB_PERCENTILE_WINDOW_DAYS)
     recursion_start = get_load_recursion_start(conn, athlete_id, warmup_start)
     activities = get_activities_for_load(conn, athlete_id, recursion_start, end_date)
     daily_loads = compute_daily_loads(

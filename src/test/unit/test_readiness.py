@@ -10,6 +10,7 @@ from src.main.python.models.db import get_connection
 from src.main.python.services.readiness import (
     DEFAULT_HIGH_RISK_CONSECUTIVE_TRAINING_DAYS,
     MIN_TSB_SAMPLES_FOR_PERCENTILE,
+    TSB_PERCENTILE_WINDOW_DAYS,
     assess_readiness,
     suggest_recovery_threshold,
 )
@@ -112,6 +113,15 @@ class TestAssessReadinessTsb(unittest.TestCase):
         series = _load_series([0.0] * 5, tsb_overrides={0: -9999.0})
         result = assess_readiness(series, [])
         self.assertTrue(all(not r["triggers"] for r in result))
+
+    def test_threshold_only_uses_window_ending_that_day(self):
+        """門檻只看截至當天往回 TSB_PERCENTILE_WINDOW_DAYS 天；更早的極端值不影響。"""
+        n = TSB_PERCENTILE_WINDOW_DAYS + 100
+        overrides = {i: (-500.0 if i < 100 else 0.0) for i in range(n)}
+        series = _load_series([0.0] * n, tsb_overrides=overrides)
+        result = assess_readiness(series, [])
+        self.assertEqual(result[-1]["measurements"]["tsb"]["threshold"], 0.0)
+        self.assertLess(result[99]["measurements"]["tsb"]["threshold"], 0.0)
 
     def test_threshold_is_scale_free(self):
         """同一形狀的分布放大 1000 倍，觸發結果不應改變——這正是舊的絕對值
