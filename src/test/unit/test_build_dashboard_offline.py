@@ -86,6 +86,37 @@ class TestOutput(BuildDashboardOfflineTestCase):
         self.assertLessEqual(days[0]["date"], "2026-01-01")
         self.assertGreaterEqual(days[-1]["date"], "2026-03-31")
 
+    def test_chat_history_keeps_only_text_and_tool_names(self):
+        """N-33：對話紀錄進快照供唯讀瀏覽；thinking 與 tool_result 不帶。"""
+        from src.main.python.models.db import get_connection
+        from src.main.python.services import coach_chat_store
+
+        conn = get_connection(self.db_path)
+        athlete_id = conn.execute("SELECT id FROM athlete_profile ORDER BY id LIMIT 1").fetchone()["id"]
+        dashboard = coach_chat_store.create_conversation(conn, athlete_id)
+        coach_chat_store.append_turn(conn, dashboard["id"], [
+            {"role": "user", "content": [{"type": "text", "text": "今天練什麼"}]},
+            {"role": "assistant", "content": [
+                {"type": "thinking", "thinking": "查", "signature": "c2lnbmF0dXJl" * 8},
+                {"type": "tool_use", "id": "t1", "name": "get_today", "input": {}},
+            ]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "{}"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "輕鬆跑"}]},
+        ])
+        coach_chat_store.save_imported_conversation(conn, athlete_id, "session-a", [
+            {"role": "user", "content": [{"type": "text", "text": "週四休息"}],
+             "created_at": "2026-03-05T09:00:00+00:00"},
+        ])
+        conn.close()
+
+        chat = _read_snapshot(self.build())["chat"]
+        self.assertEqual(sorted(c["source"] for c in chat["conversations"]), ["claude_code", "dashboard"])
+        messages = chat["byId"][str(dashboard["id"])]["messages"]
+        self.assertEqual(
+            [[b["type"] for b in m["content"]] for m in messages],
+            [["text"], ["tool_use"], ["text"]],
+        )
+
     def test_no_gzip_writes_plain_snapshot(self):
         html = self.build(use_gzip=False)
         self.assertNotIn("__SNAPSHOT_GZ__ =", html)
@@ -235,10 +266,14 @@ class TestCli(BuildDashboardOfflineTestCase):
         self.assertIn(f'window.__SNAPSHOT_TODAY__ = "{FIXTURE_TODAY.isoformat()}";', html)
         self.assertIn("today: window.__SNAPSHOT_TODAY__", html)
         self.assertNotIn("offline-snapshot-badge", html)
-        for element_id in ("sync-btn", "analyze-btn", "coach-toggle", "custom-range", "coach-panel",
-                           "coach-rail", "coach-scrim"):
-            tag = re.search(r'<[^>]*\bid="' + element_id + r'"[^>]*>', html).group(0)
-            self.assertIn("data-online-only", tag, element_id)
+        def tag(element_id):
+            return re.search(r'<[^>]*\bid="' + element_id + r'"[^>]*>', html).group(0)
+
+        for element_id in ("sync-btn", "analyze-btn", "coach-history", "custom-range"):
+            self.assertIn("data-online-only", tag(element_id), element_id)
+        # N-33：AI 教練面板離線仍顯示，供唯讀瀏覽對話紀錄
+        for element_id in ("coach-toggle", "coach-panel", "coach-rail", "coach-scrim"):
+            self.assertNotIn("data-online-only", tag(element_id), element_id)
         self.assertIn('id="offline-stamp"', html)
 
     def test_previous_period_requests_in_snapshot(self):

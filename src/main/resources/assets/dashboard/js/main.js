@@ -100,8 +100,8 @@ function init() {
 
   // AI 教練面板：原本是 coach.js 自己在 DOMContentLoaded 註冊、排在 app 之後執行，
   // 改成 module 後由這裡明確呼叫，維持「App 殼先就緒、面板後啟動」的順序。
-  // 離線快照沒有 AI 教練（面板已隱藏），不啟動、也不發狀態請求。
-  if (!isOfflineSnapshot()) initCoach();
+  // 離線快照也啟動：面板只能唯讀瀏覽快照裡的對話紀錄（N-33）。
+  initCoach();
 }
 
 if (document.readyState === 'loading') {

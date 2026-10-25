@@ -91,10 +91,10 @@ def read_status(
     }
 
 
-@router.get(
-    "/conversations",
-    dependencies=[Depends(require_chat_client), Depends(require_chat_enabled)],
-)
+# 讀取與刪除對話只套來源限制、不要求聊天啟用：沒設 ANTHROPIC_API_KEY 時，
+# 面板仍要能瀏覽過去的紀錄（含從 Claude Code 匯入的 MCP 教練問答，N-33）。
+# 會花錢的建立對話與送出提問才要求啟用。
+@router.get("/conversations", dependencies=[Depends(require_chat_client)])
 def list_conversations(
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
@@ -116,10 +116,7 @@ def create_conversation(
     return coach_chat_store.create_conversation(conn, resolved)
 
 
-@router.get(
-    "/conversations/{conversation_id}",
-    dependencies=[Depends(require_chat_client), Depends(require_chat_enabled)],
-)
+@router.get("/conversations/{conversation_id}", dependencies=[Depends(require_chat_client)])
 def read_conversation(
     conversation_id: int,
     athlete_id: int | None = AthleteParam,
@@ -135,7 +132,7 @@ def read_conversation(
 @router.delete(
     "/conversations/{conversation_id}",
     status_code=204,
-    dependencies=[Depends(require_chat_client), Depends(require_chat_enabled)],
+    dependencies=[Depends(require_chat_client)],
 )
 def delete_conversation(
     conversation_id: int,
@@ -181,6 +178,9 @@ async def post_message(
     resolved = _resolve_athlete_id(conn, athlete_id)
     if not coach_chat_store.conversation_exists(conn, resolved, conversation_id):
         raise HTTPException(status_code=404, detail=f"找不到 id={conversation_id} 的對話")
+    if coach_chat_store.is_read_only(conn, conversation_id):
+        # 匯入的對話只存文字與工具名稱，不是可重送 API 的 messages
+        raise HTTPException(status_code=409, detail="這是從 Claude Code 匯入的對話紀錄，只能瀏覽，不能接著聊")
 
     async def event_stream() -> AsyncIterator[str]:
         async for event in coach_chat.stream_turn(

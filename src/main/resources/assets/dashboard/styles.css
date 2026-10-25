@@ -1123,7 +1123,8 @@ body.coach-open .coach-panel {
 }
 
 .coach-analysis[hidden],
-.coach-body[hidden] {
+.coach-body[hidden],
+.coach-form[hidden] {
   display: none;
 }
 
@@ -1140,7 +1141,8 @@ body.coach-open .coach-panel {
   color: var(--text);
 }
 
-.coach-analysis-note {
+.coach-analysis-note,
+.coach-readonly-note {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--text-muted);

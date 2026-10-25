@@ -1174,21 +1174,26 @@
     - [ ] 與 Garmin Connect 網頁逐場比對路線形狀（Fu 目視）；iPhone 真機開離線檔（併入 N-30 ⑤）
   - **取樣間隔**：維持 10 秒（預設，與現有逐點資料一致）。若之後覺得彎道太直，改 `DEFAULT_SAMPLE_EVERY_SEC` 並重跑回填即可
 
-- **📋 N-33 保留 Claude Code（MCP）的教練問答紀錄（2026-10-25 Fu 提出並定案，待執行）**：Dashboard 面板的對話已存 SQLite（N-17 S2），但 Fu 平常在 Claude Code 透過 MCP 問教練，那些問答專案這邊完全沒存。決策記錄見 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log) 2026-10-25。
+- **✅ N-33 保留 Claude Code（MCP）的教練問答紀錄（2026-10-25 Fu 提出並定案，同日完成並匯入真實 DB）**：Dashboard 面板的對話已存 SQLite（N-17 S2），但 Fu 平常在 Claude Code 透過 MCP 問教練，那些問答專案這邊完全沒存。決策記錄見 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log) 2026-10-25。
   - **為什麼不從 MCP server 端存**：MCP server 只收得到工具呼叫，看不到學員的提問與教練的回答。另一個做法是加一個 `save_conversation` 工具讓教練自己存，但內容是模型重打的，會漏、會改寫，也可能忘了呼叫。兩者都不採用。
   - **資料來源**：Claude Code 逐字存的 session JSONL（`~/.claude/projects/c--Users-cFu-Project-running-coach/*.jsonl`）。`.mcp.json` 只接 Claude Code，沒有 Claude Desktop，所以這是唯一的來源。
   - **⚠️ 保留期限**：Claude Code 預設 30 天自動清除 session 檔。2026-10-25 盤點時最舊的只到 10/05，**9 月的教練對話（含 9/02 三情境驗收）已經清掉，救不回來**。同日已在全域 `~/.claude/settings.json` 設 `cleanupPeriodDays: 365`（Fu 決定保留一年；匯入 DB 後不受此限）。
   - **三項決策（Fu 拍板）**：
     1. **以回合為單位篩選**：一回合是學員送出一則訊息到下一則之間的所有內容。這一回合裡教練呼叫過任一個 `mcp__running-coach__*` 工具，才算教練問答並匯入。同一個 session 裡混雜的開發回合（改程式、查 bug）跳過。
+       - 實作時補一條：**用 ToolSearch 載入 running-coach 工具也算**。實查 10/05「9/16~9/25 去日本玩」那回合，教練只載入了 `add_context_note` 就回答，沒有真的呼叫；10/16「週五休息」整個 session 也是如此。不補的話這兩回合都會漏掉。
     2. **工具呼叫只留名稱和參數**，不存工具回傳的數據。
     3. **觸發方式**：手動執行，另外 `export_offline.cmd` 匯出前自動先跑一次。不做 SessionEnd hook。
-  - [ ] ① `models/schema.sql`：`coach_conversations` 加 `source`（`dashboard`／`claude_code`，既有資料預設 `dashboard`）與 `source_session_id`（UNIQUE，可為 NULL）。既有 DB 要有遷移。
-  - [ ] ② 匯入器（新增 CLI，寫法比照 `garmin_import_runner`）：讀 JSONL，依上述規則切回合、篩選，寫進 `coach_conversations`／`coach_messages`。
-    - **一定要去除**（CLAUDE.md §3）：`<system-reminder>`（含全域 CLAUDE.md、memory、email）、`<ide_selection>`／`<ide_opened_file>`、slash command 注入的整段提示詞（只留學員打的參數）、thinking 區塊、所有非 running-coach 工具的呼叫與輸出（Bash、Read 等可能讀過 `.env` 或 token 路徑）。寫入前比照 N-30 ② 再做一次資安掃描，出現 token、cookie、email、`userProfileId` 就中止。
-    - **重跑不重複**：以 `source_session_id` 判斷。session 後來有延續就只補新的回合（依 JSONL 的訊息 uuid 判斷已匯入到哪）。
-    - **已知限制**：①教練沒呼叫工具、只憑上下文回答的追問回合會被漏掉；②開發時為了驗證而呼叫 MCP 工具的回合會被誤收，Fu 可在 Dashboard 刪除整則對話。
-  - [ ] ③ 匯入的對話**唯讀**：存的格式不能重送 Anthropic API，`/api/chat` 收到延續 `claude_code` 對話的請求回 409。
-  - [ ] ④ Dashboard AI 教練面板的對話清單一併列出，標「Claude Code」小標籤，可看不可續聊。
-  - [ ] ⑤ 離線快照：`build_dashboard_offline.py` 把對話清單與內容打包，離線版可唯讀瀏覽（目前一律回「不提供 AI 教練」）；`export_offline.cmd` 匯出前先跑匯入器。
-  - [ ] ⑥ 驗收：對真實 JSONL 實跑，人工抽查篩選結果（教練回合都在、開發回合都不在、沒有任何 system-reminder 或憑證殘留）；Dashboard 與離線檔各開一次確認顯示。
+  - [x] ① `models/schema.sql`：`coach_conversations` 加 `source`（`dashboard`／`claude_code`，既有資料預設 `dashboard`）與 `source_session_id`。UNIQUE 索引建在 `db.py` 的遷移裡（ALTER TABLE 加不了 UNIQUE，且既有 DB 跑 schema.sql 時還沒有這個欄位）。另加 `coach_import_dismissed` 表，見 ③。
+  - [x] ② 匯入器 [`services/coach_transcript_import.py`](../../src/main/python/services/coach_transcript_import.py)（CLI：`python -m src.main.python.services.coach_transcript_import --db-path ... [--dry-run]`）。
+    - **去除的內容**：Claude Code 插在學員訊息裡的段落（`browser_instruction`、`ide_opened_file`／`ide_selection`、slash command 的 `command-*`、`task-notification` 等，`command-args` 只拿掉標籤、保留學員打的參數）、貼圖的路徑行、isMeta／子代理（sidechain）／壓縮摘要紀錄、thinking、工具回傳、所有非 running-coach 工具。system-reminder 在 JSONL 裡是獨立的 attachment 紀錄，本來就不讀。回覆途中的插話（`queued_command` attachment）當成學員訊息保留。
+    - **資安掃描**：值樣式規則從 `build_dashboard_offline.py` 抽到 [`services/secret_patterns.py`](../../src/main/python/services/secret_patterns.py) 兩邊共用，任一 session 命中就整批中止、不寫入，訊息不回顯命中內容。
+    - **重跑不重複**：以 `source_session_id` 對應。session 紀錄只會往後長，所以整批換掉該對話的訊息，內容沒變就不動（避免 `updated_at` 每次被刷新）。不做原訂的「依 uuid 只補新回合」，結果相同但簡單。
+    - **已知限制**：①教練沒碰工具、只憑上下文回答的追問回合會被漏掉；②開發時為了驗證而呼叫 MCP 工具的回合會被誤收。實例：10/24「同步到 9/17」那則把回覆途中插話的設定頁需求也收進來了。只能整則刪除，不能刪單一回合。
+  - [x] ③ 匯入的對話**唯讀**：`/api/chat/.../messages` 對 `claude_code` 對話回 409、不呼叫模型。在面板刪掉的匯入對話記進 `coach_import_dismissed`，下次匯入不會加回來。
+    - **連帶改的契約**：讀取與刪除對話（`GET /api/chat/conversations[/{id}]`、`DELETE`）**不再要求設定 API key**，只保留來源限制；建立對話與發問仍回 503。理由：Fu 目前沒有設 `ANTHROPIC_API_KEY`，照舊契約連匯入的紀錄都看不到。
+  - [x] ④ 面板對話清單標「［Claude Code］」前綴；選到匯入的對話時隱藏輸入區、改顯示說明，工具 chip 展開顯示「匯入的紀錄不保存查詢結果」。沒設 key 時面板改為「只能瀏覽過去的對話」，沒有任何紀錄才顯示原本的停用說明。
+  - [x] ⑤ 離線快照：`snapshot.chat` 帶全部對話（每則只留文字與 tool_use，thinking 的 signature 會被資安掃描當成 token、tool_result 太大），載入程式回應清單與單則讀取，其餘一律拒絕。**AI 教練面板、開關、FAB、遮罩改為離線也顯示**（拿掉 `data-online-only`），「分析近況」與「分析紀錄」仍隱藏、刪除鈕離線隱藏、面板離線預設收起。`export_offline.cmd` 匯出前先跑匯入器，失敗就停止匯出。
+  - [x] ⑥ 驗收（2026-10-25）：真實 JSONL 36 個 session，匯入 4 個（10/05 身體狀況＋情境筆記、10/14 跑班課表、10/16 週五休息、10/24 同步請求），共 16 則訊息；重跑全部「未變」。逐則人工檢查無 system-reminder 或憑證殘留。匯入前備份於 scratchpad `running_coach_before_n33.db`。Playwright 對線上 Dashboard（沒設 key）與離線檔 × 1280／390：清單 4 則都有標籤、輸入區隱藏並顯示說明、工具 chip 正確、無 console 錯誤、無橫向捲動。1092 項測試通過。已用 `export_offline.cmd --detail-months 12` 匯出到 iCloud 資料夾（1982 KB）。
+    - [ ] Fu 用 iPhone 開離線檔確認面板（併入 N-30 ⑤）
+  - **順帶發現**：教練回覆裡的 Markdown 表格在面板顯示成原始的 `|` 文字（`renderMarkdown` 本來就不支援表格，非本次造成）。
   - **邊界**：與 Dashboard 聊天紀錄相同——原始對話**不進事實層、規則引擎不讀**，只是 N-8 跨對話記憶的原料，不是 N-8 本身。

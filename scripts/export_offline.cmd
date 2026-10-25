@@ -16,6 +16,8 @@ rem                           (default %USERPROFILE%\anaconda3\envs\rc\python.ex
 rem     RC_DB_PATH            SQLite database (default output\running_coach.db)
 rem     RC_OFFLINE_EXPORT_DIR default destination folder
 rem                           (default %USERPROFILE%\iCloudDrive\HTML-decode)
+rem     RC_CLAUDE_TRANSCRIPTS_DIR  Claude Code session logs to import coach Q&A from
+rem                           (default derived from the project path)
 
 setlocal
 cd /d "%~dp0.."
@@ -47,5 +49,9 @@ goto loop
 
 :run
 if not exist "%DEST%" mkdir "%DEST%"
+rem Import the MCP coach Q&A from Claude Code session logs first, so the
+rem snapshot includes the latest conversations (TODO.md N-33).
+"%RC_PYTHON%" -m src.main.python.services.coach_transcript_import --db-path "%RC_DB_PATH%"
+if errorlevel 1 exit /b %errorlevel%
 "%RC_PYTHON%" scripts\build_dashboard_offline.py --db-path "%RC_DB_PATH%" --copy-to "%DEST%" --dated%EXTRA%
 exit /b %errorlevel%

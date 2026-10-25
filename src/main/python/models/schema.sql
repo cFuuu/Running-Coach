@@ -611,12 +611,27 @@ CREATE TABLE IF NOT EXISTS daily_feel (
 -- 確保同一對話不會出現重號。一回合（user 提問 → assistant tool_use →
 -- user tool_result → assistant 回覆）的所有列必須同一交易寫入：**絕不落地
 -- 沒有對應 tool_result 的 tool_use**，否則下一回合送 API 會 400。
+--
+-- source（2026-10-25，N-33）：'dashboard' 是面板裡的對話；'claude_code' 是從
+-- Claude Code session 紀錄匯入的 MCP 教練問答（services/coach_transcript_import.py），
+-- 以 source_session_id（Claude Code 的 sessionId）對應、重跑不重複。匯入的對話
+-- **唯讀**：只留教練回合的文字與工具名稱／參數，不是可重送 API 的 messages，
+-- 不可續聊。source_session_id 的 UNIQUE 索引建在 db.py（既有資料庫要先補欄位）。
 CREATE TABLE IF NOT EXISTS coach_conversations (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    athlete_id      INTEGER NOT NULL REFERENCES athlete_profile(id),
-    title           TEXT,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id        INTEGER NOT NULL REFERENCES athlete_profile(id),
+    title             TEXT,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
+    source            TEXT NOT NULL DEFAULT 'dashboard' CHECK (source IN ('dashboard', 'claude_code')),
+    source_session_id TEXT
+);
+
+-- coach_import_dismissed：學員在面板刪掉的匯入對話（N-33）。session 紀錄還在，
+-- 不記下來的話下次匯入會把它加回來。
+CREATE TABLE IF NOT EXISTS coach_import_dismissed (
+    source_session_id TEXT PRIMARY KEY,
+    dismissed_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS coach_messages (

@@ -102,6 +102,9 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     # 2026-10-24：逐點經緯度，供路線地圖（N-32，見 schema.sql 註解）
     ("activity_records", "lat", "REAL"),
     ("activity_records", "lon", "REAL"),
+    # 2026-10-25：匯入 Claude Code 的教練問答（N-33，見 schema.sql 註解）
+    ("coach_conversations", "source", "TEXT NOT NULL DEFAULT 'dashboard'"),
+    ("coach_conversations", "source_session_id", "TEXT"),
 ]
 
 
@@ -119,6 +122,12 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
+    # ALTER TABLE 加不了 UNIQUE，改用索引；放這裡而非 schema.sql，因為既有資料庫
+    # 跑 schema.sql 時還沒有這個欄位
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_coach_conversations_source_session "
+        "ON coach_conversations (source_session_id)"
+    )
     _backfill_training_plan_is_active(conn)
     _migrate_training_plan_check_constraint(conn)
     _fix_lactate_pace_unit(conn)

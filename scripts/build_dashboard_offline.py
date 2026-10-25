@@ -343,6 +343,14 @@ def collect_snapshot(
                     data = _compact_records(data)
                 exact[canonical_key(url)] = data
 
+        # create_app 已對暫存副本套過遷移，這時才有 source 欄位可讀
+        conn = sqlite3.connect(tmp_db)
+        conn.row_factory = sqlite3.Row
+        try:
+            chat = _chat_snapshot(conn, resolved)
+        finally:
+            conn.close()
+
     snapshot = {
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "today": today.isoformat(),
@@ -351,8 +359,31 @@ def collect_snapshot(
         "exact": exact,
         "calendar": spans["calendar"],
         "feels": spans["feels"].get("feels") or [],
+        "chat": chat,
     }
     return snapshot, identity_refs
+
+
+def _chat_snapshot(conn: sqlite3.Connection, athlete_id: int) -> dict:
+    """AI 教練對話紀錄（含從 Claude Code 匯入的 MCP 問答，N-33），供離線唯讀瀏覽。
+
+    每則訊息只留文字與工具名稱／參數：thinking 的 signature 是長 base64，會被
+    資安掃描當成 token；tool_result 是整包查詢資料，會讓檔案暴增。
+    """
+    from src.main.python.services import coach_chat_store
+
+    conversations = coach_chat_store.list_conversations(conn, athlete_id)
+    by_id = {}
+    for conversation in conversations:
+        full = coach_chat_store.get_conversation(conn, athlete_id, conversation["id"])
+        for message in full["messages"]:
+            message["content"] = [
+                b for b in message["content"]
+                if isinstance(b, dict) and b.get("type") in ("text", "tool_use")
+            ]
+        full["messages"] = [m for m in full["messages"] if m["content"]]
+        by_id[str(conversation["id"])] = full
+    return {"conversations": conversations, "byId": by_id}
 
 
 # --------------------------------------------------------------------------
@@ -373,15 +404,8 @@ _DATA_RULES: tuple[tuple[str, re.Pattern], ...] = (
         r'"(?=[A-Za-z0-9_+/=.-]*[0-9])(?=[A-Za-z0-9_+/=.-]*[A-Za-z])[A-Za-z0-9_+/=.-]{40,}"')),
 )
 
-# 快照與頁面程式碼都掃：值的樣式
-_VALUE_RULES: tuple[tuple[str, re.Pattern], ...] = (
-    ("email 位址", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")),
-    ("JWT", re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.")),
-    ("Bearer 憑證", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE)),
-    ("cookie 字串", re.compile(
-        r"\b(?:JWT_FGP|SESSIONID|GARMIN-SSO(?:-[A-Z]+)*|CASTGC|cf_clearance|__cf_bm|__cflb)\s*=",
-        re.IGNORECASE)),
-)
+# 快照與頁面程式碼都掃：值的樣式（與教練問答匯入共用，定義在 secret_patterns）
+from src.main.python.services.secret_patterns import VALUE_RULES as _VALUE_RULES  # noqa: E402
 
 # 太短的識別值（例如 "1"）會在數字資料裡大量誤判，不拿來比對
 _MIN_IDENTITY_LEN = 5
@@ -513,11 +537,20 @@ LOADER_JS = r"""
     snapshotAt: window.__SNAPSHOT_AT__,      // 頁首「最後更新」
     today: window.__SNAPSHOT_TODAY__,        // 前端 todayISO() 的「今天」＝匯出日期
     request: function (raw, body) { return ready.then(function () { return routeNow(raw, body); }); },
-    chatRequest: function (path) {
-      if (/\/status$/.test(canon(path).path)) {
-        return Promise.resolve({ enabled: false, client_allowed: false, running: false, reason: '離線快照不提供 AI 教練' });
+    // AI 教練：只能唯讀瀏覽快照裡的對話紀錄（D.chat），不能發問、刪除或跑分析
+    chatRequest: function (path, options) {
+      var r = canon(path);
+      if (/\/status$/.test(r.path)) {
+        return Promise.resolve({ enabled: false, client_allowed: true, running: false, reason: '離線快照' });
       }
-      return offline('AI 教練');
+      if (options && options.method && options.method !== 'GET') return offline('AI 教練');
+      return ready.then(function () {
+        var chat = D.chat || { conversations: [], byId: {} };
+        if (r.path === '/api/chat/conversations') return { conversations: clone(chat.conversations) };
+        var m = r.path.match(/^\/api\/chat\/conversations\/(\d+)$/);
+        if (m && chat.byId[m[1]]) return clone(chat.byId[m[1]]);
+        return offline('AI 教練');
+      });
     },
     chatStream: function () { return offline('AI 教練'); }
   };

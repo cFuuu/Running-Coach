@@ -41,14 +41,13 @@ export function openCoachPanel() {
 }
 
 export function bindCoachPanel() {
-  // 離線快照：面板與開關都隱藏（[data-online-only]），維持收起，不綁任何開合事件
-  if (isOfflineSnapshot()) { setCoachPanel(false, false); return; }
   var settings = Theme.getSettings();
   // 桌機預設展開（三欄常駐是本次改版的重點之一），只有明確收合過才記住收合。
   // 平板／手機的面板是覆蓋在內容上的抽屜／全螢幕 sheet，預設展開會把整個
   // 儀表板蓋掉，所以一律預設收起、由使用者按開關或 FAB 開啟。
+  // 離線快照的面板只能看對話紀錄，一律預設收起。
   var wide = window.innerWidth >= 1280;
-  setCoachPanel(wide && !(settings && settings.coachPanel === 'collapsed'), false);
+  setCoachPanel(!isOfflineSnapshot() && wide && !(settings && settings.coachPanel === 'collapsed'), false);
 
   [['coach-collapse', false], ['coach-close', false], ['coach-rail', true],
    ['coach-scrim', false]].forEach(function (pair) {

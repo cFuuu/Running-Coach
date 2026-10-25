@@ -21,7 +21,7 @@
 
 import { $, clear, h } from './core/dom.js';
 import { getViewContext } from './core/state.js';
-import { withAthlete } from './core/api.js';
+import { withAthlete, isOfflineSnapshot } from './core/api.js';
 import { openCoachPanel } from './shell/coach-frame.js';
 
 // ------------------------------------------------------------ 狀態
@@ -46,10 +46,27 @@ var state = {
 
 var MAX_TOOL_JSON_CHARS = 20000; // chip 展開時的顯示上限，避免超長 JSON 卡住畫面
 
+// 從 Claude Code 匯入的 MCP 教練問答（N-33）：唯讀，只存工具名稱與參數
+var IMPORTED_LABEL = '［Claude Code］';
+var IMPORTED_TOOL_RESULT = '（匯入的紀錄不保存查詢結果）';
+
 // ------------------------------------------------------------ 小工具
 
 function isMock() {
   return !!window.MOCK_API;
+}
+
+/** 能不能發問：聊天啟用、來源允許。false 時面板只能瀏覽過去的對話。 */
+function canChat() {
+  return !!(state.status && state.status.enabled && state.status.client_allowed);
+}
+
+function activeConversation() {
+  return state.conversations.filter(function (c) { return c.id === state.activeId; })[0] || null;
+}
+
+function isImported(conv) {
+  return !!conv && !!conv.source && conv.source !== 'dashboard';
 }
 
 /** 一般（非串流）請求。mock 模式改走 mock-data.js。 */
@@ -223,12 +240,14 @@ function buildPanel() {
   newBtn.type = 'button';
   newBtn.title = '新對話';
   newBtn.setAttribute('aria-label', '新對話');
+  newBtn.hidden = !canChat();
   newBtn.addEventListener('click', startNewConversation);
   var delBtn = h('button', 'coach-icon-btn', '🗑');
   delBtn.type = 'button';
   delBtn.id = 'coach-delete';
   delBtn.title = '刪除這則對話';
   delBtn.setAttribute('aria-label', '刪除這則對話');
+  delBtn.hidden = isOfflineSnapshot();
   delBtn.addEventListener('click', deleteActiveConversation);
   bar.appendChild(select);
   bar.appendChild(newBtn);
@@ -268,12 +287,36 @@ function buildPanel() {
     submitMessage(input.value);
   });
 
+  // 不能發問時（沒 key、匯入的唯讀對話）取代輸入區的說明
+  var note = h('p', 'coach-readonly-note');
+  note.id = 'coach-readonly-note';
+  note.hidden = true;
+
   wrap.appendChild(bar);
   wrap.appendChild(log);
   wrap.appendChild(chips);
   wrap.appendChild(form);
+  wrap.appendChild(note);
   body.appendChild(wrap);
   return true;
+}
+
+/** 依「能不能發問」切換輸入區與說明。 */
+function renderComposer() {
+  var form = $('coach-form');
+  var note = $('coach-readonly-note');
+  if (!form || !note) return;
+  var reason = null;
+  if (!canChat()) {
+    reason = '目前只能瀏覽過去的對話'
+      + (state.status && state.status.reason ? '（' + state.status.reason + '）' : '') + '。';
+  } else if (isImported(activeConversation())) {
+    reason = '這是從 Claude Code 匯入的問答紀錄，只能瀏覽。要發問請按＋開新對話。';
+  }
+  form.hidden = reason !== null;
+  note.hidden = reason === null;
+  note.textContent = reason || '';
+  renderChips();
 }
 
 /** 面板不可用時（沒 key／非本機）的說明，並鎖住輸入。 */
@@ -298,7 +341,7 @@ function renderConversationSelect() {
   } else {
     select.disabled = false;
     state.conversations.forEach(function (c) {
-      var opt = h('option', null, c.title || '（未命名對話）');
+      var opt = h('option', null, (isImported(c) ? IMPORTED_LABEL : '') + (c.title || '（未命名對話）'));
       opt.value = String(c.id);
       if (c.id === state.activeId) opt.selected = true;
       select.appendChild(opt);
@@ -306,6 +349,7 @@ function renderConversationSelect() {
   }
   var del = $('coach-delete');
   if (del) del.disabled = state.activeId === null;
+  renderComposer();
 }
 
 function renderChips() {
@@ -313,6 +357,7 @@ function renderChips() {
   if (!node) return;
   clear(node);
   if (state.streaming) return;
+  if (!canChat() || isImported(activeConversation())) return;
   suggestionsFor(viewContext()).forEach(function (text) {
     var chip = h('button', 'coach-chip', text);
     chip.type = 'button';
@@ -431,8 +476,11 @@ function loadConversations() {
   });
 }
 
-/** 把後端存的 Anthropic content blocks 攤平成畫面用的訊息模型。 */
-function messagesFromBlocks(rawMessages) {
+/**
+ * 把後端存的 Anthropic content blocks 攤平成畫面用的訊息模型。
+ * imported：匯入的對話沒有 tool_result，工具 chip 顯示固定說明而不是「查詢中…」。
+ */
+function messagesFromBlocks(rawMessages, imported) {
   var out = [];
   var pendingResults = {}; // tool_use_id → {content, is_error}
 
@@ -467,7 +515,7 @@ function messagesFromBlocks(rawMessages) {
           id: b.id,
           name: b.name,
           input: b.input || {},
-          result: res ? res.content : null,
+          result: res ? res.content : (imported ? IMPORTED_TOOL_RESULT : null),
           isError: !!(res && res.is_error)
         });
       }
@@ -482,7 +530,8 @@ function openConversation(id) {
   state.activeId = id;
   state.error = null;
   return api(withAthlete('/api/chat/conversations/' + id)).then(function (data) {
-    state.messages = messagesFromBlocks((data && data.messages) || []);
+    // 離線快照只帶文字與工具名稱（見 build_dashboard_offline.py），同樣沒有查詢結果
+    state.messages = messagesFromBlocks((data && data.messages) || [], isImported(data) || isOfflineSnapshot());
     renderConversationSelect();
     renderLog();
   }).catch(function (err) {
@@ -576,7 +625,8 @@ function pumpSSE(reader, onEvent) {
 function submitMessage(rawText) {
   var text = String(rawText || '').trim();
   if (!text || state.streaming) return;
-  if (!state.status || !state.status.enabled || !state.status.client_allowed) return;
+  if (!canChat()) return;
+  if (isImported(activeConversation())) return; // 唯讀對話（輸入區已隱藏，這裡再擋一次）
 
   var input = $('coach-input');
   if (input) input.value = '';
@@ -928,27 +978,30 @@ function init() {
 
   api('/api/chat/status').then(function (status) {
     state.status = status;
-    if (!status.enabled) {
-      renderDisabled('伺服器未設定 ANTHROPIC_API_KEY，AI 教練暫時無法使用。'
-        + (status.reason ? '（' + status.reason + '）' : ''));
-      return;
-    }
     if (!status.client_allowed) {
       renderDisabled('AI 教練僅限本機使用。要讓區網裝置使用，'
         + '請在啟動 server 的環境設定 RC_CHAT_ALLOW_PRIVATE_NETWORK=1。');
       return;
     }
     if (!buildPanel()) return;
-    renderChips();
+    renderComposer();
     renderLog();
-    loadConversations();
+    loadConversations().then(function () {
+      // 不能發問又沒有任何紀錄可看：維持原本的說明
+      if (!status.enabled && state.conversations.length === 0 && !state.loadError) {
+        renderDisabled(isOfflineSnapshot()
+          ? '這份離線快照沒有 AI 教練的對話紀錄。'
+          : '伺服器未設定 ANTHROPIC_API_KEY，AI 教練暫時無法使用。'
+            + (status.reason ? '（' + status.reason + '）' : ''));
+      }
+    });
   }).catch(function (err) {
     renderDisabled('無法取得 AI 教練狀態：' + err.message);
   });
 
   // 切 view 時更新建議問題（路由由 app.js 負責，這裡只跟著換 chips）
   window.addEventListener('hashchange', function () {
-    if (state.status && state.status.enabled && state.status.client_allowed) renderChips();
+    if (canChat()) renderChips();
   });
 }
 
