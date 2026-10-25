@@ -9328,13 +9328,14 @@ button.recent-row .rc-dist {
   height: auto;
 }
 
-/* 深色主題：OSM 沒有免 key 的深色圖磚，把圖磚反轉成深底（只動底圖，不動路線） */
-.route-map-dark .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85);
-}
-
-.route-map-dark.leaflet-container {
-  background: #1c2127;
+/* 底圖來源標示（Esri 使用條款要求）：縮小並半透明，貼在右下角 */
+.route-map .leaflet-control-attribution {
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: transparent;
+  opacity: 0.75;
 }
 
 .route-svg {

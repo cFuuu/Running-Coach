@@ -1167,9 +1167,10 @@
       - [ ] 更早的歷史（2025-10-24 前）尚未補。原訂用 FIT 重新匯入，但這台電腦找不到 Garmin 匯出包；可改用同一個指令走 API（每場 1 次請求，約 3 秒），或在有匯出包的電腦上做
     - [x] ⑤ `get_session_detail(include_coords=...)`：只有 `/api/sessions/{id}` 開啟；**MCP 維持不帶座標**。整場沒有座標時不附欄位
     - [x] ⑥ 前端 [`route-map.js`](../../src/main/resources/assets/dashboard/js/route-map.js)：展開列「圖表」分頁地圖在上、曲線在下，完整單場另有「路線」區塊；依本場配速或心率五分位分段上色（相對快慢，不是訓練區間）；滑過曲線時地圖標出同一時間點並顯示配速與心率
-      - **底圖改用 OpenStreetMap 官方圖磚**：原訂的 CARTO 實測已改成要 API key（圖磚印「API KEY REQUIRED」）；Google／Apple 地圖都要 key 與帳單帳戶。OSM 沒有免 key 的深色版，深色主題用 CSS 濾鏡反轉底圖
+      - **底圖：Esri 灰階（2026-10-25 Fu 比較預覽後選定）**：淺色／深色各用 Esri Light／Dark Gray Canvas 原生版本，免 key。先上線的 OSM 標準圖資訊太多（高架、捷運、地名），路線被淹沒。CARTO 實測已改成要 API key；Google／Apple 地圖都要 key 與帳單帳戶，key 會跟著 `file://` 離線檔外流且無法限制來源。Esri 灰階只到第 16 級，更近時放大第 16 級圖磚（操場尺度略糊）
+      - 右下角來源標示是 Esri 使用條款要求，只拿掉 Leaflet 前綴，「© Esri」縮小、半透明（Fu 選定）
       - 載不到 Leaflet（沒網路）時退回 SVG，只畫路線形狀並說明原因
-    - [x] ⑦ 離線匯出**改為預設含座標**（Fu 確認）：近一年檔 1.69 → 1.97 MB（+275 KB，與預估 +0.27 MB 相符）；`file://` 開啟時 OSM 圖磚回 200（沒有 Referer 也能取得）
+    - [x] ⑦ 離線匯出**改為預設含座標**（Fu 確認）：近一年檔 1.69 → 1.97 MB（+275 KB，與預估 +0.27 MB 相符）；`file://` 開啟時圖磚回 200（沒有 Referer 也能取得；OSM 與換成的 Esri 都實測過）
   - **驗收（2026-10-24）**：Playwright 對真實 DB × 1280／768／390 × 淺色／深色，無 console 錯誤、無橫向捲動；10/22 間歇課路線落在板橋第一運動場跑道上，滑到 15:30 時地圖與曲線同為 4:49/km、164 bpm；21 km 長跑完整單場路線完整；擋掉 cdnjs 時正確退回 SVG。單場明細 API：28 KB／16 ms、110 KB／31 ms（第一次冷查詢 328 ms），在 200 ms 上限內。API 同步場次（10/17、10/19、10/20）恢復可算心率漂移，`assessability.blocked` 為空。1073 項測試通過
     - [ ] 與 Garmin Connect 網頁逐場比對路線形狀（Fu 目視）；iPhone 真機開離線檔（併入 N-30 ⑤）
   - **取樣間隔**：維持 10 秒（預設，與現有逐點資料一致）。若之後覺得彎道太直，改 `DEFAULT_SAMPLE_EVERY_SEC` 並重跑回填即可

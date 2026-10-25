@@ -4,9 +4,11 @@
  * 路線來自 /api/sessions/{id} 的 records.points（每 10 秒一點，含 lat/lon），
  * 與配速／心率曲線共用同一份資料，所以滑過曲線時能在地圖上標出同一個時間點。
  *
- * 底圖：Leaflet + OpenStreetMap 官方圖磚，不需要 API key（Google／Apple 地圖都要
- * key 與帳單帳戶）。CARTO basemaps 原本免 key，2026-10-24 實測已改成要 key，不能用。
- * 深色主題沒有免 key 的深色圖磚，改用 CSS 濾鏡把圖磚反轉（styles.css .route-map-dark）。
+ * 底圖：Leaflet + Esri 灰階底圖（Light／Dark Gray Canvas），不需要 API key，
+ * 深淺色各有原生版本。2026-10-25 Fu 比較後選定：OSM 標準圖資訊太多，路線被淹沒。
+ * 未選：Google／Apple 地圖要 key 與帳單帳戶，key 會跟著離線檔外流；CARTO 已改成要 key。
+ * Esri 灰階只到第 16 級，更近時由 Leaflet 放大第 16 級圖磚（maxNativeZoom）。
+ * 來源標示是 Esri 使用條款要求，不能拿掉；只拿掉 Leaflet 自己的前綴並縮小字級。
  * 載不到 Leaflet（沒網路）時退回純 SVG，只畫路線形狀，不畫底圖。
  *
  * 路線分段上色用「本場」配速或心率的五分位，只呈現同一場裡的相對快慢，
@@ -19,8 +21,9 @@ import { formatDuration, formatPace } from './charts.js';
 var LEAFLET_JS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
 var LEAFLET_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
 var LOAD_TIMEOUT_MS = 8000;
-var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-var TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+var TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_{shade}_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+var TILE_MAX_NATIVE_ZOOM = 16;
+var TILE_ATTRIBUTION = '&copy; Esri';
 
 // 五段顏色沿用心率區間的色票（冷 → 暖），深淺色主題各自定義在 styles.css
 var BUCKET_VARS = ['--c-zone-1', '--c-zone-2', '--c-zone-3', '--c-zone-4', '--c-zone-5'];
@@ -147,8 +150,13 @@ function drawLeaflet(L, box, points, mode) {
   pruneMaps();
   var map = L.map(box, { scrollWheelZoom: false, attributionControl: true, zoomSnap: 0.25 });
   liveMaps.push(map);
-  box.classList.toggle('route-map-dark', isDark());
-  L.tileLayer(TILE_URL, { maxZoom: 19, attribution: TILE_ATTRIBUTION }).addTo(map);
+  map.attributionControl.setPrefix(false);
+  L.tileLayer(TILE_URL, {
+    shade: isDark() ? 'Dark' : 'Light',
+    maxZoom: 19,
+    maxNativeZoom: TILE_MAX_NATIVE_ZOOM,
+    attribution: TILE_ATTRIBUTION
+  }).addTo(map);
 
   var colors = BUCKET_VARS.map(cssVar);
   var all = [];
