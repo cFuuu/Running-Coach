@@ -106,11 +106,11 @@ function bigValue(value, unit, className) {
   return wrap;
 }
 
-/** 量表（環或弧）中央疊一個數字 */
+/** 量表（環或弧）中央疊一個數字；六個字元以上（如步數「20,512」）縮小一級，免得貼到環 */
 function gaugeWithCenter(svg, centerText) {
   var wrap = h('div', 'gc-gauge-wrap');
   wrap.appendChild(svg);
-  wrap.appendChild(h('span', 'gc-gauge-center', centerText));
+  wrap.appendChild(h('span', 'gc-gauge-center' + (String(centerText).length >= 6 ? ' is-long' : ''), centerText));
   return wrap;
 }
 
@@ -455,8 +455,10 @@ function renderHealthStatus(c, body) {
       num(m.value, def.decimals));
     gauge.classList.add('gc-health-gauge');
     cell.appendChild(gauge);
-    // 單位（超出時改寫判定）與範圍分兩行：擠在一行時「高於範圍 13.9–16.7」會撐破手機上的格子
-    cell.appendChild(h('div', 'gc-health-range', out ? (HEALTH_STATUS_LABEL[m.status] || m.status) : def.unit));
+    // 單位、判定、範圍各一行：擠在一行時「高於範圍 13.9–16.7」會撐破手機上的格子；
+    // 單位行上移塞進弧形缺口，判定字太寬塞不進去（會壓到弧線與圓點），所以另起一行
+    cell.appendChild(h('div', 'gc-health-range', def.unit));
+    if (out) cell.appendChild(h('div', 'gc-health-range gc-health-verdict', HEALTH_STATUS_LABEL[m.status] || m.status));
     cell.appendChild(h('div', 'gc-health-range', num(m.lower, def.decimals) + '–' + num(m.upper, def.decimals)));
     cell.title = def.label + ' ' + num(m.value, def.decimals) + ' ' + def.unit + '：'
       + (HEALTH_STATUS_LABEL[m.status] || m.status) + '（個人範圍 '

@@ -2534,6 +2534,11 @@ body.coach-open .coach-panel {
   font-variant-numeric: tabular-nums;
 }
 
+/* 六個字元以上的中央數字（步數破萬）縮小一級，與環保持距離（手機上兩欄卡片尤其明顯） */
+.gc-gauge-center.is-long {
+  font-size: var(--fs-lg);
+}
+
 .gc-gauge-track {
   fill: none;
   stroke: var(--bar-track);
@@ -3026,6 +3031,17 @@ body.coach-open .coach-panel {
   gap: 5px;
   min-width: 4.2em;
   font-weight: 600;
+}
+
+/* 手機：卡片只有半個螢幕寬，數值欄會把名稱擠成「恢復…」。只留名稱與評級（文字＋圖示）（2026-10-25 Fu） */
+@media (max-width: 767px) {
+  .gc-factor {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .gc-factor-value {
+    display: none;
+  }
 }
 
 /* 訓練負荷卡：「負荷比」標籤與數字並排 */

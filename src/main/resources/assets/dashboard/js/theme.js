@@ -33,6 +33,10 @@ var CHOICES = [
 ];
 var VALID_THEME_CHOICES = CHOICES.map(function (c) { return c.value; });
 
+// localStorage 寫不進去時（手機以檔案開啟離線快照、私密瀏覽、容量滿）的當次頁面備份。
+// 沒有它，趨勢頁開關這類「存完立刻重讀設定再重畫」的元件會讀回舊值，點了等於沒點。
+var memorySettings = null;
+
 function defaults() {
   return { v: SETTINGS_VERSION, theme: 'system' };
 }
@@ -42,6 +46,7 @@ function defaults() {
  * 不嘗試遷移欄位——單人自用工具，防禦性優先於相容性。
  */
 function getSettings() {
+  if (memorySettings) return memorySettings;
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaults();
@@ -65,7 +70,8 @@ function saveSettings(patch) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   } catch (e) {
-    // 私密瀏覽模式或容量滿載：靜默放棄持久化，不影響當次頁面行為
+    // 私密瀏覽模式、容量滿載或檔案開啟：放棄持久化，改存在記憶體，當次頁面照常運作
+    memorySettings = next;
   }
 }
 
