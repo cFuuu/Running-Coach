@@ -69,6 +69,28 @@ def get_activities_for_load(
     ]
 
 
+def get_load_recursion_start(
+    conn: sqlite3.Connection, athlete_id: int, start_date: datetime.date
+) -> datetime.date:
+    """ATL/CTL 遞推的固定起點：該學員第一筆活動的前一天（不晚於 start_date）。
+
+    EWMA 的值取決於從哪一天開始遞推。先前起點是「start_date 往前推
+    CTL_WARMUP_DAYS 天」，起點隨查詢區間移動，同一天在首頁（14 天窗）與趨勢頁
+    （30／90 天）算出不同的 CTL／TSB（2026-10-25 實測 CTL 40.4 vs 39.6）。
+    改從固定起點算：前一天沒有活動、負荷為 0，序列第一天的種子即為 0，
+    更早的起點只會多一串 0、結果完全相同，因此任何 start_date 都得到同一組數值。
+    沒有任何活動時退回 start_date（整段負荷皆為 0）。
+    """
+    row = conn.execute(
+        "SELECT MIN(date(started_at)) AS first_date FROM activities WHERE athlete_id = ?",
+        (athlete_id,),
+    ).fetchone()
+    if row is None or row["first_date"] is None:
+        return start_date
+    anchor = datetime.date.fromisoformat(row["first_date"]) - datetime.timedelta(days=1)
+    return min(anchor, start_date)
+
+
 def get_hr_params(
     conn: sqlite3.Connection, athlete_id: int
 ) -> tuple[float | None, float | None]:
@@ -188,26 +210,21 @@ def compute_training_load_for_athlete(
     回傳：compute_training_load_series() 的輸出，依日期升冪排序，
     涵蓋 [start_date, end_date] 整段區間（暖機期本身不出現在回傳結果中）。
 
-    ATL/CTL 暖機期：compute_training_load_series() 把序列第一天的 ATL/CTL
-    直接設為當天負荷（見該函式 docstring），若序列就從使用者要求的 start_date
-    開始算，正好撞上高強度訓練日時，ATL（7 天時間常數）與 CTL（42 天時間常數）
-    會以不同速度收斂，短期內把 TSB 撐出不合理的極端值——且同一天的判讀結果會
-    因為呼叫端傳入的 start_date 不同而改變，不可接受。故這裡往前多抓
-    CTL_WARMUP_DAYS 天的活動資料讓 ATL/CTL 先行收斂，再只取使用者要的
+    ATL/CTL 暖機期：同一天的 ATL/CTL/TSB 不得因呼叫端傳入的 start_date 不同而
+    改變，故一律從 get_load_recursion_start() 的固定起點遞推，再只取使用者要的
     [start_date, end_date] 切片回傳，暖機期本身不出現在回傳結果中。
 
-    （2026-08-21 修正：先前這裡只抓 CTL_TIME_CONSTANT_DAYS，即 1 倍時間常數，
-    對 ATL 夠用但對 CTL 自己不夠收斂，實測仍會出現「同一天因 start_date
-    不同而判讀不同」的問題，改抓 training_load.CTL_WARMUP_DAYS，理由見
-    該常數的定義處。）
+    （2026-08-21 由 1 倍時間常數改抓 CTL_WARMUP_DAYS；2026-10-25 改為固定起點：
+    起點隨 start_date 移動時，即使暖機 4 倍時間常數仍殘留約 2% 的差異，
+    首頁與趨勢頁的 CTL 因此對不上，見 get_load_recursion_start()。）
     """
     max_hr_bpm, resting_hr_bpm = get_hr_params(conn, athlete_id)
 
-    warmup_start = start_date - datetime.timedelta(days=CTL_WARMUP_DAYS)
-    activities = get_activities_for_load(conn, athlete_id, warmup_start, end_date)
+    recursion_start = get_load_recursion_start(conn, athlete_id, start_date)
+    activities = get_activities_for_load(conn, athlete_id, recursion_start, end_date)
     daily_loads = compute_daily_loads(
         activities,
-        warmup_start,
+        recursion_start,
         end_date,
         max_hr_bpm=max_hr_bpm,
         resting_hr_bpm=resting_hr_bpm,
@@ -247,17 +264,25 @@ def compute_readiness_for_athlete(
     """
     max_hr_bpm, resting_hr_bpm = get_hr_params(conn, athlete_id)
 
+    # ATL/CTL/TSB 從固定起點遞推（與 compute_training_load_for_athlete() 同值），
+    # 但交給 assess_readiness() 的序列仍切在 start_date 往前 CTL_WARMUP_DAYS 天：
+    # TSB 的 P10 門檻與連續訓練天數都取自這段序列，若改成整段歷史（2019 起，
+    # 含大量未訓練的 TSB≈0 日子），門檻會被連帶改掉。2026-10-25 只修數值一致，
+    # 不動門檻的取樣範圍。
     warmup_start = start_date - datetime.timedelta(days=CTL_WARMUP_DAYS)
-    activities = get_activities_for_load(conn, athlete_id, warmup_start, end_date)
+    recursion_start = get_load_recursion_start(conn, athlete_id, warmup_start)
+    activities = get_activities_for_load(conn, athlete_id, recursion_start, end_date)
     daily_loads = compute_daily_loads(
         activities,
-        warmup_start,
+        recursion_start,
         end_date,
         max_hr_bpm=max_hr_bpm,
         resting_hr_bpm=resting_hr_bpm,
         easy_pace_fast_sec_per_km=easy_pace_fast_sec_per_km,
     )
-    training_load_series = compute_training_load_series(daily_loads)
+    training_load_series = [
+        day for day in compute_training_load_series(daily_loads) if day["date"] >= warmup_start
+    ]
 
     # HRV 的充足度檢查會往前回看 HRV_LOOKBACK_DAYS 天數算「有幾個有效測量點」，
     # 而 assess_readiness() 只看得到這裡傳進去的列。若只查 [start_date, end_date]，

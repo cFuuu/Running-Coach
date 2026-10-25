@@ -262,6 +262,40 @@ class TestComputeTrainingLoadForAthlete(unittest.TestCase):
             self.assertAlmostEqual(load_tsb_by_date[day["date"]], load_tsb_by_date[day["date"]])
         self.assertEqual(len(load_series), len(readiness))
 
+    def test_same_day_values_do_not_depend_on_start_date(self):
+        """首頁（短窗）與趨勢頁（長窗）查同一天，ATL/CTL/TSB 必須完全相同。
+        活動橫跨遠超過暖機期的範圍，舊做法（起點隨 start_date 移動）在這裡會有殘差。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        first = START - datetime.timedelta(days=400)
+        for i in range(0, 400, 3):
+            _insert_activity(conn, athlete_id, first + datetime.timedelta(days=i), avg_hr_bpm=150 + i % 20)
+        conn.commit()
+
+        end_date = START
+        short = compute_training_load_for_athlete(conn, athlete_id, START - datetime.timedelta(days=13), end_date)
+        long = compute_training_load_for_athlete(conn, athlete_id, START - datetime.timedelta(days=89), end_date)
+        for key in ("atl", "ctl", "tsb"):
+            self.assertEqual(short[-1][key], long[-1][key])
+
+    def test_start_before_first_activity_matches_later_start(self):
+        """起點早於第一筆活動時，前面只是一串 0，不影響之後的數值。"""
+        conn = get_connection(":memory:")
+        athlete_id = _build_athlete(conn, max_hr_bpm=190, resting_hr_bpm=50)
+        conn.commit()
+
+        for i in range(10):
+            _insert_activity(conn, athlete_id, START + datetime.timedelta(days=i), avg_hr_bpm=150)
+        conn.commit()
+
+        end_date = START + datetime.timedelta(days=9)
+        early = compute_training_load_for_athlete(conn, athlete_id, START - datetime.timedelta(days=300), end_date)
+        late = compute_training_load_for_athlete(conn, athlete_id, START + datetime.timedelta(days=5), end_date)
+        self.assertEqual(early[-1]["ctl"], late[-1]["ctl"])
+        self.assertEqual(early[-1]["tsb"], late[-1]["tsb"])
+
 
 class TestComputeReadinessForAthlete(unittest.TestCase):
     def test_end_to_end_produces_nonempty_series(self):
