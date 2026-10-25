@@ -2898,6 +2898,11 @@ body.coach-open .coach-panel {
   margin-top: -12px;
 }
 
+/* 判定（低於／高於範圍）比單位寬，不上移，排在弧形量表下方 */
+.gc-health-gauge+.gc-health-verdict {
+  margin-top: 2px;
+}
+
 .gc-health-range {
   font-size: 11px;
   color: var(--text-muted);
@@ -6329,7 +6334,10 @@ button.recent-row .rc-dist {
   color: var(--text-muted);
 }
 
+/* inline-flex 讓「官方」標章與時間上下置中（vertical-align 對不準中文字與數字的混排） */
 .pb-row-time {
+  display: inline-flex;
+  align-items: center;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -6387,7 +6395,7 @@ button.recent-row .rc-dist {
   color: var(--tag-race-text);
   font-size: var(--fs-xs);
   font-weight: 600;
-  vertical-align: 2px;
+  line-height: 1.5;
 }
 
 /* ------------------------------------------------------------ 每日身體狀況：指標自訂面板 */

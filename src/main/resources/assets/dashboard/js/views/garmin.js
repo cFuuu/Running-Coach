@@ -32,8 +32,10 @@ var READINESS_FEEDBACK_LABEL = { RECOVERED_AND_READY: '已恢復且準備好', W
 // 訓練完備程度的「因素」評級：Garmin 代碼 → 語氣（圖示形狀與顏色，與 HRV 狀態同一套）。
 // 只分語氣，不代表本專案的判讀。
 var READINESS_FACTOR_TONE = { VERY_GOOD: 'good', GOOD: 'good', MODERATE: 'warn', POOR: 'bad', VERY_POOR: 'bad' };
-// 各因素右側的中文：只收錄對照過 Garmin 網頁的組合（2026-10-23 Fu 截圖）；沒收錄的只顯示圖示，
-// 代碼放在滑鼠提示，不自己翻譯。看到新的組合再補。
+// 各因素右側的中文：先查對照過 Garmin 網頁的組合（2026-10-23 Fu 截圖），沒收錄的退回
+// READINESS_FACTOR_LEVEL_TEXT 的通用等級字（2026-10-25 Fu：只有紅三角看不出是什麼）。
+// 代碼仍放在滑鼠提示；看到網頁上的實際用語再補進下表。
+var READINESS_FACTOR_LEVEL_TEXT = { VERY_GOOD: '極佳', GOOD: '良好', MODERATE: '普通', POOR: '差', VERY_POOR: '極差' };
 var READINESS_FACTOR_TEXT = {
   sleep: { GOOD: '良好' },
   recovery: { GOOD: '已恢復' },
@@ -291,7 +293,7 @@ function readinessFactors(c) {
     row.appendChild(h('span', 'gc-factor-label', r.label));
     row.appendChild(h('span', 'gc-factor-value', r.value));
     var verdict = h('span', 'gc-factor-verdict');
-    var text = r.text || (READINESS_FACTOR_TEXT[r.key] || {})[r.feedback] || '';
+    var text = r.text || (READINESS_FACTOR_TEXT[r.key] || {})[r.feedback] || READINESS_FACTOR_LEVEL_TEXT[r.feedback] || '';
     if (text) verdict.appendChild(h('span', null, text));
     var mark = toneMark(READINESS_FACTOR_TONE[r.feedback] || 'muted');
     if (mark) verdict.appendChild(mark);
@@ -455,10 +457,11 @@ function renderHealthStatus(c, body) {
       num(m.value, def.decimals));
     gauge.classList.add('gc-health-gauge');
     cell.appendChild(gauge);
-    // 單位、判定、範圍各一行：擠在一行時「高於範圍 13.9–16.7」會撐破手機上的格子；
-    // 單位行上移塞進弧形缺口，判定字太寬塞不進去（會壓到弧線與圓點），所以另起一行
-    cell.appendChild(h('div', 'gc-health-range', def.unit));
-    if (out) cell.appendChild(h('div', 'gc-health-range gc-health-verdict', HEALTH_STATUS_LABEL[m.status] || m.status));
+    // 兩行：單位（超出時改寫判定）與範圍——擠在一行時「高於範圍 13.9–16.7」會撐破手機上的格子。
+    // 單位短，上移塞進弧形缺口；判定字太寬塞不進去（會壓到弧線與圓點），改排在量表下方
+    cell.appendChild(out
+      ? h('div', 'gc-health-range gc-health-verdict', HEALTH_STATUS_LABEL[m.status] || m.status)
+      : h('div', 'gc-health-range', def.unit));
     cell.appendChild(h('div', 'gc-health-range', num(m.lower, def.decimals) + '–' + num(m.upper, def.decimals)));
     cell.title = def.label + ' ' + num(m.value, def.decimals) + ' ' + def.unit + '：'
       + (HEALTH_STATUS_LABEL[m.status] || m.status) + '（個人範圍 '

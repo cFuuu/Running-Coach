@@ -401,12 +401,12 @@ function renderFeelBlock(dateStr) {
 }
 
 // 判定圖示：形狀＋單色線條圖示（與 HRV 狀態的綠圓／橘方／紅三角同一套語言，色盲也分得出來）。
-// 良好＝圓＋勾、注意＝圓角方＋驚嘆號、低落＝三角＋向下箭頭、未評＝虛線圓＋橫線。
+// 良好＝圓＋勾、注意＝圓角方＋驚嘆號、低落＝三角＋驚嘆號（警示標誌）、未評＝虛線圓＋橫線。
+// 低落原本是三角＋向下箭頭，三角朝上、箭頭朝下兩個方向打架（2026-10-25 Fu）。
 // 內容是固定字面值，不含外部資料；圖示畫在 24×24，再平移縮放到 60×60 的形狀中央。
 var RD_ICON = {
   check: '<path d="M6 12.5l4.2 4.2L18 8"/>',
   bang: '<path d="M12 6.5v7"/><circle class="rd-dot" cx="12" cy="17.6" r="1.3"/>',
-  down: '<path d="M12 6v11.5"/><path d="M6.8 12.6L12 17.8l5.2-5.2"/>',
   dash: '<path d="M7.5 12h9"/>'
 };
 var RD_SHAPE = {
@@ -415,7 +415,7 @@ var RD_SHAPE = {
   caution: '<rect class="rd-shape" x="3" y="3" width="54" height="54" rx="12"/>'
     + '<g class="rd-ico" transform="translate(15 15) scale(1.25)">' + RD_ICON.bang + '</g>',
   low: '<path class="rd-shape" d="M30 4 L57 52 H3 Z"/>'
-    + '<g class="rd-ico" transform="translate(18 21)">' + RD_ICON.down + '</g>',
+    + '<g class="rd-ico" transform="translate(15 17) scale(1.25)">' + RD_ICON.bang + '</g>',
   none: '<circle class="rd-shape rd-shape-dashed" cx="30" cy="30" r="27"/>'
     + '<g class="rd-ico" transform="translate(15 15) scale(1.25)">' + RD_ICON.dash + '</g>'
 };
