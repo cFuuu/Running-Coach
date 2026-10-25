@@ -4293,6 +4293,16 @@ button.recent-row .rc-dist {
   padding-top: 12px;
 }
 
+/* 黃底的 Garmin 提醒不吃上面那 12px 內距（會變成上空下擠的大黃塊，2026-10-25 Fu），
+   底色維持上下 4px；與上方內容的距離改由前一個元素的下外距留（margin-top 已用 auto 推到底） */
+.fig-block .sync-fallback-note:not(.is-muted) {
+  padding-top: 4px;
+}
+
+.fig-block> :has(+ .sync-fallback-note:not(.is-muted)) {
+  margin-bottom: 10px;
+}
+
 .fig-block .wt-row-value {
   white-space: nowrap;
 }
