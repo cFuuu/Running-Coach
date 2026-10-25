@@ -257,9 +257,12 @@ function readinessRow(def, entry) {
   row.appendChild(val);
   var tips = [];
   if (trigger) {
-    var level = (trigger.confidence && trigger.confidence.level) || 'high';
-    row.appendChild(h('span', 'conf-badge conf-' + level, CONFIDENCE_LABEL[level] || level));
+    // 信賴度不在列尾掛標章（2026-10-25 Fu：卡片太擠），改放進這列的提示文字（hover／長按），連同已知偏誤一併寫出
+    var conf = trigger.confidence || {};
+    var level = conf.level || 'high';
     tips.push(trigger.detail);
+    tips.push('信賴度：' + (CONFIDENCE_LABEL[level] || level)
+      + (conf.biases || []).map(function (b) { return '\n・' + b.detail; }).join(''));
   } else if (skipped) {
     tips.push(skipped.reason);
   }
