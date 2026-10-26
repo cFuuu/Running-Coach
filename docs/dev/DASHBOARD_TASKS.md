@@ -271,6 +271,13 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 用本機已登入的 Claude Code，**不需要 `ANTHROPIC_API_KEY`**；以 SSE 串流 `start → tool_use／tool_result／text／denied … → done｜error`，
 報告存進 `analysis_reports`（只存原文，不進事實層、規則引擎不讀）。`GET /api/analysis`（清單）、`GET /api/analysis/{id}`（單筆）、`GET /api/analysis/status`。
 
+**2026-10-27 修訂（N-36 決策 4：「分析近況」併入對話）**——以下覆蓋本節衝突處：
+- `POST /api/analysis?conversation_id=<id>`：報告存成該對話的**一回合**（`kind='analysis'`；學員訊息 `〔分析近況〕\n<固定問題>`＋〔日期〕區塊，教練訊息為 stream 的內容：工具往返＋報告）。沒給 `conversation_id` 就用最近更新的對話，沒有任何對話就新開（標題「分析近況 MM/DD」）；對話沒有標題時也補上這個標題。給了但不存在 → 404。失敗不進對話，只在 `analysis_reports` 記錯誤。
+- SSE：`start {"id": <report_id>, "conversation_id": 3}`；`done` 多帶 `"conversation_id"` 與 `"message_id"`（報告那則教練訊息的 id）；其餘事件不變。
+- prompt 帶備忘（追蹤事項＋近期建議）與〔日期〕；工具與聊天相同（`PANEL_TOOL_NAMES`），系統提示要求分析時不記體感、不建立／結案追蹤事項。
+- 與 session 聊天共用一把鎖，忙碌 409。`analysis_reports` 只記執行紀錄，新增 `conversation_id`；清單／單筆回應也帶 `conversation_id`。
+- 既有報告：app 啟動時把還沒轉過的（status=done 且有文字）依時間轉成**一則**對話「分析近況紀錄」，每份一回合（學員訊息＋報告文字，訊息時間用報告時間），以 `analysis_reports.conversation_id` 標記已轉，可重跑不重複。
+
 - **安全邊界**：`--tools ""`（關掉全部內建工具）、`--allowedTools` 只有 `READ_ONLY_TOOL_NAMES`、`--disallowedTools` 列出寫入型工具、`--permission-mode dontAsk`、`--strict-mcp-config`。2026-10-14 實測要求它寫入 `add_context_note`，被拒且資料庫未變動
 - **分析問題原文在後端**（`routes_analysis.ANALYSIS_PROMPT`），前端不帶 prompt；系統提示＝`coach()` 行為約束層原文＋分析介面補充
 - 只接受本機（放行私有網段同樣看 `RC_CHAT_ALLOW_PRIVATE_NETWORK`）；同時只跑一個（第二個回 409）；server 重啟時把未收尾的 `running` 標成 `error`
@@ -561,13 +568,27 @@ POST /api/chat/tracking/{id}   body {"action": "accept"|"decline"|"resolve"|"sto
 ```
 狀態碼：找不到或是一般情境筆記 → 404；action 不在上列 → 422；目前狀態不能做這個動作（例如已結案）→ 400；來源不允許 → 403。`detail` 皆為中文說明。追問紀錄（followed_up／mentioned／stale_asked）只有教練在對話裡用 MCP 記，不開放給按鈕。
 
+**2026-10-27 修訂（N-35／N-36 子任務 A：聊天改走 `claude -p`、「分析近況」併入對話）**——以下覆蓋上文衝突處：
+- **兩種後端**（`RC_COACH_BACKEND`）：`session`（預設）每次提問在背景跑一次 Claude Code（`services/coach_chat_session.py`），**不需要 API key**，啟用條件同「分析近況」（找得到 claude 執行檔與 MCP 設定檔）；`api` 為上文的 Anthropic API 迴圈，保留待日後切回。`claude -p` 指令與分析共用 `services/claude_session.py`：`--allowedTools`＝`PANEL_TOOL_NAMES`、`--disallowedTools`＝其餘寫入工具、`--mcp-config` 傳 JSON 字串（只取設定檔的 running-coach 一項、args 末尾加 `--panel`）、prompt 走 **stdin**（Windows 命令列約 32K 字元上限，帶歷史會超過）。
+- **工具**：兩種後端都只開放 `mcp.server.PANEL_TOOL_NAMES`（唯讀＋PLAN.md §10.2 白名單），API 路徑的 `build_tool_schemas`／`execute_tool` 同步改用它。
+- **多輪（session）**：後端把對話歷史轉成文字帶進 prompt（每則標日期；教練那則附「查了哪些工具」、不帶工具回傳；超過 `RC_COACH_HISTORY_MAX_CHARS` 從最舊的整回合丟）。stream-json 轉成 Anthropic content blocks 落地：工具名去 `mcp__running-coach__` 前綴、tool_result content 轉字串、不存 thinking、連續同角色合併——存的仍是日後打 API 要送的 messages。
+- **同一時間只跑一個 Claude Code**：聊天（session）與分析共用一把鎖，忙碌回 **409**（`detail` 為中文說明）。`/api/analysis/status` 的 `running` 反映這把鎖。
+- **日期**：每則學員訊息（兩種後端）另加一個 text 區塊 `〔日期〕YYYY-MM-DD（週X）`（本機日期），放在學員文字之後：`content = [{"type":"text","text":"<學員原文>"}, {"type":"text","text":"〔日期〕2026-10-27（週二）"}]`。
+- **標題**：發問時、送模型之前就建立（回合失敗也保留），取首句（`。！？!?` 或換行為界，含結尾標點）前 16 字。
+- **備忘**（N-35 ③）：每次對話與分析開頭帶入「追蹤事項＋近期建議」（`coach_chat.build_memory_brief`），以〔備忘〕開頭。session 放進 prompt；API 只放進送模型的那份 messages（本回合學員訊息的第一個區塊），**不落地**。
+- **SSE（session）**：與上表同形狀，另加**非終止**事件 `denied {"tool": "add_context_note"}`——Claude Code 以 dontAsk 擋下了某個工具（回合照常完成，被擋的工具另有一則 is_error 的 tool_result）。
+- `GET /api/chat/status` 多回 `"backend": "session"|"api"`；`reason` 為完整一句、可直接顯示（session 停用：「找不到 Claude Code（claude），請確認已安裝並登入」；api 停用：「聊天設定為 API 模式（RC_COACH_BACKEND=api），但未設定 ANTHROPIC_API_KEY」），前端不要再包一層「未設定 ANTHROPIC_API_KEY」。
+- `GET /api/chat/conversations/{id}` 每則訊息多 `"kind": "chat"|"analysis"`（`coach_messages.kind`）。
+- 新增 `GET /api/chat/recent-advice` → `{"advice": [{"date": "2026-10-20", "conversation_id": 3, "text": "**目前狀態**：…"}]}`：30 天內、最多 5 份「分析近況」回合的結論（該回合最後一則教練訊息，去掉「**依據**」行），合計 ≤3,000 字，新到舊；與帶進備忘的是同一份。來源限制同其他讀取端點，不要求聊天啟用。
+
 **來源限制（`require_chat_client`）**：`ipaddress.ip_address(request.client.host)`——解析失敗一律 403（fail closed；`TestClient` 預設 host 是字串 `"testclient"`，測試須傳 `client=("127.0.0.1", 1)`）；`is_loopback` 放行（涵蓋 `::1`）；否則僅當 `RC_CHAT_ALLOW_PRIVATE_NETWORK=1` 且 `is_private` **或屬 `100.64.0.0/10`**（Tailscale；Python 3.12 對此段 `is_private` 為 False，須明列）才放行。uvicorn 只信任來自 127.0.0.1 的 `X-Forwarded-For`，區網裝置無法偽造。
 
 **設定**（全部走 `os.environ`，沿用 `garmin_auth.py` 讀 `GARMINTOKENS` 的做法；專案沒有 dotenv 載入器，由使用者 shell 設定）
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | 無 → 聊天停用（503） | 唯一的祕密 |
+| `RC_COACH_BACKEND` | `session` | `session`＝背景跑 `claude -p`（不需 key）；`api`＝直接打 Anthropic API（2026-10-27） |
+| `ANTHROPIC_API_KEY` | 無 → `api` 模式聊天停用（503） | 唯一的祕密；`session` 模式不需要 |
 | `RC_COACH_MODEL` | `sonnet`（2026-10-27 由 `claude-sonnet-5` 改為系列名稱，自動用最新的 Sonnet：Claude Code 自己認得；API 路徑由 `AnthropicBackend.resolve_model_id()` 查 Models API 取 `created_at` 最新者。「分析近況」也用同一個預設） | 可改 `opus`／`haiku`，或給完整 ID 固定版本 |
 | `RC_COACH_MAX_TOKENS` | `8192` | Sonnet 5 預設會思考，`max_tokens` 含思考量，太低會被截 |
 | `RC_COACH_HISTORY_MAX_CHARS` | `120000` | 送模型的歷史上限 |

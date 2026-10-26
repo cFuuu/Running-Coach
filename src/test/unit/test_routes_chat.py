@@ -35,7 +35,8 @@ for _noisy in ("httpx", "httpx2"):
 class ChatRouteTestCase(unittest.TestCase):
     """共用 setUp：合成 fixture DB ＋ 已啟用的聊天設定 ＋ 假 LLM 後端。"""
 
-    config = coach_chat.ChatConfig(api_key_present=True)
+    # 這組測 API 後端（FakeBackend）；session 後端見 test_coach_chat_session.py
+    config = coach_chat.ChatConfig(api_key_present=True, backend=coach_chat.BACKEND_API)
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -49,6 +50,8 @@ class ChatRouteTestCase(unittest.TestCase):
         self.app = create_app(str(self.db_path), assets_dir=assets_dir, chat_config=self.config)
         self.backend = FakeBackend([])
         self.app.dependency_overrides[routes_chat.get_backend] = lambda: self.backend
+        # 單元測試絕不能真的跑 claude
+        self.app.dependency_overrides[routes_chat.get_session_runner] = lambda: _refusing_runner
 
     def client(self, client=LOCAL_CLIENT):
         return TestClient(self.app, client=client)
@@ -81,7 +84,9 @@ class TestClientRestriction(ChatRouteTestCase):
         app = create_app(
             str(self.db_path),
             assets_dir=Path(self._tmp.name) / "assets",
-            chat_config=coach_chat.ChatConfig(api_key_present=True, allow_private_network=True),
+            chat_config=coach_chat.ChatConfig(
+                api_key_present=True, backend=coach_chat.BACKEND_API, allow_private_network=True
+            ),
         )
         response = TestClient(app, client=("8.8.8.8", 1)).get("/api/chat/conversations")
         self.assertEqual(response.status_code, 403)
@@ -94,7 +99,9 @@ class TestClientRestriction(ChatRouteTestCase):
 
 
 class TestPrivateNetworkFlag(ChatRouteTestCase):
-    config = coach_chat.ChatConfig(api_key_present=True, allow_private_network=True)
+    config = coach_chat.ChatConfig(
+        api_key_present=True, backend=coach_chat.BACKEND_API, allow_private_network=True
+    )
 
     def test_rfc1918_address_is_allowed(self):
         response = self.client(client=("192.168.1.5", 1)).get("/api/chat/conversations")
@@ -110,12 +117,13 @@ class TestPrivateNetworkFlag(ChatRouteTestCase):
 
 
 class TestDisabledWithoutApiKey(ChatRouteTestCase):
-    config = coach_chat.ChatConfig(api_key_present=False)
+    config = coach_chat.ChatConfig(api_key_present=False, backend=coach_chat.BACKEND_API)
 
     def test_status_explains_why(self):
         payload = self.client().get("/api/chat/status").json()
         self.assertFalse(payload["enabled"])
-        self.assertEqual(payload["reason"], "未設定 ANTHROPIC_API_KEY")
+        self.assertEqual(payload["reason"], self.config.disabled_reason)
+        self.assertEqual(payload["backend"], "api")
         self.assertTrue(payload["client_allowed"])
         self.assertEqual(payload["model"], coach_chat.DEFAULT_MODEL)
 
@@ -155,6 +163,7 @@ class TestConversationEndpoints(ChatRouteTestCase):
             {
                 "enabled": True,
                 "reason": None,
+                "backend": "api",
                 "model": coach_chat.DEFAULT_MODEL,
                 "client_allowed": True,
             },
@@ -273,6 +282,8 @@ class TestMessageStreaming(ChatRouteTestCase):
 
         stored = self.client().get(f"/api/chat/conversations/{conversation_id}").json()
         self.assertEqual(stored["messages"], [])
+        # 標題在送模型之前就建立，回合失敗也保留（N-36 決策 5）
+        self.assertEqual(stored["title"], "今天該練嗎？")
 
     def test_newlines_in_a_reply_stay_inside_one_data_line(self):
         """換行必須被 json.dumps 逸出，否則一則事件會被切成兩半。"""
@@ -321,7 +332,12 @@ class TestSchemaIsEnsuredOnStartup(unittest.TestCase):
 
 
 def _disabled_config() -> coach_chat.ChatConfig:
-    return coach_chat.ChatConfig(api_key_present=False)
+    return coach_chat.ChatConfig(api_key_present=False, backend=coach_chat.BACKEND_API)
+
+
+def _refusing_runner(cmd, prompt, timeout):
+    raise AssertionError("單元測試不應啟動真的 Claude Code")
+    yield  # pragma: no cover
 
 
 class TestStoreIsReachableThroughTheApi(ChatRouteTestCase):

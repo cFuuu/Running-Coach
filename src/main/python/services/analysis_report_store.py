@@ -19,13 +19,16 @@ def _now() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-def create_report(conn: sqlite3.Connection, athlete_id: int, prompt: str) -> int:
+def create_report(
+    conn: sqlite3.Connection, athlete_id: int, prompt: str, conversation_id: int | None = None
+) -> int:
+    """開一筆執行紀錄。conversation_id＝報告要存進的對話（N-36 決策 4）。"""
     cur = conn.execute(
         """
-        INSERT INTO analysis_reports (athlete_id, created_at, status, prompt)
-        VALUES (?, ?, 'running', ?)
+        INSERT INTO analysis_reports (athlete_id, created_at, status, prompt, conversation_id)
+        VALUES (?, ?, 'running', ?, ?)
         """,
-        (athlete_id, _now(), prompt),
+        (athlete_id, _now(), prompt, conversation_id),
     )
     conn.commit()
     return cur.lastrowid
@@ -71,6 +74,7 @@ def _row_to_dict(row: sqlite3.Row, full: bool) -> dict[str, Any]:
         "finished_at": row["finished_at"],
         "status": row["status"],
         "preview": text[:PREVIEW_CHARS],
+        "conversation_id": row["conversation_id"],
     }
     if full:
         out.update(

@@ -115,6 +115,10 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("context_notes", "last_mentioned_date", "TEXT"),
     ("context_notes", "stale_asked_date", "TEXT"),
     ("context_notes", "closed_date", "TEXT"),
+    # 2026-10-27：「分析近況」併入對話（N-36，見 schema.sql 註解）。
+    # SQLite 3.37+ 的 ADD COLUMN 可帶 NOT NULL DEFAULT 與 CHECK，既有列取預設值 'chat'。
+    ("coach_messages", "kind", "TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'analysis'))"),
+    ("analysis_reports", "conversation_id", "INTEGER"),
 ]
 
 

@@ -15,9 +15,11 @@ in-process MCP 去查 fixtures.build_fixture_db() 建的合成資料庫，因為
 """
 
 import asyncio
+import datetime
 import json
 import logging
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,9 +27,9 @@ from unittest import mock
 
 from anthropic import AsyncAnthropic
 
-from src.main.python.mcp.server import READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES, coach
+from src.main.python.mcp.server import PANEL_TOOL_NAMES, PANEL_WRITE_TOOL_NAMES, WRITE_TOOL_NAMES, coach
 from src.main.python.models.db import get_connection
-from src.main.python.services import coach_chat, coach_chat_store
+from src.main.python.services import coach_chat, coach_chat_store, context_notes_store
 from src.test.unit.fixtures import FAKE_ATHLETE_NAME, build_fixture_db
 
 # anthropic SDK 用 httpx2（舊版 httpx）發請求，每次都以 INFO 印一行，
@@ -98,7 +100,7 @@ class CoachChatTestCase(unittest.TestCase):
             self.conn, self.athlete_id
         )["id"]
 
-    def run_turn(self, backend, text="今天該練嗎？", config=None):
+    def run_turn(self, backend, text="今天該練嗎？", config=None, today=None):
         async def collect():
             return [
                 event
@@ -108,6 +110,7 @@ class CoachChatTestCase(unittest.TestCase):
                     backend=backend,
                     conversation_id=self.conversation_id,
                     text=text,
+                    today=today,
                 )
             ]
 
@@ -125,11 +128,15 @@ class TestSystemPrompt(unittest.TestCase):
         """行為約束層一字不改：系統提示的前段必須逐字等於 coach() 原文。"""
         self.assertTrue(coach_chat.build_system_prompt().startswith(coach()))
 
-    def test_panel_note_follows_and_says_no_write_tools(self):
+    def test_panel_note_follows_and_explains_whitelist(self):
         prompt = coach_chat.build_system_prompt()
         tail = prompt[len(coach()) :]
         self.assertIn("〔檢視脈絡〕", tail)
+        self.assertIn("〔日期〕", tail)
         self.assertIn("Claude Code", tail)
+        self.assertIn("record_daily_feel", tail)
+        self.assertIn("追蹤事項", tail)
+        self.assertIn("不覆寫", tail)
         for name in ("add_context_note", "generate_training_plan", "sync_garmin_data"):
             self.assertIn(name, tail)
 
@@ -144,10 +151,10 @@ class TestToolSchemas(unittest.TestCase):
     def setUp(self):
         self.schemas = asyncio.run(coach_chat.build_tool_schemas())
 
-    def test_only_read_only_tools_are_exposed(self):
+    def test_only_panel_tools_are_exposed(self):
         names = {schema["name"] for schema in self.schemas}
-        self.assertEqual(names, set(READ_ONLY_TOOL_NAMES))
-        self.assertFalse(names & set(WRITE_TOOL_NAMES))
+        self.assertEqual(names, set(PANEL_TOOL_NAMES))
+        self.assertFalse(names & (WRITE_TOOL_NAMES - PANEL_WRITE_TOOL_NAMES))
 
     def test_schema_shape_is_anthropic_ready(self):
         for schema in self.schemas:
@@ -169,14 +176,17 @@ class TestChatConfig(unittest.TestCase):
     def test_defaults_when_environment_is_empty(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             config = coach_chat.ChatConfig.from_env()
-        self.assertFalse(config.enabled)
-        self.assertEqual(config.disabled_reason, "未設定 ANTHROPIC_API_KEY")
+        self.assertEqual(config.backend, coach_chat.BACKEND_SESSION)
+        # session 模式的啟用條件同「分析近況」（找得到 claude 與 MCP 設定檔），與 API key 無關
+        self.assertEqual(config.claude, coach_chat.ClaudeCodeSettings())
+        self.assertEqual(config.disabled_reason, config.claude.disabled_reason)
         self.assertEqual(config.model, coach_chat.DEFAULT_MODEL)
         self.assertEqual(config.max_tokens, coach_chat.DEFAULT_MAX_TOKENS)
         self.assertFalse(config.allow_private_network)
 
     def test_reads_overrides_from_environment(self):
         env = {
+            "RC_COACH_BACKEND": "api",
             "ANTHROPIC_API_KEY": "not-a-real-key",
             "RC_COACH_MODEL": "claude-opus-5",
             "RC_COACH_MAX_TOKENS": "4096",
@@ -194,12 +204,30 @@ class TestChatConfig(unittest.TestCase):
         self.assertEqual(config.tool_result_max_chars, 111)
         self.assertTrue(config.allow_private_network)
 
+    def test_session_backend_needs_no_api_key(self):
+        settings = coach_chat.ClaudeCodeSettings(claude_bin=sys.executable, mcp_config=Path(__file__))
+        config = coach_chat.ChatConfig(api_key_present=False, claude=settings)
+        self.assertTrue(config.enabled)
+        self.assertIsNone(config.disabled_reason)
+
+    def test_api_backend_without_key_reason_is_one_full_sentence(self):
+        config = coach_chat.ChatConfig(api_key_present=False, backend=coach_chat.BACKEND_API)
+        self.assertFalse(config.enabled)
+        self.assertEqual(config.disabled_reason.count("ANTHROPIC_API_KEY"), 1)
+        self.assertIn("RC_COACH_BACKEND=api", config.disabled_reason)
+
+    def test_unknown_backend_is_rejected(self):
+        with mock.patch.dict(os.environ, {"RC_COACH_BACKEND": "cloud"}, clear=True):
+            with self.assertRaises(ValueError) as raised:
+                coach_chat.ChatConfig.from_env()
+        self.assertIn("RC_COACH_BACKEND", str(raised.exception))
+
     def test_api_key_never_appears_in_config(self):
         """金鑰不進本專案的資料結構——repr 被 log 出去也不會外洩（CLAUDE.md §🔐 3）。"""
         with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-secret-value"}, clear=True):
             config = coach_chat.ChatConfig.from_env()
         self.assertNotIn("sk-secret-value", repr(config))
-        self.assertNotIn("sk-secret-value", json.dumps(config.__dict__))
+        self.assertNotIn("sk-secret-value", json.dumps(config.__dict__, default=repr))
 
     def test_invalid_integer_is_reported_clearly(self):
         with mock.patch.dict(os.environ, {"RC_COACH_MAX_TOKENS": "八千"}, clear=True):
@@ -351,6 +379,58 @@ class TestTurnLoop(CoachChatTestCase):
         self.assertEqual([m["role"] for m in sent], ["user", "assistant", "user"])
         self.assertEqual(sent[0]["content"][0]["text"], "第一問")
         self.assertEqual(sent[2]["content"][0]["text"], "第二問")
+
+    def test_user_message_gets_date_block(self):
+        self.run_turn(FakeBackend([text_round("好。")]), today=datetime.date(2026, 10, 27))
+        stored = coach_chat_store.get_messages(self.conn, self.conversation_id)
+        self.assertEqual(stored[0]["content"][1], {"type": "text", "text": "〔日期〕2026-10-27（週二）"})
+
+    def test_memory_brief_is_sent_but_not_persisted(self):
+        """備忘只放進送模型的那份 messages（本回合學員訊息的第一個區塊），不落地。"""
+        coach_chat_store.append_turn(
+            self.conn, self.conversation_id,
+            [_user_text("〔分析近況〕\n問題"),
+             {"role": "assistant", "content": [{"type": "text", "text": "本週減量。\n**依據**：TSB −30"}]}],
+            kind=coach_chat_store.KIND_ANALYSIS,
+        )
+        backend = FakeBackend([tool_round([("toolu_1", "get_athlete_meta", {})]), text_round("好。")])
+        self.run_turn(backend, text="第二問", today=datetime.date.today())
+
+        for call in backend.calls:  # 工具往返的每一輪都要帶
+            current = call["messages"][2]
+            self.assertTrue(current["content"][0]["text"].startswith("〔備忘〕"))
+            self.assertIn("本週減量。", current["content"][0]["text"])
+            self.assertNotIn("TSB −30", current["content"][0]["text"])
+            self.assertEqual(current["content"][1]["text"], "第二問")
+        stored = coach_chat_store.get_messages(self.conn, self.conversation_id)
+        self.assertEqual(stored[2]["content"][0]["text"], "第二問")
+        self.assertNotIn("〔備忘〕", json.dumps(stored, ensure_ascii=False))
+
+    def test_memory_brief_includes_tracking_items(self):
+        """合併 B：追蹤事項段落也進備忘（N-35 ③）。"""
+        today = datetime.date(2026, 10, 27)
+        item_id = context_notes_store.add_tracking_item(
+            self.conn, self.athlete_id, "左膝外側跑完會痛", "2026-10-20"
+        )
+        context_notes_store.apply_tracking_action(
+            self.conn, self.athlete_id, item_id, "accept", today=datetime.date(2026, 10, 20)
+        )
+        brief = coach_chat.build_memory_brief(self.conn, self.athlete_id, today)
+        self.assertTrue(brief.startswith("〔備忘〕"))
+        self.assertIn("左膝外側跑完會痛", brief)
+        self.assertIn("followed_up", brief)  # 已滿 3 天，程式給的結論是要追問
+
+    def test_whitelisted_write_tool_is_executed_in_panel_mode(self):
+        backend = FakeBackend([
+            tool_round([("toolu_1", "record_daily_feel", {"date": "2026-03-10", "feel": "tired"})]),
+            text_round("記下了。"),
+        ])
+        events = self.run_turn(backend)
+        result = self.events_of(events, "tool_result")[0].data
+        self.assertNotIn("在 AI 教練對話框不可用", result["content"])
+        self.assertFalse(result["is_error"])
+        n = self.conn.execute("SELECT COUNT(*) AS n FROM daily_feel").fetchone()["n"]
+        self.assertEqual(n, 1)
 
     def test_thinking_blocks_are_stored_and_replayed_verbatim(self):
         thinking = {"type": "thinking", "thinking": "先想一下", "signature": "sig-xyz"}

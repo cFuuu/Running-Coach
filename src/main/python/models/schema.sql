@@ -649,6 +649,10 @@ CREATE TABLE IF NOT EXISTS coach_messages (
     role            TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content_json    TEXT NOT NULL,
     created_at      TEXT NOT NULL,
+    -- 2026-10-27（N-36 決策 4）：「分析近況」併入對話，報告存成對話裡的一回合。
+    -- 'analysis' 標記那一回合的全部訊息（學員的〔分析近況〕提問＋教練的報告），
+    -- 面板據此標示，近期建議（N-35 ③）也只從這種回合取結論。
+    kind            TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'analysis')),
     UNIQUE (conversation_id, seq)
 );
 
@@ -670,7 +674,11 @@ CREATE TABLE IF NOT EXISTS analysis_reports (
     tools_json      TEXT,
     error           TEXT,
     num_turns       INTEGER,
-    duration_ms     INTEGER
+    duration_ms     INTEGER,
+    -- 2026-10-27（N-36 決策 4）：報告存進的對話。本表改為只記執行紀錄，
+    -- 報告內容以對話為準；舊報告轉成「分析近況紀錄」對話後也以此標記已轉
+    -- （services/coach_analysis.migrate_reports_to_conversation，可重跑不重複）。
+    conversation_id INTEGER REFERENCES coach_conversations(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_analysis_reports_athlete

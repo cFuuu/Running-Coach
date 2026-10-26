@@ -1,20 +1,26 @@
 """AI 教練聊天的對話迴圈——dashboard 右側面板的後端（DASHBOARD_TASKS.md D.3）。
 
-這一層做四件事，其餘一概不做：
+兩種後端（`RC_COACH_BACKEND`，N-36 2026-10-27 決策 1）：
+- `session`（預設）：每次提問在背景跑一次 Claude Code（`claude -p`），用本機已登入的
+  Claude Code 額度、不需要 API key。實作在 `coach_chat_session.py`。
+- `api`：本模組的對話迴圈直接打 Anthropic API，保留待日後切回。
+
+本模組做這幾件事（兩種後端共用的部分也放這裡）：
 1. 組系統提示：`mcp.server.coach()` **原文** ＋ 面板脈絡補充（`_PANEL_CONTEXT_NOTE`）。
-2. 把 MCP 的**唯讀** tools 轉成 Anthropic 的 tool schema 餵給模型。
-3. 跑 tool_use → tool_result → 續問的迴圈，工具在同一個 process 內直接呼叫 MCP。
-4. 控制送進模型的體積（單一工具結果截尾、舊工具結果省略、歷史裁切）。
+2. 備忘（N-35 ③）：追蹤事項＋近期建議，見 `build_memory_brief()`。
+3. API 路徑：把 MCP 的對話框可用工具轉成 Anthropic 的 tool schema、跑 tool_use →
+   tool_result → 續問的迴圈（工具在同一個 process 內直接呼叫 MCP），並控制送進
+   模型的體積（單一工具結果截尾、舊工具結果省略、歷史裁切）。
 
 ⚠️ **行為約束層一字不改。** D.0 決策 1 推翻的只有「不自己呼叫 Anthropic API」，
 「不自建 App」的精神仍在：`coach()` 與 MCP 工具定義直接重用，Claude Code／
 Desktop 的 MCP 路徑照舊保留。`_PANEL_CONTEXT_NOTE` 接在 `coach()` 之後，比照
 PLAN.md §7.6 的風格層擴充點——它只補「這個介面有什麼／沒有什麼」，不碰任何約束。
 
-⚠️ **聊天只開放唯讀工具**（`mcp.server.READ_ONLY_TOOL_NAMES`）。
-`sync_garmin_data`／`generate_training_plan`／`add_context_note`／
-`save_external_workouts` 不進聊天——「呈現不等於決策、頁面無寫入路徑」的硬約束
-延伸到這裡。模型若仍點名寫入工具，本模組**不執行**，回一則 is_error 說明。
+⚠️ **聊天只開放 `mcp.server.PANEL_TOOL_NAMES`**（唯讀＋PLAN.md §10.2 白名單寫入）。
+其餘寫入工具（`sync_garmin_data`／`generate_training_plan`／`add_context_note`／
+`save_external_workouts`）不進聊天。模型若仍點名，本模組**不執行**，回一則 is_error
+說明。session 路徑以 `claude -p` 的 `--allowedTools`／`--disallowedTools` 套同一份清單。
 
 ⚠️ **憑證**：`ANTHROPIC_API_KEY` 由 `anthropic` SDK 自己從 `os.environ` 讀，
 本模組**不持有、不傳遞、不記錄**它（ChatConfig 只留一個布林值表示有沒有設）。
@@ -23,19 +29,21 @@ PLAN.md §7.6 的風格層擴充點——它只補「這個介面有什麼／沒
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import sqlite3
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol
 
 from mcp.server.context import ServerRequestContext
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
-from src.main.python.mcp.server import READ_ONLY_TOOL_NAMES, AppContext, coach, mcp
-from src.main.python.services import coach_chat_store
+from src.main.python.mcp.server import PANEL_TOOL_NAMES, AppContext, coach, mcp
+from src.main.python.services import coach_chat_store, coach_tracking
+from src.main.python.services.claude_session import ClaudeCodeSettings
 
 # --- 設定（全部走 os.environ，沿用 garmin_auth.py 讀 GARMINTOKENS 的做法）---
 #
@@ -81,26 +89,45 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+# 聊天後端（RC_COACH_BACKEND）
+BACKEND_SESSION = "session"
+BACKEND_API = "api"
+BACKENDS = (BACKEND_SESSION, BACKEND_API)
+
+
 @dataclass(frozen=True)
 class ChatConfig:
     """聊天端點的執行期設定。
 
     ⚠️ 刻意**不含** API key：`AsyncAnthropic()` 會自己從 `ANTHROPIC_API_KEY`
     讀，金鑰因此完全不進本專案的資料結構，也就不可能被某個 repr／log 帶出去。
-    這裡只留 `api_key_present` 決定聊天是否啟用。
+    這裡只留 `api_key_present` 決定 API 後端是否啟用。
+
+    backend＝session 時啟用條件同「分析近況」（找得到 claude 與 MCP 設定檔，
+    見 `claude`），不需要 API key。
     """
 
-    api_key_present: bool
+    api_key_present: bool = False
+    backend: str = BACKEND_SESSION
+    claude: ClaudeCodeSettings = field(default_factory=ClaudeCodeSettings)
     model: str = DEFAULT_MODEL
     max_tokens: int = DEFAULT_MAX_TOKENS
     history_max_chars: int = DEFAULT_HISTORY_MAX_CHARS
     tool_result_max_chars: int = DEFAULT_TOOL_RESULT_MAX_CHARS
     allow_private_network: bool = False
 
+    def __post_init__(self) -> None:
+        if self.backend not in BACKENDS:
+            raise ValueError(
+                f"RC_COACH_BACKEND 只能是 {'／'.join(BACKENDS)}，收到：{self.backend!r}"
+            )
+
     @classmethod
     def from_env(cls) -> "ChatConfig":
         return cls(
             api_key_present=bool(os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+            backend=os.environ.get("RC_COACH_BACKEND", "").strip().lower() or BACKEND_SESSION,
+            claude=ClaudeCodeSettings.from_env(),
             model=os.environ.get("RC_COACH_MODEL", "").strip() or DEFAULT_MODEL,
             max_tokens=_env_int("RC_COACH_MAX_TOKENS", DEFAULT_MAX_TOKENS),
             history_max_chars=_env_int(
@@ -114,32 +141,44 @@ class ChatConfig:
 
     @property
     def enabled(self) -> bool:
-        return self.api_key_present
+        return self.disabled_reason is None
 
     @property
     def disabled_reason(self) -> str | None:
-        return None if self.api_key_present else "未設定 ANTHROPIC_API_KEY"
+        """停用理由，完整一句、可直接顯示（前端不必再包一層說明）。"""
+        if self.backend == BACKEND_SESSION:
+            return self.claude.disabled_reason
+        if not self.api_key_present:
+            return "聊天設定為 API 模式（RC_COACH_BACKEND=api），但未設定 ANTHROPIC_API_KEY"
+        return None
 
 
 # --- 系統提示 ---
 
 # 接在 coach() 的 _OUTPUT_SHAPE 之後，比照 PLAN.md §7.6 的風格層擴充點。
-# **只描述這個介面的事實**（脈絡行從哪來、這裡有哪些工具），不新增、不放寬、
-# 也不重述任何行為約束——約束只有一份，在 mcp/server.py。
+# **只描述這個介面的事實**（自動附加的行從哪來、這裡能寫什麼），不新增、不放寬、
+# 也不重述任何行為約束——約束只有一份，在 mcp/server.py；寫入白名單的唯一來源是
+# mcp/server.py 的 PANEL_WRITE_TOOL_NAMES（PLAN.md §10），這裡只是說明。
 _PANEL_CONTEXT_NOTE = """\
 ## 這個介面
-你現在是透過學員的本機 dashboard 面板對話（不是 Claude Code）。
+你現在是透過學員的本機 dashboard 對話框對話（不是 Claude Code）。
 
-- 學員訊息末尾若出現〔檢視脈絡〕開頭的一行，那是 **dashboard 介面自動附加的**，
-  不是學員打的字。它只說明學員正在看哪一頁（view／session_id／range 等），
-  **本身不是數據**——需要數字仍要自己呼叫工具查。
-- **本面板沒有寫入工具。** 這裡只有唯讀查詢，`add_context_note`、
-  `generate_training_plan`、`save_external_workouts`、`sync_garmin_data`
-  一律不存在。學員要你同步 Garmin、產課表、或把「這週出差」記下來時，
-  **明說這個面板做不到，請改用 Claude Code**（那裡才有這些工具），
-  不要假裝記下了、也不要改用別的工具湊合。
-- 學員說今天累不累時同樣記不了（`record_daily_feel` 不在本面板），請他點
-  首頁「本週訓練狀況」下方的「今日體感狀況」按鈕。
+- 學員訊息裡〔日期〕開頭的一行是**介面自動加的**，表示學員送出這則訊息的日期；
+  〔檢視脈絡〕開頭的一行也是介面自動附加的，只說明學員正在看哪一頁
+  （view／session_id／range 等）。兩者都不是學員打的字，**本身也不是數據**——
+  需要數字仍要自己呼叫工具查。
+- 〔備忘〕開頭的段落是系統整理的追蹤事項與近期建議，近期建議是**當時**的判斷，
+  數字要重新查。
+- **這裡只開放少數寫入**（PLAN.md §10）：
+  - 追蹤事項：先問學員「要我追蹤這件事嗎？」，同意才提議建立；學員說好了或
+    不用再問時更新狀態。只能動你自己建立的追蹤事項。
+  - 記錄學員**明確說出**的今日體感（`record_daily_feel`）。說法對不上三級時先問
+    學員選哪一級，不要從「睡不好」之類的描述自己推斷；當天已經記過就不覆寫，
+    告訴學員已記為什麼。
+- 其餘寫入一律做不到：同步 Garmin（`sync_garmin_data`）、產生或重排課表
+  （`generate_training_plan`）、存跑班課表（`save_external_workouts`）、記一般情境筆記
+  （出差、生病等，`add_context_note`）、改個人設定、刪除任何東西。學員要求時
+  **明說這裡做不到，請改用 Claude Code**，不要假裝做了、也不要改用別的工具湊合。
 """
 
 
@@ -162,11 +201,57 @@ def build_system_blocks(system_text: str | None = None) -> list[dict[str, Any]]:
     ]
 
 
+# --- 備忘（N-35 ③）：每次對話與分析開頭帶入 ---
+#
+# 放在學員訊息裡（session 路徑放進 prompt、API 路徑只放進送模型的那份 messages），
+# 不放系統提示：系統提示有快取，備忘每天都會變。API 路徑**不落地**備忘——
+# 存下來的是學員實際說的話，備忘每次重新整理。
+
+MEMORY_BRIEF_PREFIX = "〔備忘〕"
+RECENT_ADVICE_HEADING = (
+    "## 近期建議（當時的建議，不是現在的事實，數字要重新查）"
+)
+
+
+def build_recent_advice_brief(
+    conn: sqlite3.Connection, athlete_id: int, today: datetime.date
+) -> str:
+    """近期建議段落：每份標日期；沒有就回空字串。"""
+    advice = coach_chat_store.list_recent_advice(conn, athlete_id, today)
+    if not advice:
+        return ""
+    parts = [RECENT_ADVICE_HEADING]
+    for item in advice:
+        day = datetime.date.fromisoformat(item["date"])
+        parts.append(f"### {coach_chat_store.date_label(day)}的分析近況\n{item['text']}")
+    return "\n\n".join(parts)
+
+
+def build_memory_brief(
+    conn: sqlite3.Connection, athlete_id: int, today: datetime.date
+) -> str:
+    """追蹤事項段落＋近期建議段落；兩者都沒有時回空字串（prompt 就不帶備忘）。"""
+    sections = [
+        s
+        for s in (
+            coach_tracking.build_tracking_brief(conn, athlete_id, today),
+            build_recent_advice_brief(conn, athlete_id, today),
+        )
+        if s.strip()
+    ]
+    if not sections:
+        return ""
+    return (
+        f"{MEMORY_BRIEF_PREFIX}以下是系統整理的資料，不是學員這次說的話。\n\n"
+        + "\n\n".join(sections)
+    )
+
+
 # --- 工具 ---
 
 
 async def build_tool_schemas(mcp_server: Any = mcp) -> list[dict[str, Any]]:
-    """把 MCP 的唯讀 tools 轉成 Anthropic 的 tool schema。
+    """把 MCP 的對話框可用 tools（PANEL_TOOL_NAMES）轉成 Anthropic 的 tool schema。
 
     MCP SDK 產生的 `input_schema` 已排除 `ctx` 參數、輸出即純 JSON Schema，
     可直接餵 Anthropic，不需要在這裡重寫任何欄位（重寫就會有兩份真相）。
@@ -179,7 +264,7 @@ async def build_tool_schemas(mcp_server: Any = mcp) -> list[dict[str, Any]]:
             "input_schema": tool.input_schema,
         }
         for tool in await mcp_server.list_tools()
-        if tool.name in READ_ONLY_TOOL_NAMES
+        if tool.name in PANEL_TOOL_NAMES
     ]
     if schemas:
         schemas[-1] = {**schemas[-1], "cache_control": {"type": "ephemeral"}}
@@ -228,15 +313,15 @@ async def execute_tool(
 ) -> tuple[str, bool]:
     """在 in-process MCP 上執行一個工具，回傳 `(文字結果, is_error)`。
 
-    - 名稱不在唯讀清單 → **不執行**，回 is_error 並說明去哪裡才有那個工具。
+    - 名稱不在 PANEL_TOOL_NAMES → **不執行**，回 is_error 並說明去哪裡才有那個工具。
     - `ToolError`（含 SDK 對未知工具與參數驗證失敗所拋的）→ is_error＋訊息。
       `UnexpectedToolError` 是它的子類，訊息只有 "Error executing tool <name>"，
       原始例外不外洩，符合 CLAUDE.md §🔐 3。
     """
-    if name not in READ_ONLY_TOOL_NAMES:
+    if name not in PANEL_TOOL_NAMES:
         return (
-            f"工具 `{name}` 在 AI 教練面板不可用：本面板只開放唯讀查詢。"
-            "同步資料、產生課表、記錄軟性輸入等寫入操作請學員改用 Claude Code。",
+            f"工具 `{name}` 在 AI 教練對話框不可用：這裡只開放查詢、追蹤事項與今日體感。"
+            "同步資料、產生課表、記錄一般情境筆記等寫入操作請學員改用 Claude Code。",
             True,
         )
 
@@ -485,6 +570,22 @@ def _safe_error_message(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+def _with_brief(
+    api_messages: list[dict[str, Any]], turn_len: int, brief: str
+) -> list[dict[str, Any]]:
+    """把備忘插成本回合學員提問的第一個區塊（只改送模型的副本，不落地）。
+
+    `api_messages` 是 prepare_messages_for_model 的深拷貝；歷史裁切只會在
+    純文字 user 回合處切，本回合整段一定保留在尾端。
+    """
+    if not brief:
+        return api_messages
+    index = max(0, len(api_messages) - turn_len)
+    message = api_messages[index]
+    message["content"] = [{"type": "text", "text": brief}, *message["content"]]
+    return api_messages
+
+
 async def stream_turn(
     *,
     conn: sqlite3.Connection,
@@ -492,17 +593,23 @@ async def stream_turn(
     backend: LLMBackend,
     conversation_id: int,
     text: str,
+    today: datetime.date | None = None,
     mcp_server: Any = mcp,
 ) -> AsyncIterator[ChatEvent]:
-    """跑完一回合對話，逐步產生要串流給前端的事件。
+    """跑完一回合對話（API 後端），逐步產生要串流給前端的事件。
 
     ⚠️ **一回合一交易**：整段成功走完才呼叫 `coach_chat_store.append_turn()`
     一次落地；發出 `error` 事件或中途斷線就完全不落地——**絕不留下沒有對應
     tool_result 的 tool_use**（下一回合送 API 會 400）。因此重試＝重送，
     不需要任何補償邏輯。
+
+    today：學員訊息的〔日期〕與備忘的基準日，預設本機今天（測試注入）。
     """
+    today = today or datetime.date.today()
     history = coach_chat_store.get_messages(conn, conversation_id)
-    turn: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": text}]}]
+    turn: list[dict[str, Any]] = [coach_chat_store.user_message(text, today)]
+    athlete_id = coach_chat_store.conversation_athlete_id(conn, conversation_id)
+    brief = build_memory_brief(conn, athlete_id, today) if athlete_id is not None else ""
 
     system = build_system_blocks()
     tools = await build_tool_schemas(mcp_server)
@@ -510,7 +617,9 @@ async def stream_turn(
 
     try:
         for round_index in range(MAX_TOOL_ROUNDS + 1):
-            api_messages = prepare_messages_for_model(history + turn, config)
+            api_messages = _with_brief(
+                prepare_messages_for_model(history + turn, config), len(turn), brief
+            )
 
             final: dict[str, Any] | None = None
             async for event in backend.astream(
