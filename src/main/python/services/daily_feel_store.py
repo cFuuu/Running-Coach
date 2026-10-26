@@ -18,6 +18,8 @@ from typing import Any
 
 # 由累到好排列；與 schema.sql 的 CHECK 約束一致。
 FEEL_LEVELS = ("tired", "normal", "energetic")
+# 給教練回覆用的中文名稱，與 dashboard 首頁的三個按鈕同名
+FEEL_LABELS = {"tired": "疲憊", "normal": "普通", "energetic": "充沛"}
 SOURCES = ("dashboard", "coach", "backfill")
 
 

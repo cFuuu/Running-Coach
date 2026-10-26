@@ -49,6 +49,14 @@ class TestToolClassification(unittest.TestCase):
         self.assertLessEqual(PANEL_WRITE_TOOL_NAMES, WRITE_TOOL_NAMES)
         self.assertEqual(PANEL_TOOL_NAMES, READ_ONLY_TOOL_NAMES | PANEL_WRITE_TOOL_NAMES)
 
+    def test_tracking_tools_are_classified(self):
+        """N-35：讀取為唯讀；提議與更新是寫入，且在 §10.2 白名單內。"""
+        self.assertIn("get_tracking_items", READ_ONLY_TOOL_NAMES)
+        for name in ("propose_tracking_item", "update_tracking_item"):
+            with self.subTest(tool=name):
+                self.assertIn(name, WRITE_TOOL_NAMES)
+                self.assertIn(name, PANEL_WRITE_TOOL_NAMES)
+
     def test_protected_writes_never_reach_the_panel(self):
         """PLAN.md §10.3：這些寫入在 Dashboard 對話框一律禁止，只能走 Claude Code。"""
         for name in ("sync_garmin_data", "generate_training_plan", "add_context_note",

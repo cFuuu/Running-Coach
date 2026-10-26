@@ -26,18 +26,23 @@ from src.main.python.mcp.server import (
     get_recovery_impact,
     get_session_detail,
     get_today,
+    get_tracking_items,
     get_wellness_trend,
     list_running_sessions,
+    propose_tracking_item,
     record_daily_feel,
     save_external_workouts,
+    update_tracking_item,
 )
 
 START = datetime.date(2026, 8, 1)
 
 
-def _fake_ctx(conn):
+def _fake_ctx(conn, panel_mode=False):
     return SimpleNamespace(
-        request_context=SimpleNamespace(lifespan_context=SimpleNamespace(db=conn))
+        request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(db=conn, panel_mode=panel_mode)
+        )
     )
 
 
@@ -469,6 +474,88 @@ class TestDailyFeelTools(unittest.TestCase):
     def test_invalid_feel_returns_reason_instead_of_raising(self):
         result = record_daily_feel(_fake_ctx(self.conn), date="2026-10-22", feel="累")
         self.assertFalse(result["saved"])
+
+    def test_claude_code_path_still_overwrites(self):
+        record_daily_feel(_fake_ctx(self.conn), date="2026-10-22", feel="tired")
+        result = record_daily_feel(_fake_ctx(self.conn), date="2026-10-22", feel="energetic")
+        self.assertTrue(result["saved"])
+        self.assertEqual(result["feel"], "energetic")
+
+    def test_panel_mode_does_not_overwrite_existing_feel(self):
+        """PLAN.md §10：對話框裡當天已有紀錄就不覆寫，回已記的內容。"""
+        record_daily_feel(_fake_ctx(self.conn), date="2026-10-22", feel="tired", note="原話")
+        result = record_daily_feel(
+            _fake_ctx(self.conn, panel_mode=True), date="2026-10-22", feel="energetic"
+        )
+        self.assertFalse(result["saved"])
+        self.assertIn("已記為疲憊", result["reason"])
+        self.assertEqual(result["existing"]["feel"], "tired")
+        feels = get_daily_feel(_fake_ctx(self.conn), start_date="2026-10-22", end_date="2026-10-22")
+        self.assertEqual((feels[0]["feel"], feels[0]["note"]), ("tired", "原話"))
+
+    def test_panel_mode_writes_when_day_is_empty(self):
+        result = record_daily_feel(
+            _fake_ctx(self.conn, panel_mode=True), date="2026-10-23", feel="normal"
+        )
+        self.assertTrue(result["saved"])
+        self.assertEqual(result["source"], "coach")
+
+
+class TestTrackingTools(unittest.TestCase):
+    """N-35 追蹤事項的 MCP 介面。"""
+
+    def setUp(self):
+        self.conn = get_connection(":memory:")
+        _build_athlete(self.conn)
+        self.conn.commit()
+        self.today = datetime.date.today().isoformat()
+
+    def test_propose_then_accept_then_resolve(self):
+        proposed = propose_tracking_item(
+            _fake_ctx(self.conn, panel_mode=True), note="左膝外側跑完會痛", start_date="2026-10-20"
+        )
+        self.assertTrue(proposed["saved"])
+        item_id = proposed["item"]["id"]
+        self.assertEqual(proposed["item"]["action"], "await_consent")
+
+        listed = get_tracking_items(_fake_ctx(self.conn))
+        self.assertEqual(listed["today"], self.today)
+        self.assertEqual([i["id"] for i in listed["items"]], [item_id])
+
+        accepted = update_tracking_item(_fake_ctx(self.conn), item_id=item_id, action="accept")
+        self.assertTrue(accepted["saved"])
+        self.assertEqual(accepted["item"]["tracking_status"], "tracking")
+        self.assertEqual(accepted["item"]["last_followup_date"], self.today)
+        self.assertEqual(accepted["item"]["action"], "none")
+
+        resolved = update_tracking_item(_fake_ctx(self.conn), item_id=item_id, action="resolve")
+        self.assertEqual(resolved["item"]["tracking_status"], "resolved")
+        self.assertEqual(resolved["item"]["closed_date"], self.today)
+        self.assertEqual(get_tracking_items(_fake_ctx(self.conn))["items"], [])
+
+    def test_propose_rejects_bad_input(self):
+        result = propose_tracking_item(_fake_ctx(self.conn), note="膝蓋痛", start_date="昨天")
+        self.assertFalse(result["saved"])
+
+    def test_update_refuses_plain_context_note(self):
+        note = add_context_note(_fake_ctx(self.conn), note="出差", start_date="2026-10-20")
+        result = update_tracking_item(_fake_ctx(self.conn), item_id=note["note_id"], action="stop")
+        self.assertFalse(result["saved"])
+        self.assertIn("一般情境筆記", result["reason"])
+
+    def test_update_reports_invalid_transition(self):
+        item_id = propose_tracking_item(
+            _fake_ctx(self.conn), note="感冒", start_date="2026-10-26"
+        )["item"]["id"]
+        result = update_tracking_item(_fake_ctx(self.conn), item_id=item_id, action="followed_up")
+        self.assertFalse(result["saved"])
+        self.assertIn("accept", result["reason"])
+
+    def test_constraints_cover_tracking(self):
+        for name in ("get_tracking_items", "propose_tracking_item", "update_tracking_item"):
+            with self.subTest(tool=name):
+                self.assertIn(name, _BEHAVIOR_CONSTRAINTS)
+        self.assertIn("### 9. 追蹤事項", _BEHAVIOR_CONSTRAINTS)
 
     def test_constraints_mention_feel_tools(self):
         self.assertIn("record_daily_feel", _BEHAVIOR_CONSTRAINTS)

@@ -58,6 +58,7 @@ from src.main.python.api import routes_analysis
 from src.main.python.api import routes_chat
 from src.main.python.api import routes_dashboard
 from src.main.python.api import routes_sync
+from src.main.python.api import routes_tracking
 from src.main.python.models.db import get_connection
 from src.main.python.services import analysis_report_store
 from src.main.python.services.coach_analysis import AnalysisConfig
@@ -118,6 +119,7 @@ def create_app(
 
     app.include_router(routes_dashboard.router)
     app.include_router(routes_chat.router)
+    app.include_router(routes_tracking.router)
     app.include_router(routes_sync.router)
     app.include_router(routes_analysis.router)
     # 路由層宣告的預設 dependency 只是佔位，這裡換成真正連到 db_path 的版本

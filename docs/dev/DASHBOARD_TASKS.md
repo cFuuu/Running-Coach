@@ -544,6 +544,23 @@ event: error        data: {"message": "..."}      ← 之後串流結束；該�
 狀態碼：未設 key → 503；來源不允許 → 403；對話不存在 → 404；`text` 空白 → 422。
 （2026-10-25 N-33 修訂：未設 key 時只有建立對話與發問回 503，讀取與刪除對話照常，讓面板仍能瀏覽紀錄。）
 
+**追蹤事項（2026-10-27 新增，TODO N-35 ②，`api/routes_tracking.py`）**：只套來源限制（`require_chat_client`），**不要求聊天啟用**。
+```
+GET  /api/chat/tracking?athlete_id=
+     → {"items": [{"id": 12, "note": "左膝外側跑完會痛", "start_date": "2026-10-20",
+                   "tracking_status": "tracking", "status_label": "追蹤中",
+                   "last_followup_date": "2026-10-24", "last_mentioned_date": "2026-10-24",
+                   "stale_asked_date": null, "closed_date": null, "created_at": "...",
+                   "action": "follow_up", "next_followup_date": "2026-10-27",
+                   "action_reason": "上次追問 10/24，已滿 3 天"}]}
+       只列進行中（tracking_status = proposed 待同意／tracking 追蹤中），依 start_date 排序；形狀同 MCP get_tracking_items 的 items
+       action：await_consent／follow_up／ask_continue／none；next_followup_date 已到期時為今天，待同意為 null
+POST /api/chat/tracking/{id}   body {"action": "accept"|"decline"|"resolve"|"stop"}
+     → 200 更新後的事項（同上單筆形狀）
+       accept 待同意→追蹤中；decline 待同意→不再追蹤；resolve 追蹤中→已痊癒；stop 追蹤中→不再追蹤（結案設 closed_date）
+```
+狀態碼：找不到或是一般情境筆記 → 404；action 不在上列 → 422；目前狀態不能做這個動作（例如已結案）→ 400；來源不允許 → 403。`detail` 皆為中文說明。追問紀錄（followed_up／mentioned／stale_asked）只有教練在對話裡用 MCP 記，不開放給按鈕。
+
 **來源限制（`require_chat_client`）**：`ipaddress.ip_address(request.client.host)`——解析失敗一律 403（fail closed；`TestClient` 預設 host 是字串 `"testclient"`，測試須傳 `client=("127.0.0.1", 1)`）；`is_loopback` 放行（涵蓋 `::1`）；否則僅當 `RC_CHAT_ALLOW_PRIVATE_NETWORK=1` 且 `is_private` **或屬 `100.64.0.0/10`**（Tailscale；Python 3.12 對此段 `is_private` 為 False，須明列）才放行。uvicorn 只信任來自 127.0.0.1 的 `X-Forwarded-For`，區網裝置無法偽造。
 
 **設定**（全部走 `os.environ`，沿用 `garmin_auth.py` 讀 `GARMINTOKENS` 的做法；專案沒有 dotenv 載入器，由使用者 shell 設定）

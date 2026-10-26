@@ -15,11 +15,12 @@ AI 對話可呼叫的 tools（Phase 3 第一步）。
 athlete_id 慣例沿用 dashboard_queries.resolve_athlete_id()：tool 參數
 athlete_id 為 optional，未提供時預設取資料庫中第一位 athlete（單人自用情境）。
 
-寫入型 tool 有四個：generate_training_plan（產生課表）、
+寫入型 tool 有七個：generate_training_plan（產生課表）、
 sync_garmin_data（從 Garmin Connect 增量同步資料）、
-save_external_workouts（落地跑團／實體教練的課表，N-2）與
-add_context_note（記錄學員的軟性輸入，§7.5）。其餘皆為唯讀查詢，
-description 已明確標示副作用。
+save_external_workouts（落地跑團／實體教練的課表，N-2）、
+add_context_note（記錄學員的軟性輸入，§7.5）、record_daily_feel（記錄每日體感）、
+propose_tracking_item 與 update_tracking_item（追蹤事項的提議與狀態更新，N-35）。
+其餘皆為唯讀查詢，description 已明確標示副作用。
 
 ⚠️ 刻意**不**提供直接查 Garmin API 的查詢型 tool（如 get_hrv_status）：
 資料一律先進資料庫，再由既有的唯讀 tools 查詢。理由見 PLAN.md §1
@@ -45,6 +46,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 
 from src.main.python.models.db import get_connection
+from src.main.python.services import coach_tracking
 from src.main.python.services import context_notes_store
 from src.main.python.services import daily_feel_store
 from src.main.python.services import dashboard_queries
@@ -139,6 +141,7 @@ READ_ONLY_TOOL_NAMES = frozenset(
         "get_today",
         "get_context_notes",
         "get_daily_feel",
+        "get_tracking_items",
     }
 )
 
@@ -149,15 +152,23 @@ WRITE_TOOL_NAMES = frozenset(
         "add_context_note",
         "save_external_workouts",
         "record_daily_feel",
+        "propose_tracking_item",
+        "update_tracking_item",
     }
 )
 
 # Dashboard 對話框（右側面板／手機全螢幕，含「分析近況」）允許的寫入工具——
 # PLAN.md §10.2 白名單的唯一來源。API 路徑與 `claude -p` 路徑都從這裡取，
 # 不各記一份（§10.5）。新增寫入型工具時**預設不放進來**，要先改 §10.2。
+#   record_daily_feel      學員明說的體感；panel 模式當天已有紀錄不覆寫
+#   propose_tracking_item  教練自建的追蹤事項（先問同意，建立為待同意）
+#   update_tracking_item   追蹤事項的同意／追問紀錄／結案；只能動追蹤事項，
+#                          一般情境筆記一律拒絕（由 context_notes_store 把關）
 PANEL_WRITE_TOOL_NAMES = frozenset(
     {
         "record_daily_feel",
+        "propose_tracking_item",
+        "update_tracking_item",
     }
 )
 
@@ -654,11 +665,33 @@ def record_daily_feel(
     **不要代為判斷**。具體原因（睡不好、腳緊）放 note，記原話。
     跨多天的情境（出差、生病）仍用 add_context_note。
 
+    ⚠️ 在 Dashboard 對話框裡（PLAN.md §10），當天已有紀錄就**不覆寫**，回傳
+    `saved: False` 與 `existing`（已記的內容）——照實告訴學員已記為什麼，
+    要改請學員在 Dashboard 首頁的體感按鈕自己改。
+
     ⚠️ 體感永遠不進事實層、不參與任何計算（見 get_daily_feel）。
     """
     resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
     if resolved_athlete_id is None:
         return {"saved": False, "reason": "資料庫中沒有任何學員資料"}
+    if _is_panel(ctx):
+        try:
+            existing = daily_feel_store.get_feels_in_range(
+                _conn(ctx), resolved_athlete_id, date, date
+            )
+        except ValueError as exc:
+            return {"saved": False, "reason": str(exc)}
+        if existing:
+            row = existing[0]
+            label = daily_feel_store.FEEL_LABELS.get(row["feel"], row["feel"])
+            return {
+                "saved": False,
+                "reason": (
+                    f"{row['date']} 已記為{label}，不覆寫。"
+                    "學員要改請在 Dashboard 首頁的體感按鈕自己改。"
+                ),
+                "existing": row,
+            }
     try:
         row = daily_feel_store.set_feel(
             _conn(ctx), resolved_athlete_id, date, feel, "coach", note
@@ -666,6 +699,112 @@ def record_daily_feel(
     except ValueError as exc:
         return {"saved": False, "reason": str(exc)}
     return {"saved": True, **row}
+
+
+@mcp.tool()
+def get_tracking_items(ctx: Context[AppContext], athlete_id: int | None = None) -> dict:
+    """取得進行中的**追蹤事項**（受傷、感冒等學員同意要持續關注的狀況），
+    每項附上程式算好的「這次該做的事」。**每次對話開頭先查一次。**
+
+    回傳 `{"today": "YYYY-MM-DD", "items": [...]}`，每項含 `id`、`note`（學員原話）、
+    `start_date`、`tracking_status`（proposed 待同意／tracking 追蹤中）、
+    各日期欄，以及：
+    - `action`：`await_consent` 等學員同意／`follow_up` 這次主動追問近況／
+      `ask_continue` 學員 30 天沒提起，問一次「還要繼續追蹤嗎？」／`none` 這次不用主動問
+    - `action_reason`：一句話說明依據（例如「上次追問 10/24，已滿 3 天」）
+    - `next_followup_date`：下次該主動問的日子
+
+    ⚠️ **照 action 做，不要自己做日期相減**——「該不該問」已由程式依
+    「每件事最多每 3 天追問一次、30 天沒提起只問一次」算好。
+
+    ⚠️ 追蹤事項是學員自述，**不是事實層資料，永遠不進任何計算**；回述事實清單時
+    與量測數據分開列出。不做診斷、不給治療建議（行為約束第 6 條）。
+
+    athlete_id 省略時預設取資料庫中第一位學員。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    today = datetime.date.today()
+    if resolved_athlete_id is None:
+        return {"today": today.isoformat(), "items": []}
+    return {
+        "today": today.isoformat(),
+        "items": coach_tracking.get_open_items(_conn(ctx), resolved_athlete_id, today),
+    }
+
+
+@mcp.tool()
+def propose_tracking_item(
+    ctx: Context[AppContext],
+    note: str,
+    start_date: str,
+    athlete_id: int | None = None,
+) -> dict:
+    """⚠️ 會寫入資料庫：建立一筆**待學員同意**的追蹤事項。
+
+    適用情境：學員提到受傷、疼痛、生病這類**會持續一段時間、需要之後再關心**
+    的狀況（「左膝外側跑完會痛」「足底筋膜炎又發作」「感冒第二天」）。
+
+    ⚠️ 呼叫前先在對話裡問學員「要我追蹤這件事嗎？」。本工具只建立為待同意
+    （proposed），學員同意後再以 update_tracking_item 記 `accept`、不要就記 `decline`。
+    ⚠️ **不要**把一次性的小事拿來提議（「跑完腿有點痠」「今天有點累」）——
+    那會讓學員被一直追問。一次性的情境用 add_context_note 或 record_daily_feel。
+    ⚠️ note 記**學員原話**，不要代為摘要、診斷或分級。
+
+    start_date：狀況開始的日子（YYYY-MM-DD），學員沒說就用今天。
+    建立前先用 get_tracking_items 看看同一件事是否已在追蹤，不要重複建立。
+
+    追蹤事項永遠不進事實層、不參與任何計算。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return {"saved": False, "reason": "資料庫中沒有任何學員資料"}
+    try:
+        item_id = context_notes_store.add_tracking_item(
+            _conn(ctx), resolved_athlete_id, note, start_date
+        )
+    except ValueError as exc:
+        return {"saved": False, "reason": str(exc)}
+    item = context_notes_store.get_tracking_item(_conn(ctx), resolved_athlete_id, item_id)
+    return {
+        "saved": True,
+        "item": coach_tracking.to_public_item(item, datetime.date.today()),
+    }
+
+
+@mcp.tool()
+def update_tracking_item(
+    ctx: Context[AppContext],
+    item_id: int,
+    action: str,
+    athlete_id: int | None = None,
+) -> dict:
+    """⚠️ 會寫入資料庫：更新一筆追蹤事項的狀態，或記下今天的追問／提起。
+
+    action（日期一律記為今天，由程式填）：
+    - `accept`：學員同意追蹤（待同意 → 追蹤中）
+    - `decline`：學員說不用追蹤（待同意 → 不再追蹤）
+    - `followed_up`：你這次已主動追問過近況
+    - `mentioned`：學員今天**自己主動**提到這件事
+    - `stale_asked`：你這次問過「還要繼續追蹤嗎？」
+    - `resolve`：學員說好了（追蹤中 → 已痊癒）
+    - `stop`：學員說不用再追蹤（追蹤中 → 不再追蹤）
+
+    ⚠️ 結案（resolve／stop／decline）只能依學員明確的回答，**不可自行判斷已經好了**；
+    學員 30 天沒提起也不代表好了。
+    ⚠️ 只能動追蹤事項；一般情境筆記（add_context_note 記的）一律拒絕，不得藉此修改或結案。
+    不合法的狀態轉換會回 `saved: False` 與原因。
+    """
+    resolved_athlete_id = dashboard_queries.resolve_athlete_id(_conn(ctx), athlete_id)
+    if resolved_athlete_id is None:
+        return {"saved": False, "reason": "資料庫中沒有任何學員資料"}
+    today = datetime.date.today()
+    try:
+        item = context_notes_store.apply_tracking_action(
+            _conn(ctx), resolved_athlete_id, item_id, action, today
+        )
+    except (context_notes_store.TrackingItemNotFound, context_notes_store.TrackingActionError) as exc:
+        return {"saved": False, "reason": exc.args[0]}
+    return {"saved": True, "item": coach_tracking.to_public_item(item, today)}
 
 
 @mcp.tool()
@@ -824,6 +963,20 @@ _BEHAVIOR_CONSTRAINTS = """\
   更不可拿它調整任何閾值（約束 3）。與規則判定不一致時，兩者並列、說明各自依據，
   由學員決定。
 - 它也不進事實層的計算；回述事實清單（約束 4）時列為「Garmin 參考」。
+
+### 9. 追蹤事項
+受傷、疼痛、生病這類要持續關注的狀況，追蹤到學員說好了或說不用再追蹤為止。
+- 學員提到這類狀況時，**先問「要我追蹤這件事嗎？」**，用 `propose_tracking_item`
+  記學員原話（建立為待同意），學員同意再記 `accept`、不要就記 `decline`。
+  「跑完腿有點痠」這種一次性的小事不要提議追蹤。
+- 每次對話先看 `get_tracking_items` 每項的 `action`，**照程式的結論做，不要自己算日期**：
+  `follow_up` 就主動問近況、`ask_continue` 就問一次「還要繼續追蹤嗎？」、`none` 就不主動問。
+- 用 `update_tracking_item` 記下發生的事：追問過記 `followed_up`、問過要不要繼續記
+  `stale_asked`、學員自己主動提到記 `mentioned`。
+- 學員說好了記 `resolve`，說不用再問記 `stop`；**只依學員明確的回答結案**，
+  不可自行判斷已經好了，30 天沒提起也不代表好了。
+- 不得結案或修改一般情境筆記（`add_context_note` 記的）。追蹤事項同樣是學員自述，
+  不進事實層；涉及傷病仍守約束 6。
 """
 
 _OUTPUT_SHAPE = """\

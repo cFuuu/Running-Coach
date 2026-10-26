@@ -460,6 +460,82 @@ class TestAthleteProfileRecoveryThresholdMigration(unittest.TestCase):
                 conn.close()
 
 
+class TestContextNotesTrackingMigration(unittest.TestCase):
+    """2026-10-27（N-35）：context_notes 加追蹤事項欄位，既有筆記一律為 none。"""
+
+    NEW_COLUMNS = (
+        "tracking_status", "last_followup_date", "last_mentioned_date",
+        "stale_asked_date", "closed_date",
+    )
+
+    def _build_legacy_db(self, db_path: Path) -> None:
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE athlete_profile (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE context_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                athlete_id INTEGER NOT NULL REFERENCES athlete_profile(id),
+                start_date TEXT NOT NULL,
+                end_date TEXT,
+                note TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                CHECK (end_date IS NULL OR end_date >= start_date)
+            )
+            """
+        )
+        conn.execute("INSERT INTO athlete_profile (name, updated_at) VALUES ('測試學員', 'x')")
+        conn.execute(
+            "INSERT INTO context_notes (athlete_id, start_date, end_date, note, created_at) "
+            "VALUES (1, '2026-09-01', '2026-09-05', '出差', 'x'), (1, '2026-09-10', NULL, '睡不好', 'x')"
+        )
+        conn.commit()
+        conn.close()
+
+    def test_legacy_rows_become_none_and_keep_their_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy_notes.db"
+            self._build_legacy_db(db_path)
+            for _ in range(2):  # 第二次開啟（遷移重跑）不可報錯
+                conn = get_connection(db_path)
+                columns = {row["name"] for row in conn.execute("PRAGMA table_info(context_notes)")}
+                rows = conn.execute(
+                    "SELECT note, end_date, tracking_status, closed_date FROM context_notes ORDER BY id"
+                ).fetchall()
+                conn.close()
+                for column in self.NEW_COLUMNS:
+                    self.assertIn(column, columns)
+                self.assertEqual(
+                    [tuple(r) for r in rows],
+                    [("出差", "2026-09-05", "none", None), ("睡不好", None, "none", None)],
+                )
+
+    def test_migrated_column_rejects_unknown_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy_notes.db"
+            self._build_legacy_db(db_path)
+            conn = get_connection(db_path)
+            try:
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute("UPDATE context_notes SET tracking_status = 'severe'")
+            finally:
+                conn.close()
+
+    def test_new_database_defaults_to_none(self):
+        conn = get_connection(":memory:")
+        conn.execute("INSERT INTO athlete_profile (name, updated_at) VALUES ('測試學員', 'x')")
+        conn.execute(
+            "INSERT INTO context_notes (athlete_id, start_date, note, created_at) "
+            "VALUES (1, '2026-09-01', '出差', 'x')"
+        )
+        status = conn.execute("SELECT tracking_status FROM context_notes").fetchone()[0]
+        conn.close()
+        self.assertEqual(status, "none")
+
+
 class TestFixLactatePaceUnit(unittest.TestCase):
     """2026-10-22：既有的乳酸閾值配速以錯誤單位存入（speed×1000），一次性改成 100/speed。"""
 

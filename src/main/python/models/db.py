@@ -102,6 +102,19 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     # 2026-10-24：逐點經緯度，供路線地圖（N-32，見 schema.sql 註解）
     ("activity_records", "lat", "REAL"),
     ("activity_records", "lon", "REAL"),
+    # 2026-10-27：追蹤事項（N-35，見 schema.sql 註解）。SQLite 的 ADD COLUMN
+    # 可帶 NOT NULL＋非 NULL 的 DEFAULT 與 CHECK（3.37 起會對既有列檢查），
+    # 既有筆記因此自動成為 'none'，不必另外回填。
+    (
+        "context_notes",
+        "tracking_status",
+        "TEXT NOT NULL DEFAULT 'none' "
+        "CHECK (tracking_status IN ('none', 'proposed', 'tracking', 'resolved', 'dismissed'))",
+    ),
+    ("context_notes", "last_followup_date", "TEXT"),
+    ("context_notes", "last_mentioned_date", "TEXT"),
+    ("context_notes", "stale_asked_date", "TEXT"),
+    ("context_notes", "closed_date", "TEXT"),
 ]
 
 

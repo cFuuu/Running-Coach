@@ -561,14 +561,37 @@ CREATE TABLE IF NOT EXISTS training_plan (
 -- activities／daily_wellness 對齊；累積數十筆後回看實際內容，再決定是否結構化。
 --
 -- 日期範圍：start_date 為必要，end_date 可為 NULL（表示單日，或影響仍在
--- 持續、結束日未知）。查詢時 COALESCE(end_date, start_date) 即為涵蓋區間末日。
+-- 持續、結束日未知）。一般筆記查詢時 COALESCE(end_date, start_date) 即為涵蓋
+-- 區間末日；追蹤事項的涵蓋末日另見下段。
+--
+-- 追蹤事項（2026-10-26 TODO N-35，Fu 定案）：受傷、感冒這類要持續關注的狀況，
+-- 教練問過學員同意後追蹤到學員說好了或不用再追蹤。tracking_status 是**生命週期**
+-- 而不是分類，因此與上面「不設類型／嚴重度」不衝突：它不描述這件事是什麼、
+-- 有多嚴重（那些仍只在 note 原話裡），只記錄「教練現在該不該問、問到哪裡了」，
+-- 值由學員的回答與按鈕決定，不由教練或程式判斷內容後填入。
+--   none       一般情境筆記（出差這類有明確日期的；既有筆記皆為此值）
+--   proposed   教練提議追蹤、等學員同意
+--   tracking   追蹤中
+--   resolved   學員說好了（已痊癒）
+--   dismissed  學員不同意追蹤，或說不用再追蹤
+-- 日期欄皆為 YYYY-MM-DD：last_followup_date 上次追問、last_mentioned_date 學員
+-- 最後主動提起、stale_asked_date 問過「還要繼續追蹤嗎」、closed_date 結案日。
+-- 「該不該追問」由 services/coach_tracking.py 依這些日期算好，不交給模型做日期相減。
+-- 涵蓋末日：proposed／tracking 視為持續到今天（修 end_date 為 NULL 隔天就從
+-- 教練視野消失的缺陷）；resolved／dismissed 以 closed_date 為末日（若比 end_date 晚）。
 CREATE TABLE IF NOT EXISTS context_notes (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    athlete_id      INTEGER NOT NULL REFERENCES athlete_profile(id),
-    start_date      TEXT NOT NULL,
-    end_date        TEXT,
-    note            TEXT NOT NULL,
-    created_at      TEXT NOT NULL,
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    athlete_id          INTEGER NOT NULL REFERENCES athlete_profile(id),
+    start_date          TEXT NOT NULL,
+    end_date            TEXT,
+    note                TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    tracking_status     TEXT NOT NULL DEFAULT 'none'
+                        CHECK (tracking_status IN ('none', 'proposed', 'tracking', 'resolved', 'dismissed')),
+    last_followup_date  TEXT,
+    last_mentioned_date TEXT,
+    stale_asked_date    TEXT,
+    closed_date         TEXT,
     CHECK (end_date IS NULL OR end_date >= start_date)
 );
 
