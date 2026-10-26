@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from src.main.python.mcp.server import READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES, coach
+from src.main.python.services.coach_chat import DEFAULT_MODEL
 
 # .mcp.json 裡本專案 MCP server 的名稱；Claude Code 的工具全名是
 # mcp__<server>__<tool>。與 .mcp.json 的 key 不一致時工具會全部對不上
@@ -80,7 +81,9 @@ class AnalysisConfig:
     claude_bin: str = "claude"
     mcp_config: Path = DEFAULT_MCP_CONFIG
     timeout_sec: int = DEFAULT_TIMEOUT_SEC
-    model: str | None = None
+    # 預設與聊天的 API 路徑同一個模型（Sonnet 系列，`claude -p --model sonnet` 自動用最新版），
+    # 不再沿用 Claude Code 的全域設定（會隨學員在 Claude Code 切換模型而變，Dashboard 上看不出來）
+    model: str = DEFAULT_MODEL
     allow_private_network: bool = False
 
     @classmethod
@@ -90,7 +93,7 @@ class AnalysisConfig:
             claude_bin=os.environ.get("RC_ANALYSIS_CLAUDE_BIN", "").strip() or "claude",
             mcp_config=Path(os.environ.get("RC_ANALYSIS_MCP_CONFIG", "").strip() or DEFAULT_MCP_CONFIG),
             timeout_sec=int(timeout_raw) if timeout_raw else DEFAULT_TIMEOUT_SEC,
-            model=os.environ.get("RC_ANALYSIS_MODEL", "").strip() or None,
+            model=os.environ.get("RC_ANALYSIS_MODEL", "").strip() or DEFAULT_MODEL,
             # 與聊天面板同一個開關：分析同樣會把個人健康資料送出本機、消耗額度
             allow_private_network=os.environ.get("RC_CHAT_ALLOW_PRIVATE_NETWORK", "")
             .strip().lower() in ("1", "true", "yes", "on"),

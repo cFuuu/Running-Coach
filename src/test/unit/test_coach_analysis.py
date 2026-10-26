@@ -7,10 +7,12 @@
 
 import json
 import logging
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -19,7 +21,7 @@ from src.main.python.api.app import create_app
 from src.main.python.mcp.server import READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES, coach
 from src.main.python.models.db import get_connection
 from src.main.python.services import analysis_report_store as store
-from src.main.python.services import coach_analysis
+from src.main.python.services import coach_analysis, coach_chat
 from src.main.python.services.coach_analysis import AnalysisConfig
 from src.test.unit.fixtures import build_fixture_db
 
@@ -106,6 +108,16 @@ class TestBuildCommand(unittest.TestCase):
 
     def test_system_prompt_starts_with_coach_constraints_verbatim(self):
         self.assertTrue(self._value("--append-system-prompt").startswith(coach()))
+
+    def test_model_defaults_to_the_chat_api_model(self):
+        """session 路徑模擬日後打 API：預設與聊天同一個模型，不沿用 Claude Code 全域設定。"""
+        self.assertEqual(self._value("--model"), coach_chat.DEFAULT_MODEL)
+
+    def test_model_can_be_overridden_by_env(self):
+        with mock.patch.dict(os.environ, {"RC_ANALYSIS_MODEL": "claude-opus-5-5"}):
+            self.assertEqual(AnalysisConfig.from_env().model, "claude-opus-5-5")
+        with mock.patch.dict(os.environ, {"RC_ANALYSIS_MODEL": ""}):
+            self.assertEqual(AnalysisConfig.from_env().model, coach_chat.DEFAULT_MODEL)
 
     def test_disabled_when_claude_missing(self):
         cfg = AnalysisConfig(claude_bin="definitely-not-a-real-binary-xyz")

@@ -756,5 +756,62 @@ class TestAnthropicBackendStreamParsing(unittest.TestCase):
         self.assertEqual(body["max_tokens"], 1024)
 
 
+class TestModelFamilyResolution(unittest.TestCase):
+    """設定只寫系列名稱（sonnet）時，API 路徑查模型清單換成最新的 ID（2026-10-27 Fu）。
+
+    用真的 AsyncAnthropic ＋ mock transport 回 /v1/models，連 SDK 的分頁解析一起測。
+    """
+
+    MODELS = [
+        {"type": "model", "id": "claude-opus-5-5", "display_name": "Opus", "created_at": "2026-09-01T00:00:00Z"},
+        {"type": "model", "id": "claude-sonnet-5", "display_name": "Sonnet 5", "created_at": "2026-03-01T00:00:00Z"},
+        {"type": "model", "id": "claude-sonnet-5-5", "display_name": "Sonnet 5.5", "created_at": "2026-08-01T00:00:00Z"},
+        {"type": "model", "id": "claude-sonnet-4-6", "display_name": "Sonnet 4.6", "created_at": "2025-12-01T00:00:00Z"},
+    ]
+
+    def _backend(self, model):
+        self.calls = 0
+
+        def handler(request):
+            self.calls += 1
+            return anthropic_httpx.Response(200, json={
+                "data": self.MODELS, "has_more": False,
+                "first_id": self.MODELS[0]["id"], "last_id": self.MODELS[-1]["id"],
+            })
+
+        client = AsyncAnthropic(
+            api_key="not-a-real-key",
+            http_client=anthropic_httpx.AsyncClient(transport=anthropic_httpx.MockTransport(handler)),
+        )
+        return coach_chat.AnthropicBackend(model=model, max_tokens=1024, client=client)
+
+    def test_family_resolves_to_newest_by_created_at_not_list_order(self):
+        backend = self._backend("sonnet")
+        self.assertEqual(asyncio.run(backend.resolve_model_id()), "claude-sonnet-5-5")
+
+    def test_resolved_once_per_backend(self):
+        backend = self._backend("sonnet")
+
+        async def twice():
+            await backend.resolve_model_id()
+            return await backend.resolve_model_id()
+
+        self.assertEqual(asyncio.run(twice()), "claude-sonnet-5-5")
+        self.assertEqual(self.calls, 1)
+
+    def test_full_id_is_used_as_is_without_listing(self):
+        backend = self._backend("claude-sonnet-5")
+        self.assertEqual(asyncio.run(backend.resolve_model_id()), "claude-sonnet-5")
+        self.assertEqual(self.calls, 0)
+
+    def test_unknown_family_raises(self):
+        backend = self._backend("haiku")
+        with self.assertRaises(RuntimeError):
+            asyncio.run(backend.resolve_model_id())
+
+    def test_default_model_is_the_sonnet_family(self):
+        self.assertEqual(coach_chat.DEFAULT_MODEL, "sonnet")
+
+
 if __name__ == "__main__":
     unittest.main()

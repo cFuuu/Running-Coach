@@ -42,7 +42,14 @@ from src.main.python.services import coach_chat_store
 # 專案沒有 dotenv 載入器，由使用者的 shell 設定；預設值見 DASHBOARD_TASKS.md D.3
 # 的設定表與 .env.example。
 
-DEFAULT_MODEL = "claude-sonnet-5"
+# 教練模型的預設值（唯一定義處）：「分析近況」與暫用 Claude Code session 的聊天也用它，
+# 讓現在的 session 路徑模擬日後直接打 API 的情況。
+# 2026-10-27 Fu：只指定 Sonnet 系列、不寫死版本，模型迭代時自動用最新的 Sonnet。
+# Claude Code（`claude -p --model sonnet`）本身認得系列名稱；API 不認得，
+# 由 AnthropicBackend 在呼叫前查模型清單換成最新的 ID（見 resolve_model_id）。
+# 要固定某一版時，RC_COACH_MODEL／RC_ANALYSIS_MODEL 直接給完整 ID 即可。
+DEFAULT_MODEL = "sonnet"
+MODEL_FAMILIES = ("sonnet", "opus", "haiku")
 DEFAULT_MAX_TOKENS = 8192
 DEFAULT_HISTORY_MAX_CHARS = 120_000
 DEFAULT_TOOL_RESULT_MAX_CHARS = 60_000
@@ -389,7 +396,32 @@ class AnthropicBackend:
             client = AsyncAnthropic()
         self._client = client
         self._model = model
+        self._model_id: str | None = None  # 系列名稱解析後的實際 ID，同一個後端只查一次
         self._max_tokens = max_tokens
+
+    async def resolve_model_id(self) -> str:
+        """設定是系列名稱（sonnet／opus／haiku）時，換成該系列最新的模型 ID。
+
+        Messages API 只收明確的模型 ID、不認系列名稱，所以查 Models API：
+        取 ID 以 `claude-<系列>-` 開頭者中 `created_at` 最新的一個。清單順序
+        文件沒有保證，因此自己比 created_at，不取第一筆。設定本來就是完整 ID 時原樣使用。
+        """
+        if self._model_id is not None:
+            return self._model_id
+        family = self._model.strip().lower()
+        if family not in MODEL_FAMILIES:
+            self._model_id = self._model
+            return self._model_id
+        latest = None
+        async for info in self._client.models.list():
+            if info.id.startswith(f"claude-{family}-") and (
+                latest is None or info.created_at > latest.created_at
+            ):
+                latest = info
+        if latest is None:
+            raise RuntimeError(f"模型清單裡找不到 {family} 系列的模型")
+        self._model_id = latest.id
+        return self._model_id
 
     async def astream(
         self,
@@ -399,7 +431,7 @@ class AnthropicBackend:
         messages: list[dict[str, Any]],
     ) -> AsyncIterator[dict[str, Any]]:
         async with self._client.messages.stream(
-            model=self._model,
+            model=await self.resolve_model_id(),
             max_tokens=self._max_tokens,
             system=system,
             tools=tools,

@@ -551,7 +551,7 @@ event: error        data: {"message": "..."}      ← 之後串流結束；該�
 | 變數 | 預設 | 說明 |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | 無 → 聊天停用（503） | 唯一的祕密 |
-| `RC_COACH_MODEL` | `claude-sonnet-5` | 可改 `claude-opus-5` |
+| `RC_COACH_MODEL` | `sonnet`（2026-10-27 由 `claude-sonnet-5` 改為系列名稱，自動用最新的 Sonnet：Claude Code 自己認得；API 路徑由 `AnthropicBackend.resolve_model_id()` 查 Models API 取 `created_at` 最新者。「分析近況」也用同一個預設） | 可改 `opus`／`haiku`，或給完整 ID 固定版本 |
 | `RC_COACH_MAX_TOKENS` | `8192` | Sonnet 5 預設會思考，`max_tokens` 含思考量，太低會被截 |
 | `RC_COACH_HISTORY_MAX_CHARS` | `120000` | 送模型的歷史上限 |
 | `RC_COACH_TOOL_RESULT_MAX_CHARS` | `60000` | 單一工具結果上限 |
