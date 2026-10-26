@@ -86,6 +86,25 @@ class TestOutput(BuildDashboardOfflineTestCase):
         self.assertLessEqual(days[0]["date"], "2026-01-01")
         self.assertGreaterEqual(days[-1]["date"], "2026-03-31")
 
+    def test_analysis_reports_are_in_the_snapshot_without_the_prompt(self):
+        """「分析紀錄」離線回看：清單與每份內容都在，prompt 不帶。"""
+        from src.main.python.models.db import get_connection
+        from src.main.python.services import analysis_report_store as reports
+
+        conn = get_connection(self.db_path)
+        athlete_id = conn.execute("SELECT id FROM athlete_profile ORDER BY id LIMIT 1").fetchone()["id"]
+        report_id = reports.create_report(conn, athlete_id, "不該出現在離線檔的提示詞")
+        reports.finish_report(conn, report_id, report_text="**目前狀態**：測試報告",
+                              tools=[{"name": "get_today", "input": {}, "is_error": False}],
+                              num_turns=2, duration_ms=1000)
+        conn.close()
+
+        analysis = _read_snapshot(self.build())["analysis"]
+        self.assertEqual([r["id"] for r in analysis["reports"]], [report_id])
+        detail = analysis["byId"][str(report_id)]
+        self.assertEqual(detail["report_text"], "**目前狀態**：測試報告")
+        self.assertNotIn("prompt", detail)
+
     def test_chat_history_keeps_only_text_and_tool_names(self):
         """N-33：對話紀錄進快照供唯讀瀏覽；thinking 與 tool_result 不帶。"""
         from src.main.python.models.db import get_connection
@@ -209,6 +228,7 @@ class TestSecurityScan(BuildDashboardOfflineTestCase):
             "displayName": ('{"x":"displayName"}', ""),
             "token 欄位": ('{"oauth_token":"x"}', ""),
             "cookie 欄位": ('{"cookies":[]}', ""),
+            "字串型 session_id": ('{"session_id":"a1b2c3"}', ""),
             "Bearer": ("", "Authorization: Bearer abcdefghijklmnopqrstuvwxyz"),
             "cookie 字串": ("", "JWT_FGP=abc"),
             "長 token": ('{"v":"a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0ab"}', ""),
@@ -219,6 +239,8 @@ class TestSecurityScan(BuildDashboardOfflineTestCase):
                 offline.security_scan(data, page)
         # 一般資料不誤判
         offline.security_scan('{"title":"測試晨跑","token_count":null,"pace":"5:00"}', "@media (x) {}")
+        # 純整數的 session_id 是訓練場次編號（分析報告的工具參數），不是憑證
+        offline.security_scan('{"input":{"session_id":1107}}', "@media (x) {}")
 
 
 class TestCli(BuildDashboardOfflineTestCase):
@@ -269,10 +291,10 @@ class TestCli(BuildDashboardOfflineTestCase):
         def tag(element_id):
             return re.search(r'<[^>]*\bid="' + element_id + r'"[^>]*>', html).group(0)
 
-        for element_id in ("sync-btn", "analyze-btn", "coach-history", "custom-range"):
+        for element_id in ("sync-btn", "analyze-btn", "custom-range"):
             self.assertIn("data-online-only", tag(element_id), element_id)
-        # N-33：AI 教練面板離線仍顯示，供唯讀瀏覽對話紀錄
-        for element_id in ("coach-toggle", "coach-panel", "coach-rail", "coach-scrim"):
+        # N-33：AI 教練面板與「分析紀錄」離線仍顯示，供唯讀瀏覽分析報告與對話紀錄
+        for element_id in ("coach-toggle", "coach-panel", "coach-rail", "coach-scrim", "coach-history"):
             self.assertNotIn("data-online-only", tag(element_id), element_id)
         self.assertIn('id="offline-stamp"', html)
 

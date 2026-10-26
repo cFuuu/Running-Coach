@@ -841,7 +841,9 @@ function renderAnalysis() {
   log.setAttribute('aria-live', 'polite');
   var cur = analysis.current;
   if (!cur) {
-    log.appendChild(h('p', 'coach-placeholder', '按頂列的「分析近況」產生一份分析，或從上方選單回看過去的報告。'));
+    log.appendChild(h('p', 'coach-placeholder', isOfflineSnapshot()
+      ? '從上方選單回看過去的分析報告。'
+      : '按頂列的「分析近況」產生一份分析，或從上方選單回看過去的報告。'));
     view.appendChild(log);
     return;
   }

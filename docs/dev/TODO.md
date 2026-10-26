@@ -1196,6 +1196,9 @@
   - [x] ⑤ 離線快照：`snapshot.chat` 帶全部對話（每則只留文字與 tool_use，thinking 的 signature 會被資安掃描當成 token、tool_result 太大），載入程式回應清單與單則讀取，其餘一律拒絕。**AI 教練面板、開關、FAB、遮罩改為離線也顯示**（拿掉 `data-online-only`），「分析近況」與「分析紀錄」仍隱藏、刪除鈕離線隱藏、面板離線預設收起。`export_offline.cmd` 匯出前先跑匯入器，失敗就停止匯出。
   - [x] ⑥ 驗收（2026-10-25）：真實 JSONL 36 個 session，匯入 4 個（10/05 身體狀況＋情境筆記、10/14 跑班課表、10/16 週五休息、10/24 同步請求），共 16 則訊息；重跑全部「未變」。逐則人工檢查無 system-reminder 或憑證殘留。匯入前備份於 scratchpad `running_coach_before_n33.db`。Playwright 對線上 Dashboard（沒設 key）與離線檔 × 1280／390：清單 4 則都有標籤、輸入區隱藏並顯示說明、工具 chip 正確、無 console 錯誤、無橫向捲動。1092 項測試通過。已用 `export_offline.cmd --detail-months 12` 匯出到 iCloud 資料夾（1982 KB）。
     - [ ] Fu 用 iPhone 開離線檔確認面板（併入 N-30 ⑤）
+  - **⑦ 追加：離線檔也帶 AI 分析報告（2026-10-26 Fu 指出）**：Fu 平常用的是 Dashboard 的「分析近況」，那 8 份報告存在 `analysis_reports`，不是上面的對話紀錄；原本離線檔兩者都沒有，起初只做了對話那一邊。現在 `snapshot.analysis` 帶全部報告（清單＋每份內容，不含 prompt），離線的「分析紀錄」鈕可用、「分析近況」鈕仍隱藏。驗收：真實 DB 匯出的離線檔 × 1280／390，8 份都在，最舊一份（10/15）內文可讀，無 console 錯誤。
+    - 匯出時資安掃描曾擋下：分析報告的工具參數有 `session_id`（`get_session_detail` 的訓練場次編號，純 4 位整數），被「憑證欄位」規則當成登入工作階段。**只把「值為純整數的 `session_id`」排除**，字串型仍會擋，並補了兩個測試案例；沒有放寬整條規則。
+    - 匯出腳本的 `TestClient` 改指定本機來源（分析報告端點只允許本機，TestClient 預設 host 不是合法 IP 會 403）。
   - **順帶發現**：教練回覆裡的 Markdown 表格在面板顯示成原始的 `|` 文字（`renderMarkdown` 本來就不支援表格，非本次造成）。
   - **邊界**：與 Dashboard 聊天紀錄相同——原始對話**不進事實層、規則引擎不讀**，只是 N-8 跨對話記憶的原料，不是 N-8 本身。
 
