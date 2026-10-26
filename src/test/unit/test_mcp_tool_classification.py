@@ -9,7 +9,13 @@ READ_ONLY 的工具餵給模型，漏分類的新 tool 會靜悄悄地從聊天�
 import asyncio
 import unittest
 
-from src.main.python.mcp.server import READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES, mcp
+from src.main.python.mcp.server import (
+    PANEL_TOOL_NAMES,
+    PANEL_WRITE_TOOL_NAMES,
+    READ_ONLY_TOOL_NAMES,
+    WRITE_TOOL_NAMES,
+    mcp,
+)
 
 
 class TestToolClassification(unittest.TestCase):
@@ -38,6 +44,17 @@ class TestToolClassification(unittest.TestCase):
             with self.subTest(tool=name):
                 self.assertIn(name, WRITE_TOOL_NAMES)
                 self.assertNotIn(name, READ_ONLY_TOOL_NAMES)
+
+    def test_panel_whitelist_is_subset_of_write_tools(self):
+        self.assertLessEqual(PANEL_WRITE_TOOL_NAMES, WRITE_TOOL_NAMES)
+        self.assertEqual(PANEL_TOOL_NAMES, READ_ONLY_TOOL_NAMES | PANEL_WRITE_TOOL_NAMES)
+
+    def test_protected_writes_never_reach_the_panel(self):
+        """PLAN.md §10.3：這些寫入在 Dashboard 對話框一律禁止，只能走 Claude Code。"""
+        for name in ("sync_garmin_data", "generate_training_plan", "add_context_note",
+                     "save_external_workouts"):
+            with self.subTest(tool=name):
+                self.assertNotIn(name, PANEL_TOOL_NAMES)
 
 
 if __name__ == "__main__":

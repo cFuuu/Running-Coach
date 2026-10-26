@@ -1253,6 +1253,28 @@
   - **預覽（10-27 面板版）**：scratchpad `panel_desktop*.png`／`panel_mobile*.png`，Fu 已確認。
   - **版面（面板內，單欄）**：頂部「分析近況」鈕＋對話下拉選單＋新對話鈕 → 「追蹤中：○○　下次追問 ○/○」橫條（點開看全部追蹤事項與已痊癒／不再追蹤按鈕）→ 訊息串（依日期分隔；追蹤提醒用提示色卡片；「要我追蹤嗎？」「要結案嗎？」用虛線卡片附按鈕；訊息區自己捲動）→ 建議問題 → 固定在底部的輸入框。近期建議（30 天內）放在追蹤橫條展開後的區塊。
   - **沿用設計系統**：追蹤事項用 `--cat-load-*`、近期建議用 `--cat-week-*`，字級沿用面板現有 token。
+  - **🛠 實作規格（2026-10-27，N-35＋N-36 一起做，分三個子任務在本機 worktree 並行，完成後合併驗證）**：
+    - **共用基礎（先做、已進 main）**：`mcp/server.py` 新增 `PANEL_WRITE_TOOL_NAMES`（§10.2 白名單唯一來源）與 `PANEL_TOOL_NAMES`（唯讀＋白名單）；`AppContext.panel_mode`，MCP server 加 `--panel` 參數，in-process API 路徑固定 `panel_mode=True`。寫入型工具在 panel 模式下依 §10 收緊。
+    - **A｜聊天後端改走 `claude -p`＋「分析近況」併入對話**
+      - `RC_COACH_BACKEND`＝`session`（預設）／`api`。session 模式不需要 API key，啟用條件同「分析近況」（找得到 claude 與 `.mcp.json`）。`/api/chat/status` 多回 `backend`。
+      - `claude -p` 指令與分析共用一個組裝函式：`--allowedTools` 取 `PANEL_TOOL_NAMES`、`--disallowedTools` 取其餘寫入工具；`--mcp-config` 改傳 JSON 字串（讀 `.mcp.json` 的 running-coach 項、args 加 `--panel`），保留 `--strict-mcp-config`、`--tools ""`、`--permission-mode dontAsk`、`--no-session-persistence`、`--model`（聊天 `RC_COACH_MODEL`、分析 `RC_ANALYSIS_MODEL`）。
+      - 多輪：後端把對話歷史轉成文字帶進 prompt（每則標日期；教練訊息附「查了哪些工具」，不帶工具回傳——數字要重查），超過 `RC_COACH_HISTORY_MAX_CHARS` 從最舊的整回合丟。stream-json 的 assistant／user 訊息轉成 Anthropic content blocks 落地（工具名去掉 `mcp__running-coach__` 前綴、不存 thinking、連續同角色合併），維持「存的就是日後打 API 要送的 messages」。
+      - 同一時間只跑一個 Claude Code 子程序：聊天與分析共用一把鎖，忙碌回 409。
+      - **日期**：後端在每則學員訊息加一個獨立 text 區塊 `〔日期〕YYYY-MM-DD（週X）`（本機日期），兩種後端都加。
+      - **標題**：學員第一次送出時就建立（送模型之前），取首句（。！？!?換行為界）前 16 字。
+      - **備忘（N-35 ③）**：每次對話與分析開頭帶入「追蹤事項（B 提供）＋近期建議」。近期建議＝30 天內、最多 5 份分析近況的結論（去掉「依據」行），合計 ≤3,000 字，每份標日期並註明「當時的建議，不是現在的事實，數字要重新查」。API 路徑只放進送模型的版本、不落地。
+      - `coach_messages` 加 `kind`（`chat`／`analysis`）。`POST /api/analysis?conversation_id=` 把報告存成該對話的一回合（學員訊息為 `〔分析近況〕`＋固定問題），沒給就用最近的對話、沒有就新建（標題「分析近況 MM/DD」）。`analysis_reports` 照舊記執行紀錄，加 `conversation_id`。SSE 的 `start`／`done` 多帶 `conversation_id`。
+      - 既有報告轉成**一則**對話「分析近況紀錄」（依時間排、訊息時間用報告時間、只留報告文字），以 `analysis_reports.conversation_id` 標記已轉，可重跑不重複。
+      - `GET /api/chat/recent-advice` → `{"advice": [{date, conversation_id, text}]}`。
+    - **B｜追蹤事項（N-35 ①②）**
+      - `context_notes` 加 `tracking_status`（`none`／`proposed`／`tracking`／`resolved`／`dismissed`，既有筆記為 `none`）、`last_followup_date`、`last_mentioned_date`、`stale_asked_date`、`closed_date`。追蹤中／待同意的事項查詢時視為持續到今天（順帶修 `end_date` 為 NULL 隔天就消失的缺陷）。
+      - 「這次該不該問」由程式算：上次追問或學員提起後滿 3 天 → `follow_up`；學員 30 天沒提起且這段期間還沒問過 → `ask_continue`（只問一次、不自動結案）；待同意 → `await_consent`。
+      - MCP 工具：`get_tracking_items`（唯讀）、`propose_tracking_item`（建立為待同意）、`update_tracking_item`（accept／decline／followed_up／mentioned／stale_asked／resolve／stop；只能動追蹤事項，不能動一般情境筆記）。後兩者進 `PANEL_WRITE_TOOL_NAMES`。
+      - panel 模式下 `record_daily_feel` 當天已有紀錄就不覆寫，回「已記為○○」。
+      - `GET /api/chat/tracking`、`POST /api/chat/tracking/{id}`（accept／decline／resolve／stop，給面板按鈕）。
+      - `coach_tracking.build_tracking_brief(conn, athlete_id, today)` 供 A 帶進 prompt。行為約束層加「追蹤事項」一條。
+    - **C｜面板 UI（依 10-27 預覽）**：頂列「分析近況」＋單一收合鈕（電腦 »、手機 ×），移除「分析紀錄」鈕與獨立分析畫面；對話下拉＋「＋ 新對話」；追蹤橫條（展開見追蹤事項按鈕與近期建議）；訊息依日期分隔，分析回合標「分析近況」；`propose_tracking_item` 顯示虛線卡片附「追蹤／不用」，`record_daily_feel` 顯示「✓ 已記錄」；輸入框下方註明教練在這裡能改什麼。離線檔唯讀瀏覽。
+    - **合併後**：離線匯出帶追蹤事項與近期建議、改用合併後的對話（不再另帶 `analysis`）；真實 DB 轉換舊報告；實際打一次 session 聊天與分析；Playwright 1280／390 × 淺色／深色。
 
 - **🔵 N-37 單場分享圖（透明底 PNG，仿 Strava 分享貼圖）（2026-10-26 Fu 提出，主體完成）**：完整單場頁底部「分享圖」區塊，Canvas 畫 1080×1920 透明 PNG，可下載或用系統分享存到相簿／IG 限動。程式在 `js/share-image.js`。
   - [x] 版型「路線＋數據」「每公里分段」；線條單色 7 色或依配速／心率（以每公里分圈分桶）上色；白字／黑字；12 個數據欄位可勾選與排序；不署名（`9e6c15f`）

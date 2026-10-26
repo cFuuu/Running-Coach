@@ -60,9 +60,13 @@ from src.main.python.services import training_plan_store
 @dataclass
 class AppContext:
     db: sqlite3.Connection
+    # Dashboard 對話框（含「分析近況」）呼叫時為 True，寫入型工具據此收緊行為
+    # （PLAN.md §10）。Claude Code 的 MCP 路徑維持 False、權限照舊。
+    panel_mode: bool = False
 
 
 _db_path: str | None = None
+_panel_mode = False
 
 
 @asynccontextmanager
@@ -74,7 +78,7 @@ async def app_lifespan(server: MCPServer) -> AsyncIterator[AppContext]:
     # 符合官方文件對關閉此檢查的前提）。
     conn = get_connection(_db_path, check_same_thread=False)
     try:
-        yield AppContext(db=conn)
+        yield AppContext(db=conn, panel_mode=_panel_mode)
     finally:
         conn.close()
 
@@ -107,6 +111,10 @@ def _parse_date(value: str) -> datetime.date:
 
 def _conn(ctx: Context[AppContext]) -> sqlite3.Connection:
     return ctx.request_context.lifespan_context.db
+
+
+def _is_panel(ctx: Context[AppContext]) -> bool:
+    return ctx.request_context.lifespan_context.panel_mode
 
 
 # --- 工具分類（唯讀／寫入）：單一真實來源 ---
@@ -143,6 +151,18 @@ WRITE_TOOL_NAMES = frozenset(
         "record_daily_feel",
     }
 )
+
+# Dashboard 對話框（右側面板／手機全螢幕，含「分析近況」）允許的寫入工具——
+# PLAN.md §10.2 白名單的唯一來源。API 路徑與 `claude -p` 路徑都從這裡取，
+# 不各記一份（§10.5）。新增寫入型工具時**預設不放進來**，要先改 §10.2。
+PANEL_WRITE_TOOL_NAMES = frozenset(
+    {
+        "record_daily_feel",
+    }
+)
+
+# 對話框能用的全部工具＝唯讀＋白名單寫入
+PANEL_TOOL_NAMES = READ_ONLY_TOOL_NAMES | PANEL_WRITE_TOOL_NAMES
 
 
 # --- Tools（讀取型） ---
@@ -832,18 +852,24 @@ def coach() -> str:
 
 
 def main() -> None:
-    global _db_path
+    global _db_path, _panel_mode
 
     ap = argparse.ArgumentParser(
         description="啟動 Running Coach 的 MCP server（stdio transport）。"
     )
     ap.add_argument("--db-path", required=True, help="SQLite 資料庫路徑")
+    ap.add_argument(
+        "--panel",
+        action="store_true",
+        help="由 Dashboard 對話框（claude -p）啟動：寫入型工具依 PLAN.md §10 收緊",
+    )
     args = ap.parse_args()
 
     if not Path(args.db_path).exists():
         raise SystemExit(f"找不到資料庫檔案：{args.db_path}")
 
     _db_path = args.db_path
+    _panel_mode = args.panel
     mcp.run()
 
 

@@ -200,7 +200,7 @@ def make_tool_context(conn: sqlite3.Connection, mcp_server: Any = mcp) -> Contex
         mcp_server=mcp_server,
         request_context=ServerRequestContext(
             session=None,
-            lifespan_context=AppContext(db=conn),
+            lifespan_context=AppContext(db=conn, panel_mode=True),
             protocol_version="in-process",
             method="tools/call",
         ),
