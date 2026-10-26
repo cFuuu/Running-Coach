@@ -1073,12 +1073,16 @@ body.coach-open .coach-panel {
   font-size: var(--fs-md);
 }
 
-/* 「分析近況」緊跟在標題旁，用 margin-right:auto 把分析紀錄／收合／關閉推到右側 */
+/* 「分析近況」緊跟在標題旁；收合鈕用 margin-left:auto 靠右——離線檔隱藏分析鈕時也不會跑到標題旁 */
+.coach-head>.coach-btn {
+  margin-left: auto;
+}
+
 .coach-analyze {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin: 0 auto 0 8px;
+  margin: 0 0 0 8px;
   padding: 5px 11px;
   border: 1px solid var(--accent-border);
   border-radius: 999px;
@@ -1124,10 +1128,14 @@ body.coach-open .coach-panel {
   color: var(--text);
 }
 
+/* 面板內容不整塊捲動：訊息區（.coach-log）自己捲，輸入框固定在底部 */
 .coach-body {
   flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
-  padding: var(--gap);
+  padding: 12px var(--gap) var(--gap);
 }
 
 .coach-placeholder {
@@ -1136,68 +1144,22 @@ body.coach-open .coach-panel {
   font-size: var(--fs-sm);
 }
 
-/* AI 分析報告畫面：與 .coach-body 同一個版位，顯示時對話區由 coach.js 隱藏 */
-.coach-analysis {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: var(--gap);
-}
-
-.coach-analysis[hidden],
 .coach-body[hidden],
-.coach-form[hidden] {
+.coach-form[hidden],
+.coach-rule[hidden],
+.coach-track[hidden] {
   display: none;
 }
 
-.coach-analysis-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.coach-analysis-meta strong {
-  color: var(--text);
-}
-
-.coach-analysis-note,
 .coach-readonly-note {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
 
-.coach-analysis-tools {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.coach-analysis-tools-summary {
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  padding: 2px 0;
-}
-
-/* 下拉選單吃剩餘寬度、可縮，返回鍵固定寬度不被擠出面板 */
-.coach-analysis .coach-conv-select {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* 疊上 .coach-icon-btn 的類別提高權重：該規則定義在後面，會把寬度蓋回 36px */
-.coach-icon-btn.coach-analysis-back {
-  flex: none;
-  width: auto;
-  padding: 0 10px;
-  white-space: nowrap;
-  font-size: var(--fs-xs);
+/* 收合／關閉同一顆鈕（N-36 決策 8）：寬螢幕 »，手機全螢幕 ×（切換規則在手機 media query） */
+.coach-close-icon {
+  display: none;
 }
 
 /* 面板收合後的重新展開入口（桌機）。
@@ -1377,6 +1339,15 @@ body.coach-open .coach-panel {
   .coach-rail {
     display: none !important;
     /* 手機由頂列的 AI 教練鈕開啟，不用直條 */
+  }
+
+  /* 全螢幕時「收合到右邊」沒有意義，同一顆鈕改顯示 × */
+  .coach-collapse-icon {
+    display: none;
+  }
+
+  .coach-close-icon {
+    display: block;
   }
 }
 
@@ -1617,8 +1588,8 @@ body.coach-open .coach-panel {
 .coach-layout {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  height: 100%;
+  gap: 8px;
+  flex: 1 1 auto;
   min-height: 0;
   /* 讓 .coach-log 的 overflow 生效 */
 }
@@ -1668,6 +1639,185 @@ body.coach-open .coach-panel {
   cursor: default;
 }
 
+/* 「＋ 新對話」：有文字的按鈕（N-36 決策 7），比圖示鈕好認 */
+.coach-new-btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.coach-new-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.coach-new-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---- 追蹤橫條（N-35 ④）：追蹤事項用訓練負荷橘、近期建議用當週課表藍 ---- */
+
+.coach-track {
+  flex: 0 0 auto;
+  border: 1px solid var(--cat-load-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.coach-track-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: none;
+  background: var(--cat-load-bg);
+  color: var(--cat-load-text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coach-track-head:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.coach-track-left {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coach-track-right {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 展開後限制高度：手機上訊息區仍要看得到 */
+.coach-track-body {
+  max-height: 45vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 8px 10px 10px;
+  background: var(--surface);
+}
+
+.coach-track-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+.coach-track-badge {
+  padding: 0 6px;
+  border: 1px solid var(--cat-load-border);
+  border-radius: 999px;
+  background: var(--cat-load-bg);
+  color: var(--cat-load-text);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.coach-track-badge.is-proposed {
+  border-style: dashed;
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.coach-track-meta {
+  margin-top: 1px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.coach-track-actions,
+.coach-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.coach-track-error {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--error-text);
+}
+
+.coach-mini-btn {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.coach-mini-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.coach-mini-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.coach-mini-btn-primary:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.coach-mini-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.coach-advice-head {
+  padding: 3px 8px;
+  border: 1px solid var(--cat-week-border);
+  border-radius: var(--radius-xs);
+  background: var(--cat-week-bg);
+  color: var(--cat-week-text);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.coach-advice-text {
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.coach-advice-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 /* ---- 訊息區 ---- */
 
 .coach-log {
@@ -1677,8 +1827,124 @@ body.coach-open .coach-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-right: 2px;
-  /* 讓捲軸不貼著氣泡 */
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+/* 日期分隔：「10/27（二）」 */
+.coach-day {
+  align-self: center;
+  padding: 1px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+/* 分析回合的學員訊息改顯示成標籤 */
+.coach-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 9px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+/* 分析回合的工具清單收成一個可展開區塊 */
+.coach-tool-group {
+  margin-bottom: 6px;
+}
+
+.coach-tool-group-summary {
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.coach-tool-group[open]>.coach-tool-group-summary {
+  margin-bottom: 4px;
+}
+
+/* 「要我追蹤嗎？」虛線卡片 */
+.coach-ask {
+  align-self: flex-start;
+  max-width: 92%;
+  padding: 8px 10px;
+  border: 1px dashed var(--accent-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.coach-ask-kicker {
+  margin-bottom: 2px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--accent-text);
+}
+
+.coach-ask-state {
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* 寫入結果的一行小字：「✓ 已記錄 10/27 體感：疲憊（你說的）」「已追問：左膝外側緊」 */
+.coach-done {
+  align-self: flex-start;
+  padding-left: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.coach-done strong {
+  color: var(--text);
+}
+
+/* 「分析近況」進行中／失敗卡片 */
+.coach-progress {
+  align-self: stretch;
+  padding: 8px 10px;
+  border: 1px solid var(--notice-border);
+  border-radius: var(--radius);
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  font-size: var(--fs-sm);
+}
+
+.coach-progress.is-error {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+  color: var(--error-strong-text);
+}
+
+.coach-progress-title {
+  font-weight: 700;
+}
+
+.coach-progress-meta {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+}
+
+/* 輸入框下方：教練在對話框能改什麼（PLAN.md §10） */
+.coach-rule {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 .coach-empty {
@@ -1706,17 +1972,20 @@ body.coach-open .coach-panel {
   /* 長 URL／數字串不撐破面板 */
 }
 
+/* 聊天室樣式（N-36 預覽）：學員實心強調色靠右、教練白底靠左，訊息區是淺灰底 */
 .coach-bubble-user {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
-  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-bottom-right-radius: 4px;
+  color: var(--on-accent);
   white-space: pre-wrap;
   /* 使用者原樣輸入，不走 Markdown */
 }
 
 .coach-bubble-coach {
-  background: var(--surface-sunken);
+  background: var(--surface);
   border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
   color: var(--text);
 }
 

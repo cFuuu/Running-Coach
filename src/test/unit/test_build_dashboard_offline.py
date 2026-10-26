@@ -289,8 +289,8 @@ class TestCli(BuildDashboardOfflineTestCase):
 
         for element_id in ("sync-btn", "analyze-btn", "custom-range"):
             self.assertIn("data-online-only", tag(element_id), element_id)
-        # N-33：AI 教練面板與「分析紀錄」離線仍顯示，供唯讀瀏覽分析報告與對話紀錄
-        for element_id in ("coach-toggle", "coach-panel", "coach-rail", "coach-scrim", "coach-history"):
+        # N-33／N-36：AI 教練面板與收合鈕離線仍顯示，供唯讀瀏覽對話紀錄（分析報告已併入對話）
+        for element_id in ("coach-toggle", "coach-panel", "coach-rail", "coach-scrim", "coach-collapse"):
             self.assertNotIn("data-online-only", tag(element_id), element_id)
         self.assertIn('id="offline-stamp"', html)
 

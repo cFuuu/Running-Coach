@@ -4,11 +4,11 @@
 
 import * as Theme from '../theme.js';
 import { state } from '../core/state.js';
-import { $, clear, h } from '../core/dom.js';
+import { $ } from '../core/dom.js';
 import { isOfflineSnapshot } from '../core/api.js';
 import { syncCoachSettingToggle } from '../views/settings.js';
 import { renderDirtyView } from './router.js';
-import { runAnalysis, showAnalyses } from '../coach.js';
+import { runAnalysis } from '../coach.js';
 
 // S1 只負責「殼」：三種寬度的形態（桌機常駐欄／平板抽屜／手機全螢幕 sheet）
 // 與收合狀態的存讀。對話、串流、工具 chip 屬 S2／S3 的 coach.js，這裡不碰。
@@ -35,7 +35,7 @@ export function setCoachPanel(open, persist) {
   }
 }
 
-/** 供 coach.js 的 runAnalysis()／showAnalyses() 打開面板（不寫入偏好：這是一次性動作）。 */
+/** 供 coach.js 的 runAnalysis() 打開面板（不寫入偏好：這是一次性動作）。 */
 export function openCoachPanel() {
   setCoachPanel(true, false);
 }
@@ -49,7 +49,8 @@ export function bindCoachPanel() {
   var wide = window.innerWidth >= 1280;
   setCoachPanel(!isOfflineSnapshot() && wide && !(settings && settings.coachPanel === 'collapsed'), false);
 
-  [['coach-collapse', false], ['coach-close', false], ['coach-rail', true],
+  // 收合／關閉只留一顆 #coach-collapse（N-36 決策 8：寬螢幕 »、手機全螢幕 ×，圖示由 CSS 依寬度切換）
+  [['coach-collapse', false], ['coach-rail', true],
    ['coach-scrim', false]].forEach(function (pair) {
     var el = $(pair[0]);
     if (el) el.addEventListener('click', function () { setCoachPanel(pair[1], true); });
@@ -71,25 +72,18 @@ export function bindCoachPanel() {
 }
 
 /**
- * 面板標題列的「分析近況」（跑一次新的 AI 分析）與「分析紀錄」（回看過去的報告）。
- * 進度與結果都在 AI 面板裡呈現；無法開始時（例如未設定 API key）把原因放在
- * 內容頂端的提示列，按鈕旁沒有空間放說明文字。
+ * 面板標題列的「分析近況」：在目前對話跑一次 AI 分析（N-36 決策 4，「分析紀錄」已併入對話）。
+ * 進度、結果與無法開始的原因都由 coach.js 顯示在訊息串裡；回覆或分析中的鎖定也由
+ * coach.js 管（renderBusy），這裡只負責接上按鈕。
  */
 export function bindAnalysisButtons() {
   var btn = $('analyze-btn');
   if (btn) {
     btn.addEventListener('click', function () {
-      btn.disabled = true;
-      clear($('notice-bar'));
-      runAnalysis().catch(function (err) {
-        var notice = $('notice-bar');
-        notice.appendChild(h('span', 'state-error-inline',
-          '無法開始分析：' + (err && err.message ? err.message : '原因不明')));
-      }).then(function () { btn.disabled = false; });
+      btn.disabled = true; // 等 status 回來前防連點；分析結束（含失敗）才還原
+      runAnalysis().then(function () { btn.disabled = false; });
     });
   }
-  var history = $('coach-history');
-  if (history) history.addEventListener('click', function () { showAnalyses(); });
 }
 
 // 視窗寬度改變時重繪（X 軸刻度數量依容器寬度決定，需重算）

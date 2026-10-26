@@ -560,8 +560,8 @@
     <aside class="coach-panel" id="coach-panel" aria-label="AI 教練">
       <div class="coach-head">
         <h2 class="coach-title">AI 教練</h2>
-        <!-- 跑一次新的 AI 分析（js/shell/coach-frame.js）。2026-10-24 由頂列移進面板：分析結果本來就呈現在面板裡 -->
-        <button type="button" class="coach-analyze" id="analyze-btn" data-online-only title="AI 分析最近的訓練與身體狀況（約 1～2 分鐘，結果自動保存）">
+        <!-- 在目前對話跑一次 AI 分析（js/shell/coach-frame.js）；報告放進對話裡（N-36 決策 4，原「分析紀錄」鈕與獨立分析畫面已移除） -->
+        <button type="button" class="coach-analyze" id="analyze-btn" data-online-only title="AI 分析最近的訓練與身體狀況（約 1～2 分鐘，報告放進目前的對話）">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z"></path>
@@ -569,29 +569,18 @@
           </svg>
           <span>分析近況</span>
         </button>
-        <!-- 回看過去的 AI 分析報告（不跑新的） -->
-        <button type="button" class="coach-btn" id="coach-history" title="分析紀錄" aria-label="分析紀錄">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9"></circle>
-            <path d="M12 7v5l3 2"></path>
-          </svg>
-        </button>
-        <button type="button" class="coach-btn" id="coach-collapse" title="收合" aria-label="收合面板">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+        <!-- 收合／關閉只留一顆（N-36 決策 8）：寬螢幕顯示 »、手機全螢幕顯示 ×，由 CSS 依寬度切換圖示 -->
+        <button type="button" class="coach-btn" id="coach-collapse" title="收合" aria-label="收合 AI 教練">
+          <svg class="coach-collapse-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <use href="#icon-collapse-right"></use>
           </svg>
-        </button>
-        <button type="button" class="coach-btn" id="coach-close" title="關閉" aria-label="關閉面板">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+          <svg class="coach-close-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <use href="#icon-close"></use>
           </svg>
         </button>
       </div>
-      <!-- AI 分析報告畫面（頂列「分析近況」或面板的「分析紀錄」開啟，由 coach.js 渲染；顯示時隱藏對話區） -->
-      <div class="coach-analysis" id="coach-analysis" hidden></div>
       <div class="coach-body" id="coach-body">
         <p class="coach-placeholder">載入 AI 教練…</p>
       </div>
