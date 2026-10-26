@@ -229,17 +229,25 @@ function drawRoute(ctx, detail, box, line, width) {
   });
 }
 
-/** 版型 route：路線在後、數據欄置中疊在上面 */
-function drawRouteTemplate(ctx, detail, prefs) {
-  drawRoute(ctx, detail, { x: 120, y: 360, w: W - 240, h: H - 720 }, prefs.line, 22);
+var ROUTE_GAP = 60;        // 數據欄與路線的間距
+var ROUTE_MIN_H = 360;     // 路線最少保留的高度，不夠時數據欄往上讓
+var ROUTE_BOTTOM = 100;    // 路線離畫布底的留白
 
+/** 版型 route：數據欄上下置中，路線畫在數據欄下方（2026-10-27 Fu：路線不壓字、線條細一點） */
+function drawRouteTemplate(ctx, detail, prefs) {
   var metas = selectedFields(detail, prefs, 'meta');
   var stats = selectedFields(detail, prefs, 'stat');
   var grid = stats.length > 6 ? statGrid(stats, 2, 34, 64) : statGrid(stats, 1, 36, 76);
   var metaH = drawMeta(ctx, metas, 0, 0, 'center', prefs.text, true);
-  var top = (H - metaH - grid.height) / 2;
+  var textH = metaH + grid.height;
+  var top = (H - textH) / 2;
+  var deficit = ROUTE_MIN_H - (H - ROUTE_BOTTOM - (top + textH + ROUTE_GAP));
+  if (deficit > 0) top = Math.max(80, top - deficit);
+
   drawMeta(ctx, metas, W / 2, top, 'center', prefs.text, false);
   drawStatGrid(ctx, stats, grid, 120, W - 240, top + metaH, prefs.text);
+  var routeTop = top + textH + ROUTE_GAP;
+  drawRoute(ctx, detail, { x: 160, y: routeTop, w: W - 320, h: H - ROUTE_BOTTOM - routeTop }, prefs.line, 12);
 }
 
 /** 版型 splits：每公里分段長條，越快越長；末段不足 1 km 時標實際距離 */
