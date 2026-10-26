@@ -59,7 +59,7 @@ from src.main.python.api import routes_chat
 from src.main.python.api import routes_dashboard
 from src.main.python.api import routes_sync
 from src.main.python.models.db import get_connection
-from src.main.python.services import analysis_report_store
+from src.main.python.services import analysis_report_store, coach_analysis
 from src.main.python.services.coach_analysis import AnalysisConfig
 from src.main.python.services.coach_chat import ChatConfig
 
@@ -95,8 +95,8 @@ def create_app(
     """建立 FastAPI 應用程式。db_path 由呼叫端提供，不預設任何路徑。
 
     chat_config 省略時從環境變數讀（見 services/coach_chat.py 的設定表）。
-    未設 ANTHROPIC_API_KEY 時 app 仍正常啟動，只有 /api/chat/* 回 503——
-    dashboard 的其餘功能不該因為沒設聊天金鑰就整個掛掉。
+    聊天停用時（session 模式找不到 Claude Code，或 api 模式沒設 ANTHROPIC_API_KEY）
+    app 仍正常啟動，只有發問與建立對話回 503——dashboard 的其餘功能不該因此整個掛掉。
 
     profile_path：學員檔（總覽個人最佳的賽事名稱來源），省略時取資料庫同資料夾的
     athlete_profile.md；檔案不存在不會報錯，賽事名稱退回活動名稱。
@@ -114,6 +114,8 @@ def create_app(
     conn = get_connection(db_path)
     # 上次 server 結束時還在跑的分析（子程序已隨舊進程消失）標成 error，不留 running
     analysis_report_store.mark_stale_running_as_error(conn)
+    # 「分析近況」併入對話（N-36）：還沒轉過的既有報告轉成「分析近況紀錄」對話，可重跑不重複
+    coach_analysis.migrate_reports_to_conversation(conn)
     conn.close()
 
     app.include_router(routes_dashboard.router)

@@ -102,6 +102,10 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     # 2026-10-24：逐點經緯度，供路線地圖（N-32，見 schema.sql 註解）
     ("activity_records", "lat", "REAL"),
     ("activity_records", "lon", "REAL"),
+    # 2026-10-27：「分析近況」併入對話（N-36，見 schema.sql 註解）。
+    # SQLite 3.37+ 的 ADD COLUMN 可帶 NOT NULL DEFAULT 與 CHECK，既有列取預設值 'chat'。
+    ("coach_messages", "kind", "TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'analysis'))"),
+    ("analysis_reports", "conversation_id", "INTEGER"),
 ]
 
 

@@ -7,6 +7,7 @@
 全部使用合成假資料建立臨時 SQLite，不含真實個人資料。
 """
 
+import datetime
 import json
 import tempfile
 import unittest
@@ -172,6 +173,136 @@ class TestAppendTurn(CoachChatStoreTestCase):
         self.assertEqual(message["role"], "user")
         self.assertEqual(message["content"], [{"type": "text", "text": "今天該練嗎？"}])
         self.assertIsInstance(message["id"], int)
+        self.assertEqual(message["kind"], "chat")
+
+    def test_kind_and_created_at_apply_to_the_whole_turn(self):
+        store.append_turn(
+            self.conn, self.conversation_id,
+            [_user("問"), {"role": "assistant", "content": [{"type": "text", "text": "答"}]}],
+            kind=store.KIND_ANALYSIS, created_at="2026-03-01T00:00:00+00:00",
+        )
+        messages = store.get_conversation(self.conn, self.athlete_id, self.conversation_id)["messages"]
+        self.assertEqual({m["kind"] for m in messages}, {"analysis"})
+        self.assertEqual({m["created_at"] for m in messages}, {"2026-03-01T00:00:00+00:00"})
+
+    def test_invalid_kind_rejected(self):
+        with self.assertRaises(ValueError):
+            store.append_turn(self.conn, self.conversation_id, [_user("問")], kind="other")
+
+
+class TestTitleAndDate(CoachChatStoreTestCase):
+    def test_title_is_first_sentence_up_to_16_chars(self):
+        self.assertEqual(store.TITLE_MAX_CHARS, 16)
+        self.assertEqual(store.title_from_text("膝蓋有點痛。昨天跑完就這樣"), "膝蓋有點痛。")
+        self.assertEqual(store.title_from_text("  今天要練嗎?還是休息"), "今天要練嗎?")
+        self.assertEqual(store.title_from_text("第一行\n〔檢視脈絡〕view=today"), "第一行")
+        self.assertEqual(store.title_from_text("一" * 30), "一" * 16)
+
+    def test_set_title_if_empty_does_not_overwrite(self):
+        cid = store.create_conversation(self.conn, self.athlete_id)["id"]
+        store.set_title_if_empty(self.conn, cid, "第一次")
+        store.set_title_if_empty(self.conn, cid, "第二次")
+        self.assertEqual(store.get_conversation(self.conn, self.athlete_id, cid)["title"], "第一次")
+
+    def test_user_message_carries_separate_date_block(self):
+        message = store.user_message("今天狀況如何？", datetime.date(2026, 10, 27))
+        self.assertEqual(message["content"], [
+            {"type": "text", "text": "今天狀況如何？"},
+            {"type": "text", "text": "〔日期〕2026-10-27（週二）"},
+        ])
+
+    def test_title_skips_date_block(self):
+        cid = store.create_conversation(self.conn, self.athlete_id)["id"]
+        message = store.user_message("問題", datetime.date(2026, 10, 27))
+        message["content"].reverse()  # 日期區塊在前也不該被當成標題
+        store.append_turn(self.conn, cid, [message])
+        self.assertEqual(store.get_conversation(self.conn, self.athlete_id, cid)["title"], "問題")
+
+    def test_latest_conversation_id(self):
+        self.assertIsNone(store.latest_conversation_id(self.conn, self.athlete_id))
+        first = store.create_conversation(self.conn, self.athlete_id)["id"]
+        store.create_conversation(self.conn, self.athlete_id)
+        store.append_turn(self.conn, first, [_user("問")])
+        self.assertEqual(store.latest_conversation_id(self.conn, self.athlete_id), first)
+
+
+class TestRecentAdvice(CoachChatStoreTestCase):
+    TODAY = datetime.date(2026, 3, 31)
+
+    def analysis(self, day: str, report: str, cid=None):
+        cid = cid or store.create_conversation(self.conn, self.athlete_id)["id"]
+        store.append_turn(
+            self.conn, cid,
+            [
+                _user("〔分析近況〕\n問題"),
+                {"role": "assistant", "content": [{"type": "text", "text": "我先查一下"},
+                                                   {"type": "tool_use", "id": "t", "name": "get_today", "input": {}}]},
+                _tool_result("t", "{}"),
+                {"role": "assistant", "content": [{"type": "text", "text": report}]},
+            ],
+            kind=store.KIND_ANALYSIS, created_at=f"{day}T04:00:00+00:00",
+        )
+        return cid
+
+    def test_final_report_without_basis_line_newest_first(self):
+        cid = self.analysis("2026-03-20", "**目前狀態**：還行。\n**依據**：TSB −20；HRV 45")
+        self.analysis("2026-03-25", "**目前狀態**：很好。")
+        advice = store.list_recent_advice(self.conn, self.athlete_id, self.TODAY)
+        self.assertEqual([a["date"] for a in advice], ["2026-03-25", "2026-03-20"])
+        self.assertEqual(advice[1], {"date": "2026-03-20", "conversation_id": cid,
+                                     "text": "**目前狀態**：還行。"})
+
+    def test_window_count_and_chat_turns_ignored(self):
+        self.analysis("2026-02-20", "太舊")  # 39 天前
+        for day in range(20, 27):
+            self.analysis(f"2026-03-{day}", f"第{day}天")
+        chat = store.create_conversation(self.conn, self.athlete_id)["id"]
+        store.append_turn(self.conn, chat, [_user("聊天"), {"role": "assistant", "content": [
+            {"type": "text", "text": "不是分析"}]}])
+        advice = store.list_recent_advice(self.conn, self.athlete_id, self.TODAY)
+        self.assertEqual(len(advice), store.RECENT_ADVICE_MAX_ITEMS)
+        self.assertEqual(advice[0]["text"], "第26天")
+        self.assertNotIn("太舊", [a["text"] for a in advice])
+
+    def test_total_chars_capped(self):
+        self.analysis("2026-03-29", "新" * 2000)
+        self.analysis("2026-03-28", "舊" * 2000)
+        advice = store.list_recent_advice(self.conn, self.athlete_id, self.TODAY)
+        self.assertEqual([a["text"][0] for a in advice], ["新"])
+        self.assertLessEqual(sum(len(a["text"]) for a in advice), store.RECENT_ADVICE_MAX_CHARS)
+
+    def test_deleted_conversation_no_longer_advises(self):
+        cid = self.analysis("2026-03-29", "建議")
+        store.delete_conversation(self.conn, self.athlete_id, cid)
+        self.assertEqual(store.list_recent_advice(self.conn, self.athlete_id, self.TODAY), [])
+
+
+class TestKindColumnMigration(unittest.TestCase):
+    def test_existing_database_gets_kind_and_conversation_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "old.db"
+            conn = get_connection(db_path)
+            conn.execute("DROP TABLE coach_messages")
+            conn.execute(
+                "CREATE TABLE coach_messages (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                " conversation_id INTEGER NOT NULL, seq INTEGER NOT NULL, role TEXT NOT NULL,"
+                " content_json TEXT NOT NULL, created_at TEXT NOT NULL)"
+            )
+            conn.execute("INSERT INTO coach_messages (conversation_id, seq, role, content_json, created_at)"
+                         " VALUES (1, 0, 'user', '[]', 'x')")
+            conn.execute("ALTER TABLE analysis_reports DROP COLUMN conversation_id")
+            conn.commit()
+            conn.close()
+
+            conn = get_connection(db_path)
+            try:
+                self.assertEqual(conn.execute("SELECT kind FROM coach_messages").fetchone()[0], "chat")
+                columns = {r["name"] for r in conn.execute("PRAGMA table_info(analysis_reports)")}
+                self.assertIn("conversation_id", columns)
+                with self.assertRaises(Exception):
+                    conn.execute("UPDATE coach_messages SET kind = 'bogus'")
+            finally:
+                conn.close()
 
 
 class TestDeleteConversation(CoachChatStoreTestCase):
