@@ -9390,6 +9390,190 @@ button.recent-row .rc-dist {
   }
 }
 
+/* ---- 分享圖（js/share-image.js）：左設定、右預覽，窄版上下排 ---- */
+.share {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  gap: 16px 24px;
+  align-items: start;
+}
+
+.share-control {
+  margin-bottom: 14px;
+}
+
+.share-control-label {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.route-mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.share-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.share-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.share-swatch-ramp {
+  padding: 0 10px 0 5px;
+}
+
+.share-swatch.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.share-swatch-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.share-fields {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.share-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 10px;
+  font-size: var(--fs-sm);
+}
+
+.share-field + .share-field {
+  border-top: 1px solid var(--border);
+}
+
+.share-field.is-unavailable {
+  color: var(--text-muted);
+}
+
+.share-field-label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.share-field-move {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.share-field-move:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+
+.share-field-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* 預覽底：格紋代表透明；白字配深底、黑字配淺底才看得到 */
+.share-stage {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background-color: #2b3440;
+  background-image:
+    linear-gradient(45deg, #343e4b 25%, transparent 25%, transparent 75%, #343e4b 75%),
+    linear-gradient(45deg, #343e4b 25%, transparent 25%, transparent 75%, #343e4b 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+}
+
+.share-stage-light {
+  background-color: #eef1f4;
+  background-image:
+    linear-gradient(45deg, #e1e5ea 25%, transparent 25%, transparent 75%, #e1e5ea 75%),
+    linear-gradient(45deg, #e1e5ea 25%, transparent 25%, transparent 75%, #e1e5ea 75%);
+}
+
+.share-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.share-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.share-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.share-note {
+  flex-basis: 100%;
+}
+
+@media (max-width: 640px) {
+  .share {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .share-preview {
+    order: -1;
+    max-width: 280px;
+    margin: 0 auto;
+  }
+}
+
 /* ---- 窄版（手機，或平板開著 AI 面板）：第一行 日期・課種・距離・配速，分圈小圖移到第二行 ---- */
 @container (max-width: 559px) {
   .slog-row {

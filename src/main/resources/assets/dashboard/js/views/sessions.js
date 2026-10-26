@@ -8,6 +8,7 @@ import { state, WORKOUT_TYPE_LABEL, SOURCE_LABEL } from '../core/state.js';
 import { $, clear, h, showError, showLoading, showUnavailable, statCard, widthOf, wrapChart } from '../core/dom.js';
 import { fmtDelta, deltaClass, mondayOf, addDaysISO, dowLabel, displayDate } from '../core/format.js';
 import { hasRoute, renderRouteMap, linkChartToMap } from '../route-map.js';
+import { canShare, renderShareImage } from '../share-image.js';
 import { selectSession } from '../shell/range.js';
 import { navigate } from '../shell/router.js';
 
@@ -608,6 +609,18 @@ export function renderSessionFull() {
   renderHrDrift(detail);
   renderHrZones(detail);
   renderRecoveryImpact();
+  renderFullShare(detail);
+}
+
+/** 完整單場的分享圖區塊：路線與分圈都沒有就整塊收起 */
+function renderFullShare(detail) {
+  var node = $('share-image');
+  if (!node) return;
+  clear(node);
+  var block = node.closest('.chart-block');
+  var show = canShare(detail);
+  if (block) block.hidden = !show;
+  if (show) renderShareImage(node, detail);
 }
 
 /** 完整單場的路線區塊：沒有座標（跑步機、舊資料）就整塊收起 */
