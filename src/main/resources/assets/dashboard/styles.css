@@ -8590,6 +8590,18 @@ button.recent-row .rc-dist {
   }
 }
 
+/* 320px 級的小手機（初代 iPhone SE）：11px 圖示＋間隔會把「15.2」擠成「1…」，退回原本的 8px、無間隔 */
+@media (max-width: 359px) {
+  .cal-chips .sport-chip {
+    gap: 0;
+  }
+
+  .cal-chips .sport-icon {
+    width: 8px;
+    height: 8px;
+  }
+}
+
 /* === E.2 趨勢 === */
 /* 趨勢頁五區（js/views/trends.js）：區塊標題左側色條＋數字卡標題列沿用首頁的類別色
    （--cat-*：訓練負荷橘、恢復與身體紫、跑力表現青、訓練量與強度藍、Garmin 數據淺藍）。 */
