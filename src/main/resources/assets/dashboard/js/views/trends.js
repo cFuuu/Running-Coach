@@ -805,6 +805,26 @@ function compareHint() {
   return '';
 }
 
+/**
+ * 「自訂類別」面板掛在系統設定頁（2026-10-26 Fu：由趨勢頁移入設定）。啟動時呼叫一次；
+ * 調整後趨勢頁標髒，切回趨勢頁時才重畫（圖表寬度要在可見時量）。
+ */
+export function mountTrendsCustomizer() {
+  var node = $('settings-trends-customize');
+  if (!node) return;
+  clear(node);
+  node.appendChild(customizer({
+    settingsKey: 'trends',
+    defs: CATEGORIES,
+    label: '自訂類別',
+    hint: '拖移 ⠿ 調整類別順序，取消勾選可隱藏整個類別。各類別要畫哪些指標，在類別內的開關列切換。',
+    onChange: function () {
+      renderOrDefer('trends', renderTrendsPage);
+      mountTrendsCustomizer();
+    }
+  }));
+}
+
 export function renderTrendsPage() {
   var body = $('trends-body');
   if (!body) return;
@@ -815,13 +835,6 @@ export function renderTrendsPage() {
   var head = $('trends-customize');
   clear(head);
   head.appendChild(h('p', 'trend-compare-hint', compareHint()));
-  head.appendChild(customizer({
-    settingsKey: 'trends',
-    defs: CATEGORIES,
-    label: '⚙ 自訂類別',
-    hint: '拖移 ⠿ 調整類別順序，取消勾選可隱藏整個類別。各類別要畫哪些指標，在類別內的開關列切換。',
-    onChange: renderTrendsPage
-  }));
 
   clear(body);
   // 先把所有區塊放進頁面，再逐區畫：圖表寬度依容器實際寬度決定，必須已在 DOM 中

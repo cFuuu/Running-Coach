@@ -26,7 +26,8 @@ import { $, clear, h } from './core/dom.js';
 import { bindInfoTipDismiss } from './core/facts.js';
 import { bindTooltipDelegation } from './core/tooltip.js';
 import { loadHome, initHomeLayout } from './views/home.js';
-import { bindCoachSetting, bindCustomizeShortcuts } from './views/settings.js';
+import { bindCoachSetting } from './views/settings.js';
+import { mountTrendsCustomizer } from './views/trends.js';
 import { renderMeta, loadRangeData } from './shell/loader.js';
 import { renderRangeButtons, bindCustomRangePanel } from './shell/range.js';
 import { applyRoute, bindRouter } from './shell/router.js';
@@ -72,10 +73,10 @@ function init() {
   bindCoachPanel();
   bindAnalysisButtons();
   bindCoachSetting();
-  bindCustomizeShortcuts();
   bindSyncButtons();
   bindRouter();
   initHomeLayout();
+  mountTrendsCustomizer();
 
   // 先套路由再發請求：資料回來時 state.view 已經正確，render-on-activate
   // 才知道該立刻畫還是標髒。反過來會讓首屏的圖表全部畫在隱藏容器裡（寬度 0）。

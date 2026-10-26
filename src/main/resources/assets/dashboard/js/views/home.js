@@ -63,14 +63,15 @@ export function applyHomeLayout() {
   }
 }
 
+/** 「自訂首頁」面板掛在系統設定頁（2026-10-26 Fu：由首頁移入設定）。首頁區塊的 DOM 一直存在，改完立刻套用。 */
 function mountHomeCustomizer() {
-  var node = $('home-customize');
+  var node = $('settings-home-customize');
   if (!node) return;
   clear(node);
   node.appendChild(customizer({
     settingsKey: 'home',
     defs: HOME_BLOCKS,
-    label: '⚙ 自訂首頁',
+    label: '自訂首頁',
     hint: '拖移右側的 ⠿ 調整區塊順序，取消勾選可隱藏。區塊由上而下兩兩並排，落單的佔滿整欄。',
     onChange: function () {
       applyHomeLayout();
@@ -79,7 +80,7 @@ function mountHomeCustomizer() {
   }));
 }
 
-/** 啟動時呼叫一次：套用區塊順序並放上「自訂首頁」鈕。 */
+/** 啟動時呼叫一次：套用區塊順序，並在設定頁放上「自訂首頁」鈕。 */
 export function initHomeLayout() {
   applyHomeLayout();
   mountHomeCustomizer();

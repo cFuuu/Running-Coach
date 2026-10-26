@@ -805,13 +805,37 @@ h3 {
     height: 22px;
   }
 
-  .topbar-tools,
-  .coach-toggle {
+  .topbar-tools {
     order: 1;
   }
 
-  .topbar-controls {
+  /* 資料時間：標題正下方一行，與標題文字對齊（4px 內距＋40px 圖示＋10px 間距）。
+     往上收掉大半列距，緊貼標題；下方多留一點再接內容（2026-10-26 Fu）。
+     多一層 .content-topbar：後面的通用 .offline-stamp 規則同特異性、會蓋掉這裡 */
+  .content-topbar .offline-stamp {
     order: 2;
+    margin: -8px 0 6px;
+    padding-left: 54px;
+  }
+
+  /* AI 教練鈕：只留圖示，與齒輪同為 44×44，保留圓角方形外框（2026-10-26 Fu） */
+  .coach-toggle {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .coach-toggle svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .coach-toggle-label {
+    display: none;
+  }
+
+  .topbar-controls {
+    order: 3;
     width: 100%;
     flex-wrap: nowrap;
   }
@@ -1959,19 +1983,16 @@ body.coach-open .coach-panel {
   color: var(--text-muted);
 }
 
-/* 手機不顯示資料新鮮度那一行（2026-10-24 Fu），落後時看同步鈕上的狀態點；「自訂首頁」維持靠右 */
+/* 手機不顯示資料新鮮度那一行（2026-10-24 Fu），落後時看同步鈕上的狀態點 */
 @media (max-width: 767px) {
   .home-freshness {
     display: none;
   }
 
-  #home-customize {
-    margin-left: auto;
+  /* 「自訂首頁」已移到系統設定（2026-10-26），手機上這一列沒有內容，整列拿掉免得留白 */
+  .home-head {
+    display: none;
   }
-}
-
-.home-head .customize {
-  margin-bottom: 0;
 }
 
 /* 區塊預設佔滿整欄；內容欄夠寬時，相鄰的兩個半欄區塊（is-half，由 JS 判斷配對）並排 */
@@ -5741,14 +5762,8 @@ button.recent-row .rc-dist {
   justify-content: flex-end;
 }
 
-.trends-head .customize,
 .trend-cat-head .customize {
   margin-bottom: 0;
-}
-
-.trends-head .customize-toggle {
-  flex: none;
-  white-space: nowrap;
 }
 
 .trends-body {
@@ -6810,19 +6825,21 @@ button.recent-row .rc-dist {
 }
 
 /* 資料時間只是說明、不是警告，用中性灰而非提醒黃（2026-10-24 Fu） */
-.badge-offline,
-.offline-stamp {
+.badge-offline {
   background: var(--surface-sunken);
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
 
+/* 頂列的資料時間：標題下方獨佔一行的灰字（2026-10-26 Fu：由工具列的徽章改為副標）。
+   order 排到頂列最後；手機版在上方斷點裡改排到標題正下方 */
 .offline-stamp {
-  padding: 2px 8px;
-  border-radius: var(--radius);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  white-space: nowrap;
+  order: 9;
+  flex-basis: 100%;
+  margin: -6px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.3;
 }
 
 .offline-stamp[hidden] {
@@ -7042,6 +7059,33 @@ button.recent-row .rc-dist {
   font-family: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
+}
+
+/* 設定頁的「自訂首頁／自訂類別」：customize.js 的自訂鈕，外觀比照 .setting-btn。
+   面板在列內展開、把下方往下推，不像其他頁浮在上面——浮動面板會蓋住下一列設定，
+   手機上按鈕換行到左側時還會往左超出畫面。展開時控制區佔滿整列 */
+.setting-row-customize .setting-control:has(.customize-panel) {
+  flex-basis: 100%;
+}
+
+.setting-control .customize {
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+
+.setting-control .customize-panel {
+  position: static;
+  flex-basis: 100%;
+  width: auto;
+  max-height: none;
+  margin-top: 8px;
+  box-shadow: none;
+}
+
+.setting-control .customize-toggle {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius);
 }
 
 .setting-btn:hover:not(:disabled) {
