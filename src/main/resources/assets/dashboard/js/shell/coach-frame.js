@@ -29,6 +29,10 @@ export function setCoachPanel(open, persist) {
   if (rail) rail.hidden = open;
   if (scrim) scrim.hidden = !open;
   if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  // 收合時渲染的訊息區高度為 0、捲不到底；打開後才捲到最新一則
+  // （手機全螢幕從右上角打開時原本停在最舊的訊息，2026-10-27 合併驗證發現）
+  var log = $('coach-log');
+  if (open && log) requestAnimationFrame(function () { log.scrollTop = log.scrollHeight; });
   if (persist) {
     Theme.saveSettings({ coachPanel: open ? 'open' : 'collapsed' });
     syncCoachSettingToggle(); // 設定頁的開關與面板共用同一個欄位，不可各記一份

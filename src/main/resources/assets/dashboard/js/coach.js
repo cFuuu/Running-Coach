@@ -368,7 +368,11 @@ function buildPanel() {
   newBtn.id = 'coach-new';
   newBtn.hidden = !canChat();
   newBtn.addEventListener('click', startDraftConversation);
-  var delBtn = h('button', 'coach-icon-btn', '🗑');
+  var delBtn = h('button', 'coach-icon-btn');
+  // 圖示取自 index.html 的 sprite（固定字串，不含任何資料）
+  delBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'
+    + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<use href="#icon-trash"></use></svg>';
   delBtn.type = 'button';
   delBtn.id = 'coach-delete';
   delBtn.title = '刪除這則對話';

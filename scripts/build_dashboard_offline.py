@@ -344,17 +344,11 @@ def collect_snapshot(
                     data = _compact_records(data)
                 exact[canonical_key(url)] = data
 
-            # AI 分析報告（面板「分析紀錄」）：離線唯讀回看。prompt 不顯示，不帶
-            reports = get("/api/analysis")["reports"]
-            analysis = {
-                "reports": reports,
-                "byId": {
-                    str(r["id"]): {k: v for k, v in get(f"/api/analysis/{r['id']}").items() if k != "prompt"}
-                    for r in reports
-                },
-            }
+            # AI 教練面板的追蹤橫條（N-35／N-36）：追蹤事項與近期建議，離線唯讀
+            tracking = get("/api/chat/tracking")["items"]
+            advice = get("/api/chat/recent-advice")["advice"]
 
-        # create_app 已對暫存副本套過遷移，這時才有 source 欄位可讀
+        # create_app 已對暫存副本套過遷移，並把舊的分析報告轉成對話（N-36），這時才讀對話
         conn = sqlite3.connect(tmp_db)
         conn.row_factory = sqlite3.Row
         try:
@@ -371,7 +365,8 @@ def collect_snapshot(
         "calendar": spans["calendar"],
         "feels": spans["feels"].get("feels") or [],
         "chat": chat,
-        "analysis": analysis,
+        "tracking": tracking,
+        "advice": advice,
     }
     return snapshot, identity_refs
 
@@ -552,7 +547,7 @@ LOADER_JS = r"""
     snapshotAt: window.__SNAPSHOT_AT__,      // 頁首「最後更新」
     today: window.__SNAPSHOT_TODAY__,        // 前端 todayISO() 的「今天」＝匯出日期
     request: function (raw, body) { return ready.then(function () { return routeNow(raw, body); }); },
-    // AI 教練：只能唯讀瀏覽快照裡的分析報告與對話紀錄，不能發問、刪除或跑分析
+    // AI 教練：只能唯讀瀏覽快照裡的對話（含分析近況）、追蹤事項與近期建議，不能發問、刪除或跑分析
     chatRequest: function (path, options) {
       var r = canon(path);
       if (/\/status$/.test(r.path)) {
@@ -560,10 +555,8 @@ LOADER_JS = r"""
       }
       if (options && options.method && options.method !== 'GET') return offline('AI 教練');
       return ready.then(function () {
-        var analysis = D.analysis || { reports: [], byId: {} };
-        if (r.path === '/api/analysis') return { reports: clone(analysis.reports) };
-        var a = r.path.match(/^\/api\/analysis\/(\d+)$/);
-        if (a && analysis.byId[a[1]]) return clone(analysis.byId[a[1]]);
+        if (r.path === '/api/chat/tracking') return { items: clone(D.tracking || []) };
+        if (r.path === '/api/chat/recent-advice') return { advice: clone(D.advice || []) };
         var chat = D.chat || { conversations: [], byId: {} };
         if (r.path === '/api/chat/conversations') return { conversations: clone(chat.conversations) };
         var m = r.path.match(/^\/api\/chat\/conversations\/(\d+)$/);

@@ -86,24 +86,29 @@ class TestOutput(BuildDashboardOfflineTestCase):
         self.assertLessEqual(days[0]["date"], "2026-01-01")
         self.assertGreaterEqual(days[-1]["date"], "2026-03-31")
 
-    def test_analysis_reports_are_in_the_snapshot_without_the_prompt(self):
-        """「分析紀錄」離線回看：清單與每份內容都在，prompt 不帶。"""
+    def test_old_reports_and_tracking_are_in_the_snapshot(self):
+        """N-36：舊分析報告轉成對話進快照（不再另帶 analysis），追蹤事項與近期建議也帶上。"""
         from src.main.python.models.db import get_connection
         from src.main.python.services import analysis_report_store as reports
+        from src.main.python.services import context_notes_store
 
         conn = get_connection(self.db_path)
         athlete_id = conn.execute("SELECT id FROM athlete_profile ORDER BY id LIMIT 1").fetchone()["id"]
-        report_id = reports.create_report(conn, athlete_id, "不該出現在離線檔的提示詞")
+        report_id = reports.create_report(conn, athlete_id, "請分析近況")
         reports.finish_report(conn, report_id, report_text="**目前狀態**：測試報告",
                               tools=[{"name": "get_today", "input": {}, "is_error": False}],
                               num_turns=2, duration_ms=1000)
+        item_id = context_notes_store.add_tracking_item(conn, athlete_id, "左膝外側緊", "2026-03-01")
         conn.close()
 
-        analysis = _read_snapshot(self.build())["analysis"]
-        self.assertEqual([r["id"] for r in analysis["reports"]], [report_id])
-        detail = analysis["byId"][str(report_id)]
-        self.assertEqual(detail["report_text"], "**目前狀態**：測試報告")
-        self.assertNotIn("prompt", detail)
+        snap = _read_snapshot(self.build())
+        self.assertNotIn("analysis", snap)
+        messages = [m for c in snap["chat"]["byId"].values() for m in c["messages"]]
+        analysis_texts = [b["text"] for m in messages if m["kind"] == "analysis"
+                          for b in m["content"] if b["type"] == "text"]
+        self.assertIn("**目前狀態**：測試報告", analysis_texts)
+        self.assertEqual([i["id"] for i in snap["tracking"]], [item_id])
+        self.assertIsInstance(snap["advice"], list)
 
     def test_chat_history_keeps_only_text_and_tool_names(self):
         """對話紀錄進快照供唯讀瀏覽；thinking 與 tool_result 不帶。"""
