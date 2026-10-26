@@ -1,8 +1,7 @@
 """憑證與個人識別資訊的值樣式（CLAUDE.md §🔐 第 3 條）——唯一定義處。
 
-離線匯出（scripts/build_dashboard_offline.py）與教練問答匯入
-（coach_transcript_import.py）都用這組規則決定要不要中止。命中時呼叫端只回報
-規則名稱與次數，**不回顯命中的內容**。
+離線匯出（scripts/build_dashboard_offline.py）用這組規則決定要不要中止。
+命中時呼叫端只回報規則名稱與次數，**不回顯命中的內容**。
 """
 
 from __future__ import annotations

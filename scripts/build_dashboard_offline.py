@@ -377,7 +377,7 @@ def collect_snapshot(
 
 
 def _chat_snapshot(conn: sqlite3.Connection, athlete_id: int) -> dict:
-    """AI 教練對話紀錄（含從 Claude Code 匯入的 MCP 問答，N-33），供離線唯讀瀏覽。
+    """AI 教練對話紀錄（Dashboard 面板上的問答），供離線唯讀瀏覽。
 
     每則訊息只留文字與工具名稱／參數：thinking 的 signature 是長 base64，會被
     資安掃描當成 token；tool_result 是整包查詢資料，會讓檔案暴增。

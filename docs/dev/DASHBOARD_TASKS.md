@@ -542,7 +542,7 @@ event: done         data: {"message_id": 12, "stop_reason": "end_turn"}
 event: error        data: {"message": "..."}      ← 之後串流結束；該回合不落地
 ```
 狀態碼：未設 key → 503；來源不允許 → 403；對話不存在 → 404；`text` 空白 → 422。
-（2026-10-25 N-33 修訂：未設 key 時只有建立對話與發問回 503，讀取與刪除對話照常，讓面板仍能瀏覽紀錄；對從 Claude Code 匯入的唯讀對話發問 → 409。）
+（2026-10-25 N-33 修訂：未設 key 時只有建立對話與發問回 503，讀取與刪除對話照常，讓面板仍能瀏覽紀錄。）
 
 **來源限制（`require_chat_client`）**：`ipaddress.ip_address(request.client.host)`——解析失敗一律 403（fail closed；`TestClient` 預設 host 是字串 `"testclient"`，測試須傳 `client=("127.0.0.1", 1)`）；`is_loopback` 放行（涵蓋 `::1`）；否則僅當 `RC_CHAT_ALLOW_PRIVATE_NETWORK=1` 且 `is_private` **或屬 `100.64.0.0/10`**（Tailscale；Python 3.12 對此段 `is_private` 為 False，須明列）才放行。uvicorn 只信任來自 127.0.0.1 的 `X-Forwarded-For`，區網裝置無法偽造。
 

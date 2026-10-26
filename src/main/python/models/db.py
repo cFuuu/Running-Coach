@@ -102,9 +102,6 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     # 2026-10-24：逐點經緯度，供路線地圖（N-32，見 schema.sql 註解）
     ("activity_records", "lat", "REAL"),
     ("activity_records", "lon", "REAL"),
-    # 2026-10-25：匯入 Claude Code 的教練問答（N-33，見 schema.sql 註解）
-    ("coach_conversations", "source", "TEXT NOT NULL DEFAULT 'dashboard'"),
-    ("coach_conversations", "source_session_id", "TEXT"),
 ]
 
 
@@ -122,16 +119,35 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
-    # ALTER TABLE 加不了 UNIQUE，改用索引；放這裡而非 schema.sql，因為既有資料庫
-    # 跑 schema.sql 時還沒有這個欄位
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_coach_conversations_source_session "
-        "ON coach_conversations (source_session_id)"
-    )
     _backfill_training_plan_is_active(conn)
     _migrate_training_plan_check_constraint(conn)
     _fix_lactate_pace_unit(conn)
     _migrate_daily_feel_three_levels(conn)
+    _drop_claude_code_import(conn)
+
+
+def _drop_claude_code_import(conn: sqlite3.Connection) -> None:
+    """2026-10-27：移除 Claude Code 問答匯入（N-33）留下的資料與欄位。
+
+    2026-10-25 曾把 Claude Code session 裡的 MCP 教練問答匯入 coach_conversations
+    （source='claude_code'），10-27 Fu 決定只保留在 Dashboard 網頁上問的內容，
+    匯入功能整個移除。跑過那版的資料庫（公司與家裡的電腦都可能有）在這裡清掉：
+    匯入的對話與訊息、coach_import_dismissed 表、source／source_session_id 欄位。
+    沒有這些欄位的資料庫什麼都不做，可重複執行。
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(coach_conversations)")}
+    if "source_session_id" not in columns:
+        return
+    conn.execute(
+        "DELETE FROM coach_messages WHERE conversation_id IN "
+        "(SELECT id FROM coach_conversations WHERE source = 'claude_code')"
+    )
+    conn.execute("DELETE FROM coach_conversations WHERE source = 'claude_code'")
+    # 欄位上有索引時 DROP COLUMN 會失敗，要先拿掉索引
+    conn.execute("DROP INDEX IF EXISTS idx_coach_conversations_source_session")
+    conn.execute("DROP TABLE IF EXISTS coach_import_dismissed")
+    conn.execute("ALTER TABLE coach_conversations DROP COLUMN source_session_id")
+    conn.execute("ALTER TABLE coach_conversations DROP COLUMN source")
 
 
 # PRAGMA user_version 記錄已套用的一次性資料修正。欄位 migration 可以靠

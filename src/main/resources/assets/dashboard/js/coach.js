@@ -46,9 +46,8 @@ var state = {
 
 var MAX_TOOL_JSON_CHARS = 20000; // chip 展開時的顯示上限，避免超長 JSON 卡住畫面
 
-// 從 Claude Code 匯入的 MCP 教練問答（N-33）：唯讀，只存工具名稱與參數
-var IMPORTED_LABEL = '［Claude Code］';
-var IMPORTED_TOOL_RESULT = '（匯入的紀錄不保存查詢結果）';
+// 離線快照的對話只帶工具名稱與參數（見 build_dashboard_offline.py），沒有查詢結果
+var OFFLINE_TOOL_RESULT = '（離線檔不含查詢結果）';
 
 // ------------------------------------------------------------ 小工具
 
@@ -59,14 +58,6 @@ function isMock() {
 /** 能不能發問：聊天啟用、來源允許。false 時面板只能瀏覽過去的對話。 */
 function canChat() {
   return !!(state.status && state.status.enabled && state.status.client_allowed);
-}
-
-function activeConversation() {
-  return state.conversations.filter(function (c) { return c.id === state.activeId; })[0] || null;
-}
-
-function isImported(conv) {
-  return !!conv && !!conv.source && conv.source !== 'dashboard';
 }
 
 /** 一般（非串流）請求。mock 模式改走 mock-data.js。 */
@@ -310,8 +301,6 @@ function renderComposer() {
   if (!canChat()) {
     reason = '目前只能瀏覽過去的對話'
       + (state.status && state.status.reason ? '（' + state.status.reason + '）' : '') + '。';
-  } else if (isImported(activeConversation())) {
-    reason = '這是從 Claude Code 匯入的問答紀錄，只能瀏覽。要發問請按＋開新對話。';
   }
   form.hidden = reason !== null;
   note.hidden = reason === null;
@@ -341,7 +330,7 @@ function renderConversationSelect() {
   } else {
     select.disabled = false;
     state.conversations.forEach(function (c) {
-      var opt = h('option', null, (isImported(c) ? IMPORTED_LABEL : '') + (c.title || '（未命名對話）'));
+      var opt = h('option', null, c.title || '（未命名對話）');
       opt.value = String(c.id);
       if (c.id === state.activeId) opt.selected = true;
       select.appendChild(opt);
@@ -357,7 +346,7 @@ function renderChips() {
   if (!node) return;
   clear(node);
   if (state.streaming) return;
-  if (!canChat() || isImported(activeConversation())) return;
+  if (!canChat()) return;
   suggestionsFor(viewContext()).forEach(function (text) {
     var chip = h('button', 'coach-chip', text);
     chip.type = 'button';
@@ -478,9 +467,9 @@ function loadConversations() {
 
 /**
  * 把後端存的 Anthropic content blocks 攤平成畫面用的訊息模型。
- * imported：匯入的對話沒有 tool_result，工具 chip 顯示固定說明而不是「查詢中…」。
+ * noResults：離線快照沒有 tool_result，工具 chip 顯示固定說明而不是「查詢中…」。
  */
-function messagesFromBlocks(rawMessages, imported) {
+function messagesFromBlocks(rawMessages, noResults) {
   var out = [];
   var pendingResults = {}; // tool_use_id → {content, is_error}
 
@@ -515,7 +504,7 @@ function messagesFromBlocks(rawMessages, imported) {
           id: b.id,
           name: b.name,
           input: b.input || {},
-          result: res ? res.content : (imported ? IMPORTED_TOOL_RESULT : null),
+          result: res ? res.content : (noResults ? OFFLINE_TOOL_RESULT : null),
           isError: !!(res && res.is_error)
         });
       }
@@ -530,8 +519,7 @@ function openConversation(id) {
   state.activeId = id;
   state.error = null;
   return api(withAthlete('/api/chat/conversations/' + id)).then(function (data) {
-    // 離線快照只帶文字與工具名稱（見 build_dashboard_offline.py），同樣沒有查詢結果
-    state.messages = messagesFromBlocks((data && data.messages) || [], isImported(data) || isOfflineSnapshot());
+    state.messages = messagesFromBlocks((data && data.messages) || [], isOfflineSnapshot());
     renderConversationSelect();
     renderLog();
   }).catch(function (err) {
@@ -626,7 +614,6 @@ function submitMessage(rawText) {
   var text = String(rawText || '').trim();
   if (!text || state.streaming) return;
   if (!canChat()) return;
-  if (isImported(activeConversation())) return; // 唯讀對話（輸入區已隱藏，這裡再擋一次）
 
   var input = $('coach-input');
   if (input) input.value = '';

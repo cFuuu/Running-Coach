@@ -106,7 +106,7 @@ class TestOutput(BuildDashboardOfflineTestCase):
         self.assertNotIn("prompt", detail)
 
     def test_chat_history_keeps_only_text_and_tool_names(self):
-        """N-33：對話紀錄進快照供唯讀瀏覽；thinking 與 tool_result 不帶。"""
+        """對話紀錄進快照供唯讀瀏覽；thinking 與 tool_result 不帶。"""
         from src.main.python.models.db import get_connection
         from src.main.python.services import coach_chat_store
 
@@ -122,14 +122,10 @@ class TestOutput(BuildDashboardOfflineTestCase):
             {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "{}"}]},
             {"role": "assistant", "content": [{"type": "text", "text": "輕鬆跑"}]},
         ])
-        coach_chat_store.save_imported_conversation(conn, athlete_id, "session-a", [
-            {"role": "user", "content": [{"type": "text", "text": "週四休息"}],
-             "created_at": "2026-03-05T09:00:00+00:00"},
-        ])
         conn.close()
 
         chat = _read_snapshot(self.build())["chat"]
-        self.assertEqual(sorted(c["source"] for c in chat["conversations"]), ["claude_code", "dashboard"])
+        self.assertEqual([c["id"] for c in chat["conversations"]], [dashboard["id"]])
         messages = chat["byId"][str(dashboard["id"])]["messages"]
         self.assertEqual(
             [[b["type"] for b in m["content"]] for m in messages],

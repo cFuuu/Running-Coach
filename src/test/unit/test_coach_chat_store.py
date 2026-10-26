@@ -217,5 +217,67 @@ class TestContentJsonIsUnicodeReadable(CoachChatStoreTestCase):
         self.assertEqual(json.loads(raw)[0]["text"], "今天該練嗎？")
 
 
+class TestDropClaudeCodeImport(unittest.TestCase):
+    """2026-10-27 移除 N-33 匯入：跑過那版的資料庫，開啟時清掉匯入的對話與欄位。"""
+
+    def _db_with_import(self, inline_check: bool) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        db_path = Path(tmp.name) / "n33.db"
+        conn = get_connection(db_path)
+        if inline_check:
+            # N-33 版 schema.sql 全新建立的樣子：欄位與 CHECK 寫在建表語句裡
+            conn.execute("DROP TABLE coach_conversations")
+            conn.execute(
+                "CREATE TABLE coach_conversations (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                " athlete_id INTEGER NOT NULL, title TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,"
+                " source TEXT NOT NULL DEFAULT 'dashboard' CHECK (source IN ('dashboard', 'claude_code')),"
+                " source_session_id TEXT)"
+            )
+        else:
+            # 真實資料庫的樣子：由遷移以 ALTER TABLE 補上
+            conn.execute("ALTER TABLE coach_conversations ADD COLUMN source TEXT NOT NULL DEFAULT 'dashboard'")
+            conn.execute("ALTER TABLE coach_conversations ADD COLUMN source_session_id TEXT")
+        conn.execute("CREATE UNIQUE INDEX idx_coach_conversations_source_session"
+                     " ON coach_conversations (source_session_id)")
+        conn.execute("CREATE TABLE coach_import_dismissed (source_session_id TEXT PRIMARY KEY, dismissed_at TEXT NOT NULL)")
+        athlete_id = conn.execute(
+            "INSERT INTO athlete_profile (name, updated_at) VALUES ('測試學員', '2026-01-01T00:00:00')"
+        ).lastrowid
+        for cid, source, session in ((1, "dashboard", None), (2, "claude_code", "session-a")):
+            conn.execute(
+                "INSERT INTO coach_conversations (id, athlete_id, title, created_at, updated_at, source, source_session_id)"
+                " VALUES (?, ?, 't', 'x', 'x', ?, ?)",
+                (cid, athlete_id, source, session),
+            )
+            conn.execute(
+                "INSERT INTO coach_messages (conversation_id, seq, role, content_json, created_at)"
+                " VALUES (?, 0, 'user', '[]', 'x')",
+                (cid,),
+            )
+        conn.commit()
+        conn.close()
+        return db_path
+
+    def assert_cleaned(self, db_path: Path) -> None:
+        conn = get_connection(db_path)
+        try:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(coach_conversations)")}
+            self.assertNotIn("source", columns)
+            self.assertNotIn("source_session_id", columns)
+            self.assertEqual([r["id"] for r in conn.execute("SELECT id FROM coach_conversations")], [1])
+            self.assertEqual([r[0] for r in conn.execute("SELECT conversation_id FROM coach_messages")], [1])
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            self.assertNotIn("coach_import_dismissed", tables)
+        finally:
+            conn.close()
+
+    def test_database_migrated_by_alter_table(self):
+        self.assert_cleaned(self._db_with_import(inline_check=False))
+
+    def test_database_created_by_n33_schema(self):
+        self.assert_cleaned(self._db_with_import(inline_check=True))
+
+
 if __name__ == "__main__":
     unittest.main()

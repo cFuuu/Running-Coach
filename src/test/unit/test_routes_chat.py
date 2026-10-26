@@ -335,31 +335,6 @@ class TestStoreIsReachableThroughTheApi(ChatRouteTestCase):
 
         listed = self.client().get("/api/chat/conversations").json()["conversations"]
         self.assertEqual([c["id"] for c in listed], [conversation["id"]])
-        self.assertEqual(listed[0]["source"], "dashboard")
-
-
-class TestImportedConversationIsReadOnly(ChatRouteTestCase):
-    def setUp(self):
-        super().setUp()
-        conn = get_connection(self.db_path)
-        self.addCleanup(conn.close)
-        athlete_id = conn.execute("SELECT id FROM athlete_profile ORDER BY id LIMIT 1").fetchone()["id"]
-        coach_chat_store.save_imported_conversation(conn, athlete_id, "session-a", [
-            {"role": "user", "content": [{"type": "text", "text": "今天練什麼"}],
-             "created_at": "2026-10-05T09:21:00+00:00"},
-        ])
-        self.conversation_id = conn.execute("SELECT id FROM coach_conversations").fetchone()["id"]
-
-    def test_listed_with_its_source(self):
-        listed = self.client().get("/api/chat/conversations").json()["conversations"]
-        self.assertEqual(listed[0]["source"], "claude_code")
-
-    def test_posting_a_message_returns_409_without_calling_the_model(self):
-        response = self.client().post(
-            f"/api/chat/conversations/{self.conversation_id}/messages", json={"text": "嗨"}
-        )
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(self.backend.calls, [])
 
 
 if __name__ == "__main__":
