@@ -1983,19 +1983,19 @@ body.coach-open .coach-panel {
 }
 
 /* 對話泡泡的尾巴（2026-10-27 Fu 選方案 B）：從氣泡下角斜斜伸出的三角形，
-   尖端朝右下（學員）／左下（教練）並磨圓。形狀用 clip-path: path() 畫在 19×17 的盒子裡：
-   (9,0)～(0,8) 那條斜邊落在氣泡內部、與氣泡底色融合，只有朝外的兩條邊看得到。
+   尖端朝右下（學員）／左下（教練）並磨圓，往外只伸約 5px（Fu：角太長要縮短）。
+   形狀用 clip-path: path() 畫在 12×11 的盒子裡：(5,0)～(0,5) 那條斜邊落在氣泡內部、與氣泡底色融合，只有朝外的兩條邊看得到。
    教練氣泡有邊框：::before 是邊框色、外擴 1px 的同形三角形，::after 是底色，
    兩者共用同一條內側斜邊，所以氣泡內不會多出一條線。深淺色主題自動跟著換。 */
 .coach-bubble-user {
-  margin-right: 10px;
-  margin-bottom: 8px;
+  margin-right: 7px;
+  margin-bottom: 5px;
   border-bottom-right-radius: 0;
 }
 
 .coach-bubble-coach {
-  margin-left: 10px;
-  margin-bottom: 8px;
+  margin-left: 7px;
+  margin-bottom: 5px;
   border-bottom-left-radius: 0;
 }
 
@@ -2004,27 +2004,27 @@ body.coach-open .coach-panel {
 .coach-bubble-coach::after {
   content: "";
   position: absolute;
-  bottom: -9px;
-  width: 19px;
-  height: 17px;
+  bottom: -6px;
+  width: 12px;
+  height: 11px;
 }
 
 .coach-bubble-user::after {
-  right: -10px;
+  right: -7px;
   background: var(--accent);
-  clip-path: path("M9 0 L10 0 L16.3 12.2 Q18.6 16.6 14.4 15.1 L0 9 L0 8 Z");
+  clip-path: path("M5 0 L6 0 L10.2 8.9 Q11 10.5 9.4 9.8 L0 6 L0 5 Z");
 }
 
 .coach-bubble-coach::before {
-  left: -10px;
+  left: -7px;
   background: var(--border);
-  clip-path: path("M10 0 L9 0 L2.7 12.2 Q0.4 16.6 4.6 15.1 L19 9 L19 8 Z");
+  clip-path: path("M7 0 L6 0 L1.8 8.9 Q1 10.5 2.6 9.8 L12 6 L12 5 Z");
 }
 
 .coach-bubble-coach::after {
-  left: -10px;
+  left: -7px;
   background: var(--surface);
-  clip-path: path("M10 0 L3.9 11.6 Q2 15.4 5.6 14.2 L19 8 Z");
+  clip-path: path("M7 0 L3.1 8.4 Q2.4 9.7 3.8 9.1 L12 5 Z");
 }
 
 /* 點氣泡顯示時間 */
