@@ -31,13 +31,66 @@ import { renderSidebarSync } from '../shell/sync.js';
 
 // 預設順序（2026-10-24 Fu）；名稱與各區塊標題一致，自訂面板顯示的就是這些名稱
 var HOME_BLOCKS = [
-  { key: 'today', label: '學員檔案' },
-  { key: 'week', label: '當週課表' },
-  { key: 'load', label: '訓練負荷' },
-  { key: 'body', label: '體能狀態' },
-  { key: 'ability', label: '跑力綜覽' },
-  { key: 'recent', label: '近期活動' }
+  { key: 'today', label: '學員檔案', icon: 'bib' },
+  { key: 'week', label: '當週課表', icon: 'clipboard' },
+  { key: 'load', label: '訓練負荷', icon: 'weight' },
+  { key: 'body', label: '體能狀態', icon: 'heartPulse' },
+  { key: 'ability', label: '跑力綜覽', icon: 'trophy' },
+  { key: 'recent', label: '近期活動', icon: 'footprints' }
 ];
+
+// 首頁的單色圖示（2026-10-28 Fu 定案），用 currentColor 跟著所在位置變色。內容是固定的字面值，不含任何外部資料。
+// 區塊標題與賽事卡用雙色調（面積 22% 填色、次要筆畫 40%，同運動種類圖示）；學員檔案子標題用純線條。
+var DUO = ' fill="currentColor" fill-opacity=".22"';
+var DOT = ' fill="currentColor" stroke="none"';
+var DIM = ' stroke-opacity=".4"';
+var HOME_ICON_SVG = {
+  // ---- 區塊標題（雙色調）
+  bib: '<rect x="3.5" y="5" width="17" height="14" rx="2"' + DUO + '/><circle cx="6.8" cy="8.2" r=".9"' + DOT + '/>'
+    + '<circle cx="17.2" cy="8.2" r=".9"' + DOT + '/><path d="M8.5 12h7M9.5 15.5h5"/>',
+  clipboard: '<rect x="4.5" y="4" width="15" height="17.5" rx="2"' + DUO + '/><path d="M9 2.5h6v3H9z"/>'
+    + '<path d="M8 10.5l1.3 1.3 2.2-2.3M8 16l1.3 1.3 2.2-2.3"/><path d="M14 10.8h2.5M14 16.3h2.5"' + DIM + '/>',
+  weight: '<circle cx="12" cy="5.5" r="2.5"/><path d="M7.4 9h9.2l2.9 11.5h-15z"' + DUO + '/><path d="M9.5 15h5"' + DIM + '/>',
+  heartPulse: '<path d="M12 20.5s-7.8-4.6-9-9.7A4.9 4.9 0 0 1 12 7.2a4.9 4.9 0 0 1 9 3.6c-1.2 5.1-9 9.7-9 9.7z"' + DUO + '/>'
+    + '<path d="M6 12.5h2.8l1.4-2.4 2.4 4.6 1.4-2.2H18"/>',
+  trophy: '<path d="M7 3.5h10v5.5a5 5 0 0 1-10 0z"' + DUO + '/>'
+    + '<path d="M7 5.5H4.2v1.3a3.2 3.2 0 0 0 3.2 3.2M17 5.5h2.8v1.3a3.2 3.2 0 0 1-3.2 3.2"' + DIM + '/><path d="M12 14v4M8 20.5h8"/>',
+  footprints: '<path d="M7.6 2.8c1.8 0 2.7 2 2.5 4.4-.2 2.1-.9 3.4-2.3 3.4S5.3 9.4 5.2 7.3C5 4.9 5.8 2.8 7.6 2.8z"' + DUO + '/>'
+    + '<path d="M5.6 13.2h4.1v1.1a2 2 0 0 1-4.1 0z"/>'
+    + '<path d="M16.4 7.8c1.8 0 2.6 2 2.4 4.4-.1 2.1-.9 3.4-2.3 3.4s-2.3-1.2-2.5-3.3c-.2-2.4.6-4.5 2.4-4.5z"' + DUO + '/>'
+    + '<path d="M14.4 18.2h4.1v1.1a2 2 0 0 1-4.1 0z"/>',
+  // ---- 學員檔案子標題（純線條）
+  memo: '<path d="M5 3.5h10l4 4v13H5z"/><path d="M15 3.5v4h4"/><path d="M8.5 12h7M8.5 15.5h7M8.5 19h4"/>',
+  smile: '<circle cx="12" cy="12" r="9"/><circle cx="9" cy="10" r="1"' + DOT + '/><circle cx="15" cy="10" r="1"' + DOT + '/>'
+    + '<path d="M8.5 14.3a4 4 0 0 0 7 0"/>',
+  gauge: '<path d="M3.5 17a8.5 8.5 0 1 1 17 0"/><path d="M7.7 14.5l-1.8-1M12 12v-2M16.3 14.5l1.8-1"/>'
+    + '<path d="M12 17l4.5-5.4"/><circle cx="12" cy="17" r="1.4"' + DOT + '/>',
+  hourglass: '<path d="M6 3h12M6 21h12"/>'
+    + '<path d="M7.5 3c0 4.6 4.5 5.8 4.5 9s-4.5 4.4-4.5 9h9c0-4.6-4.5-5.8-4.5-9s4.5-4.4 4.5-9z"/>'
+    + '<path d="M9.6 19.6 12 17.2l2.4 2.4z"' + DOT + '/>',
+  ring: '<circle cx="12" cy="12" r="8.5" stroke-opacity=".3"/><path d="M12 3.5a8.5 8.5 0 1 1-8.2 10.7"/>'
+    + '<path d="M8.8 12.2l2.1 2.1 4.1-4.2"/>',
+  // ---- 賽事卡（雙色調）：下場＝路標，目標＝靶心中箭（箭頭沒入靶心，一片羽毛的箭尾朝外）
+  signpost: '<path d="M11 21v-8.5M11 6.5V3"/><path d="M4.5 6.5h12.3l2.7 3-2.7 3H4.5z"' + DUO + '/><path d="M8 21h6"' + DIM + '/>',
+  bullseye: '<circle cx="10" cy="14" r="8"' + DUO + '/><circle cx="10" cy="14" r="4"/><circle cx="10" cy="14" r="1.2"' + DOT + '/>'
+    + '<path d="M10 14 20.8 3.2"/><path d="M18.4 5.6V2.7M18.4 5.6h2.9"/>'
+};
+
+function homeIcon(kind, size, className) {
+  var span = h('span', className);
+  span.innerHTML = '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + HOME_ICON_SVG[kind] + '</svg>';
+  return span;
+}
+
+/** 學員檔案子區塊的標題文字：線條圖示＋文字包成一個元素，各標題原本的排版不受影響。 */
+function subTitleLabel(kind, text) {
+  var label = h('span', 'today-title-label');
+  label.appendChild(homeIcon(kind, 16, 'today-title-icon'));
+  label.appendChild(h('span', null, text));
+  return label;
+}
 
 /**
  * 依使用者偏好重排區塊（移動既有 DOM，不重畫內容）並套用顯隱。
@@ -82,6 +135,10 @@ function mountHomeCustomizer() {
 
 /** 啟動時呼叫一次：套用區塊順序，並在設定頁放上「自訂首頁」鈕。 */
 export function initHomeLayout() {
+  HOME_BLOCKS.forEach(function (b) {
+    var title = document.querySelector('#block-' + b.key + '>.panel-title');
+    if (title) title.insertBefore(homeIcon(b.icon, 22, 'home-title-icon'), title.firstChild);
+  });
   applyHomeLayout();
   mountHomeCustomizer();
 }
@@ -122,7 +179,7 @@ export function renderTodayPlanRow(label, plan) {
 /** 課表標題：「課表（於 YYYY-MM-DD 更新）」，取今日或明日課表的建立日期。 */
 function planBlockTitle(planned) {
   var title = h('div', 'today-block-title');
-  title.appendChild(h('span', null, '課表'));
+  title.appendChild(subTitleLabel('memo', '課表'));
   var source = planned.today || planned.tomorrow;
   if (source && source.created_at) {
     title.appendChild(h('span', 'today-note', '（於' + displayDate(source.created_at.slice(0, 10)) + '更新）'));
@@ -345,7 +402,7 @@ function feelTips() {
 function renderFeelBlock(dateStr) {
   var block = h('div', 'today-block feel-block');
   var title = h('div', 'today-block-title');
-  title.appendChild(h('span', null, '今日體感狀況'));
+  title.appendChild(subTitleLabel('smile', '今日體感狀況'));
   title.appendChild(infoTip('今日體感狀況', feelTips()));
   block.appendChild(title);
   block.appendChild(h('div', 'feel-sub', '自行評估今天身體狀況'));
@@ -437,7 +494,7 @@ function readinessStatus(value) {
 export function renderTodayReadinessBlock(readiness) {
   var block = h('div', 'today-block readiness-block fig-block');
   var title = h('div', 'today-block-title');
-  title.appendChild(h('span', null, '綜合整備狀態'));
+  title.appendChild(subTitleLabel('gauge', '綜合整備狀態'));
   block.appendChild(title);
 
   var entry = readiness && readiness.today;
@@ -492,22 +549,6 @@ export function renderTodayReadinessBlock(readiness) {
 }
 
 /** 「下場賽事」「目標賽事」剩餘天數。賽事資料來自學員檔（後端 races）。 */
-// 單色線條圖示，用 currentColor 跟著文字變色。內容是固定的字面值，不含任何外部資料。
-var RACE_ICON_SVG = {
-  // 標靶：三圈同心圓加靶心
-  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>',
-  // 旗子：旗桿加旗面
-  flag: '<path d="M6 21V4"/><path d="M6 5h11l-2.5 3.5L17 12H6"/>'
-};
-
-function raceIcon(kind) {
-  var span = h('span', 'race-icon');
-  span.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" '
-    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    + RACE_ICON_SVG[kind] + '</svg>';
-  return span;
-}
-
 // 賽事距離分級（公里）：全馬 42K 與 42.195K 都算全馬，超過 42.5K 才是超馬
 var RACE_TIER_ULTRA_KM = 42.5;
 var RACE_TIER_FULL_KM = 42;
@@ -532,7 +573,7 @@ function raceWeeksText(daysLeft) {
 function raceCard(iconKind, label, race, extraClass) {
   var card = h('div', 'race-card' + (extraClass ? ' ' + extraClass : ''));
   var labelRow = h('div', 'race-card-label');
-  labelRow.appendChild(raceIcon(iconKind));
+  labelRow.appendChild(homeIcon(iconKind, 22, 'race-icon'));
   labelRow.appendChild(h('span', null, label));
   card.appendChild(labelRow);
   if (!race) {
@@ -588,17 +629,17 @@ function raceListPanel(all) {
 export function renderRaceCountdownBlock(races) {
   var block = h('div', 'today-block');
   var title = h('div', 'today-block-title race-title');
-  title.appendChild(h('span', null, '賽事倒數'));
+  title.appendChild(subTitleLabel('hourglass', '賽事倒數'));
   block.appendChild(title);
   var grid = h('div', 'race-grid');
   var next = races && races.next;
   var target = races && races.target;
   if (next && next.is_target) {
     grid.classList.add('is-merged');
-    grid.appendChild(raceCard('target', '下場賽事＝目標賽事', next, 'is-target'));
+    grid.appendChild(raceCard('bullseye', '下場賽事＝目標賽事', next, 'is-target'));
   } else {
-    grid.appendChild(raceCard('flag', '下場賽事', next));
-    grid.appendChild(raceCard('target', '目標賽事', target, 'is-target'));
+    grid.appendChild(raceCard('signpost', '下場賽事', next));
+    grid.appendChild(raceCard('bullseye', '目標賽事', target, 'is-target'));
   }
   block.appendChild(grid);
 
@@ -862,7 +903,8 @@ export function renderWeekPlanList() {
   if (!node) return;
   clear(node);
   if (!state.weekDays) return;
-  var title = $('h-week');
+  // 只改文字，不動標題前的圖示
+  var title = $('h-week-text');
   if (title) title.textContent = '當週課表　' + planWeekLabel(state.weekDays);
   var block = renderPlanWeek(state.weekDays, { selectedDate: todayISO() });
   var zone2 = zone2Tile();
@@ -1025,7 +1067,7 @@ export function renderWeekTraining() {
   if (!node) return;
   clear(node);
   var title = h('div', 'today-block-title');
-  title.appendChild(h('span', null, '本週訓練狀況'));
+  title.appendChild(subTitleLabel('ring', '本週訓練狀況'));
   if (state.weekDays && state.weekDays.length) {
     var first = state.weekDays[0].date;
     var last = state.weekDays[state.weekDays.length - 1].date;

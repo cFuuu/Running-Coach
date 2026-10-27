@@ -2611,6 +2611,14 @@ body.coach-open .coach-panel {
   padding-left: 10px;
 }
 
+/* 區塊標題前的雙色調圖示，用該區塊的類別色 */
+.home-title-icon {
+  display: inline-flex;
+  vertical-align: -4px;
+  margin-right: 8px;
+  color: var(--hdr-strong);
+}
+
 #block-load .kpi-card,
 #block-body .kpi-card,
 #block-ability .kpi-card,
@@ -4544,7 +4552,21 @@ button.recent-row .rc-dist {
   color: var(--dist-short);
 }
 
+/* 下場／目標賽事圖示一律灰色，目標卡的標籤字變深也不跟著變 */
 .race-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* 學員檔案子標題：線條圖示＋文字，圖示跟文字同色 */
+.today-title-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.today-title-icon {
   display: inline-flex;
   flex-shrink: 0;
 }
