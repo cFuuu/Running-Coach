@@ -508,7 +508,7 @@ function buildPanel() {
   var input = h('textarea', 'coach-input');
   input.id = 'coach-input';
   input.rows = 2;
-  input.placeholder = '問教練…（Enter 送出）';
+  input.placeholder = '詢問教練';
   input.title = 'Enter 送出，Shift+Enter 換行';
   input.setAttribute('aria-label', '輸入問題');
   input.addEventListener('keydown', function (evt) {
