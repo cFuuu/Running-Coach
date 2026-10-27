@@ -1277,7 +1277,7 @@
       - panel 模式下 `record_daily_feel` 當天已有紀錄就不覆寫，回「已記為○○」。
       - `GET /api/chat/tracking`、`POST /api/chat/tracking/{id}`（accept／decline／resolve／stop，給面板按鈕）。
       - `coach_tracking.build_tracking_brief(conn, athlete_id, today)` 供 A 帶進 prompt。行為約束層加「追蹤事項」一條。
-    - **C｜面板 UI（依 10-27 預覽）**：頂列「分析近況」＋單一收合鈕（電腦 »、手機 ×），移除「分析紀錄」鈕與獨立分析畫面；對話下拉＋「＋ 新對話」；追蹤橫條（展開見追蹤事項按鈕與近期建議）；訊息依日期分隔，分析回合標「分析近況」；`propose_tracking_item` 顯示虛線卡片附「追蹤／不用」，`record_daily_feel` 顯示「✓ 已記錄」；輸入框下方註明教練在這裡能改什麼。離線檔唯讀瀏覽。
+    - **C｜面板 UI（依 10-27 預覽）**：頂列「分析近況」＋單一收合鈕（電腦 »、手機 ×），移除「分析紀錄」鈕與獨立分析畫面；對話下拉＋「＋ 新對話」；追蹤橫條（展開見追蹤事項按鈕與近期建議）；訊息依日期分隔，分析回合標「分析近況」；`propose_tracking_item` 顯示虛線卡片附「追蹤／不用」，`record_daily_feel` 顯示「✓ 已記錄」；輸入框下方註明教練在這裡能改什麼（10-27 Fu 看過後決定拿掉，不顯示）。離線檔唯讀瀏覽。
     - **合併後**：離線匯出帶追蹤事項與近期建議、改用合併後的對話（不再另帶 `analysis`）；真實 DB 轉換舊報告；實際打一次 session 聊天與分析；Playwright 1280／390 × 淺色／深色。
   - **✅ 合併與驗收（2026-10-27）**：A、B、C 三個 worktree 分支合併進 main（`95a56e1`、`172d717`、`69ca931`），衝突只有 `db.py` 遷移清單與 `DASHBOARD_TASKS.md`，兩邊都保留；備忘接上 `coach_tracking.build_tracking_brief`。1184 項測試通過。
     - **真實 DB**：轉換前備份於 scratchpad `running_coach_before_n36.db`。新版啟動後 8 份報告中 7 份完成的轉成一則對話「分析近況紀錄」（失敗的 1 份略過），近期建議取到 4 份（第 5 份會超過 3,000 字）。

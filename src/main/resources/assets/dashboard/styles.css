@@ -1146,7 +1146,6 @@ body.coach-open .coach-panel {
 
 .coach-body[hidden],
 .coach-form[hidden],
-.coach-rule[hidden],
 .coach-track[hidden] {
   display: none;
 }
@@ -1939,14 +1938,6 @@ body.coach-open .coach-panel {
   font-size: var(--fs-xs);
 }
 
-/* 輸入框下方：教練在對話框能改什麼（PLAN.md §10） */
-.coach-rule {
-  margin: 0;
-  font-size: var(--fs-xs);
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
 .coach-empty {
   margin: 0;
   color: var(--text-muted);
@@ -1978,7 +1969,6 @@ body.coach-open .coach-panel {
 .coach-bubble-user {
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-bottom-right-radius: 4px;
   color: var(--on-accent);
   white-space: pre-wrap;
   /* 使用者原樣輸入，不走 Markdown */
@@ -1987,47 +1977,54 @@ body.coach-open .coach-panel {
 .coach-bubble-coach {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
   color: var(--text);
 }
 
-/* 對話泡泡的尾巴（2026-10-27 Fu）：旋轉 45° 的小方塊，只畫兩條邊就成了一個尖角，
-   底色與邊框沿用氣泡本身，深淺色主題自動跟著換。氣泡外側留出尾巴的空間。 */
-.coach-bubble-user,
-.coach-bubble-coach {
-  margin-bottom: 2px;
-}
-
+/* 對話泡泡的尾巴（2026-10-27 Fu，仿 Telegram）：尾巴貼在氣泡的下角、與底邊齊平，
+   該角改成直角。用 clip-path 切出的直角三角形，底色沿用氣泡；教練氣泡有邊框，
+   多疊一層邊框色的三角形（::before）當外框，深淺色主題自動跟著換。 */
 .coach-bubble-user {
-  margin-right: 6px;
+  margin-right: 8px;
+  border-bottom-right-radius: 0;
 }
 
 .coach-bubble-coach {
-  margin-left: 6px;
+  margin-left: 8px;
+  border-bottom-left-radius: 0;
 }
 
 .coach-bubble-user::after,
+.coach-bubble-coach::before,
 .coach-bubble-coach::after {
   content: "";
   position: absolute;
-  bottom: 8px;
-  width: 10px;
-  height: 10px;
-  transform: rotate(45deg);
 }
 
 .coach-bubble-user::after {
-  right: -5px;
+  right: -9px;
+  bottom: -1px;
+  width: 10px;
+  height: 12px;
   background: var(--accent);
-  border-top: 1px solid var(--accent);
-  border-right: 1px solid var(--accent);
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+
+.coach-bubble-coach::before {
+  left: -9px;
+  bottom: -1px;
+  width: 10px;
+  height: 12px;
+  background: var(--border);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 
 .coach-bubble-coach::after {
-  left: -5px;
+  left: -7px;
+  bottom: 0;
+  width: 8px;
+  height: 10px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  border-left: 1px solid var(--border);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
 }
 
 /* 點氣泡顯示時間 */

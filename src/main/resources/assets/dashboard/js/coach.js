@@ -114,8 +114,6 @@ var UPDATE_LABEL = {
 
 var WAITING_TEXT = '教練準備中…（約 10～20 秒）';
 var BUSY_TEXT = '教練正在回覆或分析中，請稍候';
-var PERMISSION_NOTE = '教練在這裡只能：新增／結案它建立的追蹤事項、記錄你說的體感。'
-  + '課表、Garmin 數據、成績不能改。';
 
 var WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -452,10 +450,6 @@ function buildPanel() {
     submitMessage(input.value);
   });
 
-  // 教練在對話框能改什麼（PLAN.md §10）
-  var rule = h('p', 'coach-rule', PERMISSION_NOTE);
-  rule.id = 'coach-rule';
-
   // 不能發問時（停用、離線快照）取代輸入區的說明
   var note = h('p', 'coach-readonly-note');
   note.id = 'coach-readonly-note';
@@ -466,7 +460,6 @@ function buildPanel() {
   wrap.appendChild(log);
   wrap.appendChild(chips);
   wrap.appendChild(form);
-  wrap.appendChild(rule);
   wrap.appendChild(note);
   body.appendChild(wrap);
   return true;
@@ -476,7 +469,6 @@ function buildPanel() {
 function renderComposer() {
   var form = $('coach-form');
   var note = $('coach-readonly-note');
-  var rule = $('coach-rule');
   if (!form || !note) return;
   var reason = null;
   if (!canChat()) {
@@ -484,7 +476,6 @@ function renderComposer() {
       + (state.status && state.status.reason ? '：' + state.status.reason : '') + '。';
   }
   form.hidden = reason !== null;
-  if (rule) rule.hidden = reason !== null;
   note.hidden = reason === null;
   note.textContent = reason || '';
   var newBtn = $('coach-new');
