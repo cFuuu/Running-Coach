@@ -133,8 +133,10 @@
      不在三個地方各寫一次數值（見 CLAUDE.md「絕不複製貼上」）。
      固定 360px 而非隨視窗縮放：面板裝的是對話泡泡，一行放 40 字左右已足夠，
      再寬只是讓每行更長更難讀，卻把圖表要用的內容欄壓掉。先前的
-     clamp(360px, 40vw, 640px) 在 1440px 螢幕會吃掉 576px（40% 畫面）。 */
-  --coach-panel-w: 360px;
+     clamp(360px, 40vw, 640px) 在 1440px 螢幕會吃掉 576px（40% 畫面）。
+     2026-10-27 Fu：面板左右留白太多、壓縮到分頁內容 → 收窄內距、寬度 360 → 330，
+     氣泡內一行可放的字數與之前差不多。 */
+  --coach-panel-w: 330px;
 
   /* 信賴度 badge（PLAN.md §7.3 三欄位契約）：high 用中性色（不強調，
      因為「可信」是預期狀態，不需要視覺提醒）；low 用與 badge-clipped
@@ -1065,7 +1067,7 @@ body.coach-open .coach-panel {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px var(--gap);
+  padding: 10px 10px 10px 12px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1135,7 +1137,7 @@ body.coach-open .coach-panel {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding: 12px var(--gap) var(--gap);
+  padding: 10px 8px;
 }
 
 .coach-placeholder {
@@ -1826,7 +1828,7 @@ body.coach-open .coach-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px;
+  padding: 8px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
