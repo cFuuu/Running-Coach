@@ -2092,6 +2092,32 @@ body.coach-open .coach-panel {
   font-size: 0.92em;
 }
 
+/* 表格：窄面板放不下時在容器內橫向捲動，不撐破氣泡 */
+.coach-md .coach-table-wrap {
+  margin: 0 0 8px;
+  overflow-x: auto;
+}
+
+.coach-md table {
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+.coach-md th,
+.coach-md td {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.coach-md th {
+  background: var(--surface-sunken);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* ---- 工具呼叫 chip ----
  *
  * 行為約束 4「回述事實清單」的介面化：教練查了什麼、拿到什麼，

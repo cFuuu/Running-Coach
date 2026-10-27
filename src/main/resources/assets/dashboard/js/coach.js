@@ -56,7 +56,7 @@
  *     非 GET 一律被拒；tracking／recent-advice 抓不到就安靜隱藏橫條。
  *
  * 【零建置、無 CDN】
- *   Markdown 是自寫的極簡子集（段落／清單／粗體／行內碼／標題），先 escape 再轉，
+ *   Markdown 是自寫的極簡子集（段落／清單／粗體／行內碼／標題／表格），先 escape 再轉，
  *   不引任何函式庫。
  */
 
@@ -268,8 +268,48 @@ function inlineMarkdown(escaped) {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 }
 
+// 表格（GFM 寫法）：| 開頭的列，第二列是 |---|:---:| 這種分隔列才算表格。
+// 2026-10-27 Fu：教練回覆的事實清單常用表格，原本顯示成一堆 | 原始文字。
+var TABLE_SEPARATOR_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+function isTableRow(line) {
+  return /^\s*\|/.test(line || '');
+}
+
+/** 一列拆成儲存格：去掉頭尾的 |，再以 | 切開（不支援儲存格內的 \|，教練回覆用不到）。 */
+function splitTableRow(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function (c) {
+    return c.trim();
+  });
+}
+
+/** 表格列（含表頭與分隔列）→ HTML。外面包一層可橫向捲動的容器，窄面板不撐破。 */
+function renderTable(rows) {
+  var header = splitTableRow(rows[0]);
+  var aligns = splitTableRow(rows[1]).map(function (c) {
+    if (/^:-+:$/.test(c)) return 'center';
+    if (/^-+:$/.test(c)) return 'right';
+    return null;
+  });
+  function cell(tag, text, i) {
+    var align = aligns[i] ? ' style="text-align:' + aligns[i] + '"' : '';
+    return '<' + tag + align + '>' + inlineMarkdown(escapeHtml(text)) + '</' + tag + '>';
+  }
+  var html = '<div class="coach-table-wrap"><table><thead><tr>'
+    + header.map(function (c, i) { return cell('th', c, i); }).join('') + '</tr></thead><tbody>';
+  rows.slice(2).forEach(function (row) {
+    var cells = splitTableRow(row);
+    // 欄數對不上時以表頭為準：少的補空格、多的併進最後一格，不讓表格錯位
+    if (cells.length > header.length) {
+      cells = cells.slice(0, header.length - 1).concat([cells.slice(header.length - 1).join(' | ')]);
+    }
+    html += '<tr>' + header.map(function (_, i) { return cell('td', cells[i] || '', i); }).join('') + '</tr>';
+  });
+  return html + '</tbody></table></div>';
+}
+
 /**
- * 把極簡 Markdown 轉成 HTML 片段。支援：# 標題、- 清單、數字清單、段落。
+ * 把極簡 Markdown 轉成 HTML 片段。支援：# 標題、- 清單、數字清單、表格、段落。
  * @param {string} text
  * @returns {string} HTML
  */
@@ -291,35 +331,45 @@ function renderMarkdown(text) {
     if (listType !== type) { closeList(); out.push('<' + type + '>'); listType = type; }
   }
 
-  lines.forEach(function (raw) {
-    var line = raw.replace(/\s+$/, '');
-    if (line === '') { flushParagraph(); closeList(); return; }
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/\s+$/, '');
+    if (line === '') { flushParagraph(); closeList(); continue; }
+
+    if (isTableRow(line) && TABLE_SEPARATOR_RE.test(lines[i + 1] || '')) {
+      flushParagraph(); closeList();
+      var rows = [line, lines[i + 1]];
+      i += 2;
+      while (i < lines.length && isTableRow(lines[i])) rows.push(lines[i++]);
+      i--; // for 迴圈會再 +1
+      out.push(renderTable(rows));
+      continue;
+    }
 
     var heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
       flushParagraph(); closeList();
       var level = Math.min(heading[1].length + 2, 6); // # → h3（面板內不用 h1/h2）
       out.push('<h' + level + '>' + inlineMarkdown(escapeHtml(heading[2])) + '</h' + level + '>');
-      return;
+      continue;
     }
 
     var bullet = line.match(/^\s*[-*]\s+(.*)$/);
     if (bullet) {
       flushParagraph(); openList('ul');
       out.push('<li>' + inlineMarkdown(escapeHtml(bullet[1])) + '</li>');
-      return;
+      continue;
     }
 
     var numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (numbered) {
       flushParagraph(); openList('ol');
       out.push('<li>' + inlineMarkdown(escapeHtml(numbered[1])) + '</li>');
-      return;
+      continue;
     }
 
     closeList();
     paragraph.push(line);
-  });
+  }
 
   flushParagraph();
   closeList();
