@@ -206,6 +206,36 @@ function localDayKey(createdAt) {
   return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
 }
 
+/** created_at → 「10/27 14:32」（本地時間）；解析不了回空字串。 */
+function localTimeLabel(createdAt) {
+  var d = createdAt ? new Date(createdAt) : null;
+  if (!d || isNaN(d.getTime())) return '';
+  var p2 = function (n) { return String(n).padStart(2, '0'); };
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+}
+
+/**
+ * 點氣泡顯示／收起這則訊息的時間（2026-10-27 Fu）：時間列插在該列之後，
+ * 不進 state——重繪（串流中每個事件）後自然收起，不影響任何資料。
+ * 點到工具 chip、按鈕、連結，或正在選取文字時不切換。
+ */
+function bindTimeToggle(row, target, createdAt, side) {
+  var label = localTimeLabel(createdAt);
+  if (!label) return;
+  target.classList.add('has-time');
+  target.addEventListener('click', function (evt) {
+    if (evt.target.closest('details, summary, button, a')) return;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).length > 0) return;
+    var next = row.nextSibling;
+    if (next && next.classList && next.classList.contains('coach-msg-time')) {
+      next.remove();
+      return;
+    }
+    row.parentNode.insertBefore(h('div', 'coach-msg-time coach-msg-time-' + side, label), next);
+  });
+}
+
 /** 日期分隔的字樣：「10/27（二）」。 */
 function dayLabel(dayKey) {
   var parts = dayKey.split('-');
@@ -824,11 +854,11 @@ function specialToolNode(tool) {
 function messageNodes(msg) {
   if (msg.role === 'user') {
     var row = h('div', 'coach-msg coach-msg-user');
-    if (msg.kind === 'analysis') {
-      row.appendChild(h('span', 'coach-tag', '分析近況'));
-    } else {
-      row.appendChild(h('div', 'coach-bubble coach-bubble-user', msg.text));
-    }
+    var userNode = msg.kind === 'analysis'
+      ? h('span', 'coach-tag', '分析近況')
+      : h('div', 'coach-bubble coach-bubble-user', msg.text);
+    row.appendChild(userNode);
+    bindTimeToggle(row, userNode, msg.createdAt, 'user');
     return [row];
   }
 
@@ -854,6 +884,7 @@ function messageNodes(msg) {
       bubble.appendChild(h('span', 'coach-typing', msg.pending ? WAITING_TEXT : '（沒有文字回覆）'));
     }
     coachRow.appendChild(bubble);
+    if (!msg.pending) bindTimeToggle(coachRow, bubble, msg.createdAt, 'coach');
     nodes.push(coachRow);
   }
   special.forEach(function (tool) {

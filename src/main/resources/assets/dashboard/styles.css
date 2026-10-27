@@ -1962,6 +1962,8 @@ body.coach-open .coach-panel {
 }
 
 .coach-bubble {
+  position: relative;
+  /* 尾巴（::after）定位用 */
   max-width: 92%;
   min-width: 0;
   padding: 8px 10px;
@@ -1987,6 +1989,65 @@ body.coach-open .coach-panel {
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
   color: var(--text);
+}
+
+/* 對話泡泡的尾巴（2026-10-27 Fu）：旋轉 45° 的小方塊，只畫兩條邊就成了一個尖角，
+   底色與邊框沿用氣泡本身，深淺色主題自動跟著換。氣泡外側留出尾巴的空間。 */
+.coach-bubble-user,
+.coach-bubble-coach {
+  margin-bottom: 2px;
+}
+
+.coach-bubble-user {
+  margin-right: 6px;
+}
+
+.coach-bubble-coach {
+  margin-left: 6px;
+}
+
+.coach-bubble-user::after,
+.coach-bubble-coach::after {
+  content: "";
+  position: absolute;
+  bottom: 8px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+}
+
+.coach-bubble-user::after {
+  right: -5px;
+  background: var(--accent);
+  border-top: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+}
+
+.coach-bubble-coach::after {
+  left: -5px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
+/* 點氣泡顯示時間 */
+.has-time {
+  cursor: pointer;
+}
+
+.coach-msg-time {
+  margin-top: -4px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.coach-msg-time-user {
+  text-align: right;
+  padding-right: 8px;
+}
+
+.coach-msg-time-coach {
+  padding-left: 8px;
 }
 
 .coach-typing {
