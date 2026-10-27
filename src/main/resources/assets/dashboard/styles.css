@@ -2052,6 +2052,50 @@ body.coach-open .coach-panel {
   font-size: var(--fs-sm);
 }
 
+/* 教練正在回覆：泡泡裡三個依序跳動的點 */
+.coach-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.coach-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.4;
+  animation: coach-dot-bounce 1.2s infinite ease-in-out;
+}
+
+.coach-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.coach-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes coach-dot-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* 極簡 Markdown 的排版 */
 .coach-md>*:first-child {
   margin-top: 0;
@@ -2090,6 +2134,28 @@ body.coach-open .coach-panel {
   border: 1px solid var(--border);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.92em;
+}
+
+/* 「本次用到的事實清單」預設收起，點標題展開 */
+.coach-md .coach-facts {
+  margin: 4px 0 0;
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+
+.coach-md .coach-facts>summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.coach-md .coach-facts-body {
+  margin-top: 6px;
+}
+
+.coach-md .coach-facts-body>*:last-child {
+  margin-bottom: 0;
 }
 
 /* 表格：窄面板放不下時在容器內橫向捲動，不撐破氣泡 */

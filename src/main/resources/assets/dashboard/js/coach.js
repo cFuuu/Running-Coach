@@ -112,7 +112,6 @@ var UPDATE_LABEL = {
   stop: '已停止追蹤'
 };
 
-var WAITING_TEXT = '教練準備中…（約 10～20 秒）';
 var BUSY_TEXT = '教練正在回覆或分析中，請稍候';
 
 var WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -308,8 +307,21 @@ function renderTable(rows) {
   return html + '</tbody></table></div>';
 }
 
+// 「本次用到的事實清單」（行為約束 4）預設收起，學員點開才看（2026-10-27 Fu）。
+// 教練的寫法不固定：「## 本次使用的事實清單」「**本次用到的事實**：」都有，標題或整行粗體都算。
+var FACTS_HEADING_RE = /^本次(?:用到|使用)的事實/;
+
+/** 這一行是「事實清單」的標題（# 標題或整行粗體）就回傳標題文字，否則 null。 */
+function factsHeading(line) {
+  var m = line.match(/^#{1,4}\s+(.*)$/) || line.match(/^\*\*([^*]+)\*\*\s*[:：]?\s*$/);
+  if (!m) return null;
+  var title = m[1].replace(/\*\*/g, '').replace(/[:：]\s*$/, '').trim();
+  return FACTS_HEADING_RE.test(title) ? title : null;
+}
+
 /**
  * 把極簡 Markdown 轉成 HTML 片段。支援：# 標題、- 清單、數字清單、表格、段落。
+ * 「本次用到的事實清單」從標題到回覆結尾（或下一個標題）收進可展開的 <details>。
  * @param {string} text
  * @returns {string} HTML
  */
@@ -318,6 +330,7 @@ function renderMarkdown(text) {
   var out = [];
   var listType = null; // 'ul' | 'ol' | null
   var paragraph = [];
+  var inFacts = false;  // 正在「事實清單」的 <details> 裡
 
   function flushParagraph() {
     if (paragraph.length === 0) return;
@@ -330,10 +343,22 @@ function renderMarkdown(text) {
   function openList(type) {
     if (listType !== type) { closeList(); out.push('<' + type + '>'); listType = type; }
   }
+  function closeFacts() {
+    if (inFacts) { out.push('</div></details>'); inFacts = false; }
+  }
 
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].replace(/\s+$/, '');
     if (line === '') { flushParagraph(); closeList(); continue; }
+
+    var facts = factsHeading(line);
+    if (facts) {
+      flushParagraph(); closeList(); closeFacts();
+      out.push('<details class="coach-facts"><summary>' + inlineMarkdown(escapeHtml(facts))
+        + '</summary><div class="coach-facts-body">');
+      inFacts = true;
+      continue;
+    }
 
     if (isTableRow(line) && TABLE_SEPARATOR_RE.test(lines[i + 1] || '')) {
       flushParagraph(); closeList();
@@ -347,7 +372,7 @@ function renderMarkdown(text) {
 
     var heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
-      flushParagraph(); closeList();
+      flushParagraph(); closeList(); closeFacts();
       var level = Math.min(heading[1].length + 2, 6); // # → h3（面板內不用 h1/h2）
       out.push('<h' + level + '>' + inlineMarkdown(escapeHtml(heading[2])) + '</h' + level + '>');
       continue;
@@ -373,6 +398,7 @@ function renderMarkdown(text) {
 
   flushParagraph();
   closeList();
+  closeFacts();
   return out.join('');
 }
 
@@ -892,6 +918,17 @@ function specialToolNode(tool) {
   return updateLineNode(tool);
 }
 
+/** 教練正在回覆的泡泡：三個依序跳動的點。 */
+function typingNode() {
+  var row = h('div', 'coach-msg coach-msg-coach');
+  var bubble = h('div', 'coach-bubble coach-bubble-coach coach-dots');
+  bubble.setAttribute('role', 'status');
+  bubble.setAttribute('aria-label', '教練正在回覆');
+  for (var i = 0; i < 3; i++) bubble.appendChild(h('span', 'coach-dot'));
+  row.appendChild(bubble);
+  return row;
+}
+
 /** 一則訊息 → 一或多個節點（教練氣泡後面接寫入型工具的結果）。 */
 function messageNodes(msg) {
   if (msg.role === 'user') {
@@ -908,9 +945,10 @@ function messageNodes(msg) {
   var tools = msg.tools || [];
   var plain = tools.filter(function (t) { return !isSpecialTool(t); });
   var special = tools.filter(isSpecialTool);
-  var waiting = !msg.text && plain.length === 0;
+  var hasContent = !!msg.text || plain.length > 0;
 
-  if (!waiting || special.length === 0) {
+  // 有內容才畫教練氣泡；回覆已結束卻什麼都沒有時，留一個說明氣泡
+  if (hasContent || (!msg.pending && special.length === 0)) {
     var coachRow = h('div', 'coach-msg coach-msg-coach');
     var bubble = h('div', 'coach-bubble coach-bubble-coach');
     if (msg.kind === 'analysis') {
@@ -923,7 +961,7 @@ function messageNodes(msg) {
       md.innerHTML = renderMarkdown(msg.text); // 已 escape，見 renderMarkdown
       bubble.appendChild(md);
     } else if (plain.length === 0) {
-      bubble.appendChild(h('span', 'coach-typing', msg.pending ? WAITING_TEXT : '（沒有文字回覆）'));
+      bubble.appendChild(h('span', 'coach-typing', '（沒有文字回覆）'));
     }
     coachRow.appendChild(bubble);
     if (!msg.pending) bindTimeToggle(coachRow, bubble, msg.createdAt, 'coach');
@@ -933,6 +971,8 @@ function messageNodes(msg) {
     var node = specialToolNode(tool);
     if (node) nodes.push(node);
   });
+  // 還在回覆：最後放一個「…」跳動的泡泡，像一般 AI 聊天（2026-10-27 Fu，取代「教練準備中」文字）
+  if (msg.pending) nodes.push(typingNode());
   return nodes;
 }
 
