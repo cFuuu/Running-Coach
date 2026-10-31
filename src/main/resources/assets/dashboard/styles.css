@@ -8701,12 +8701,22 @@ button.recent-row .rc-dist {
 /* 底部：當月各運動合計 */
 .cal-foot {
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 8px 20px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.cal-foot-track {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 20px;
+}
+
+/* 左右箭頭只給手機用 */
+.cal-foot-arrow {
+  display: none;
 }
 
 .cal-foot-item {
@@ -9084,17 +9094,56 @@ button.recent-row .rc-dist {
     font-size: 10.5px;
   }
 
-  /* 手機：四欄等寬，圖示在上、數值在下（2026-10-31 Fu）。原本左右並排換行，
-     四種運動排成「三個＋落單一個」，數值長短不一，看起來沒對齊 */
+  /* 手機：單列，圖示在上、數值在下（2026-10-31 Fu）。四種以內平分整列；
+     超過四種每種佔四分之一，左右箭頭／滑動切換（2026-11-01 Fu） */
   .cal-foot {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px 4px;
+    align-items: center;
+  }
+
+  .cal-foot-track {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    /* 置中會讓溢出的第一項切在左側、捲不回來 */
+    justify-content: flex-start;
+    gap: 0;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .cal-foot-track::-webkit-scrollbar {
+    display: none;
   }
 
   .cal-foot-item {
+    flex: 1 0 0;
+    min-width: 0;
     flex-direction: column;
     gap: 4px;
+    scroll-snap-align: start;
+  }
+
+  .cal-foot.is-scroll .cal-foot-item {
+    flex: 0 0 25%;
+  }
+
+  .cal-foot-arrow {
+    display: block;
+    flex: none;
+    width: 24px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font-size: var(--fs-lg);
+    cursor: pointer;
+  }
+
+  .cal-foot-arrow:disabled {
+    color: var(--border);
+    cursor: default;
   }
 }
 

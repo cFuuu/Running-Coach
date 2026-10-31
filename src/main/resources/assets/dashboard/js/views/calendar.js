@@ -504,8 +504,12 @@ function renderCellChips(day, today, races) {
   return wrap;
 }
 
+// 手機底部合計一次顯示幾種運動；超過就左右滑動（2026-11-01 Fu）
+var FOOT_PHONE_VISIBLE = 4;
+
 function renderMonthFooter(totals) {
   var foot = h('div', 'cal-foot');
+  var track = h('div', 'cal-foot-track');
   ['run', 'walk', 'bike', 'hike', 'swim', 'strength', 'other'].forEach(function (sport) {
     var t = totals.bySport[sport];
     if (!t || t.count === 0) return;
@@ -522,10 +526,40 @@ function renderMonthFooter(totals) {
     }
     item.appendChild(h('span', 'cal-foot-val', text));
     item.title = SPORT_LABEL[sport] + '　' + t.count + ' 次';
-    foot.appendChild(item);
+    track.appendChild(item);
   });
-  if (!foot.firstChild) foot.appendChild(h('span', 'cal-foot-empty', '本月還沒有活動'));
+  if (!track.firstChild) {
+    foot.appendChild(h('span', 'cal-foot-empty', '本月還沒有活動'));
+    return foot;
+  }
+  foot.appendChild(track);
+  if (track.children.length > FOOT_PHONE_VISIBLE) addFooterArrows(foot, track);
   return foot;
+}
+
+/** 左右箭頭（只在手機顯示，桌機照舊換行全列）：一次捲一頁，到底時停用該側。 */
+function addFooterArrows(foot, track) {
+  foot.classList.add('is-scroll');
+  function arrow(cls, label, text, dir) {
+    var btn = h('button', 'cal-foot-arrow ' + cls, text);
+    btn.type = 'button';
+    btn.setAttribute('aria-label', label);
+    btn.addEventListener('click', function () {
+      track.scrollBy({ left: dir * track.clientWidth, behavior: 'smooth' });
+    });
+    return btn;
+  }
+  var prev = arrow('cal-foot-prev', '上一組運動', '‹', -1);
+  var next = arrow('cal-foot-next', '下一組運動', '›', 1);
+  foot.insertBefore(prev, track);
+  foot.appendChild(next);
+  function sync() {
+    prev.disabled = track.scrollLeft <= 1;
+    next.disabled = track.clientWidth > 0
+      && track.scrollLeft + track.clientWidth >= track.scrollWidth - 1;
+  }
+  track.addEventListener('scroll', sync, { passive: true });
+  requestAnimationFrame(sync);
 }
 
 /**
