@@ -512,7 +512,10 @@ function renderMonthFooter(totals) {
     var item = h('div', 'cal-foot-item');
     item.appendChild(sportChip(sport, null));
     var text;
-    if (sport === 'strength' || (sport === 'other' && t.km === 0)) {
+    // 健身只寫次數，時間不重要（2026-10-31 Fu）
+    if (sport === 'strength') {
+      text = t.count + ' 次';
+    } else if (sport === 'other' && t.km === 0) {
       text = t.count + ' 次 · ' + chipValue(0, t.sec);
     } else {
       text = C.formatNumber(t.km, 1) + ' km';

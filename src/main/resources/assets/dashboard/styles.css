@@ -9072,8 +9072,17 @@ button.recent-row .rc-dist {
     font-size: 10.5px;
   }
 
+  /* 手機：四欄等寬，圖示在上、數值在下（2026-10-31 Fu）。原本左右並排換行，
+     四種運動排成「三個＋落單一個」，數值長短不一，看起來沒對齊 */
   .cal-foot {
-    gap: 6px 14px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 4px;
+  }
+
+  .cal-foot-item {
+    flex-direction: column;
+    gap: 4px;
   }
 }
 
