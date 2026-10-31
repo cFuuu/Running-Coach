@@ -9007,14 +9007,20 @@ button.recent-row .rc-dist {
     grid-auto-rows: 1fr;
   }
 
+  /* 等高列以兩顆膠囊的格子為準（75→約 65px，2026-10-31 Fu：太高）：壓日期行高、格內距與間距，
+     膠囊外圍的 2.5px（已執行外框）不動，否則外框會互相重疊 */
   .calendar-cell.cal-cell {
-    min-height: 64px;
-    padding: 3px 1px 4px;
-    gap: 2px;
+    min-height: 56px;
+    padding: 2px 1px 2px;
+    gap: 0;
+  }
+
+  .cal-date {
+    line-height: 1.3;
   }
 
   .cal-chips {
-    gap: 2px;
+    gap: 0;
   }
 
   /* iPhone 系統字型的數字較寬，「15.2」差約一個數字寬（2026-10-24 Fu 選方案 B：每項縮一點）：
