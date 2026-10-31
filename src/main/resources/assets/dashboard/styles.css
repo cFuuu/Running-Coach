@@ -9001,6 +9001,12 @@ button.recent-row .rc-dist {
     margin-right: calc(3px - var(--gap));
   }
 
+  /* 每週一列等高（以當月最高的一列為準）：原本各列依當週膠囊最多的那天撐開，
+     有兩顆膠囊的週比較高，整張月曆高低不一（2026-10-31 Fu） */
+  #panel-calendar .cal-grid {
+    grid-auto-rows: 1fr;
+  }
+
   .calendar-cell.cal-cell {
     min-height: 64px;
     padding: 3px 1px 4px;
