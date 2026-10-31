@@ -1248,9 +1248,8 @@ body.coach-open .coach-panel {
    列本身接近不透明＋輕度模糊：完全透明時，底下的高彩度膠囊會讓標籤字對比不足。 */
 :root {
   --tabbar-h: 60px;
-  /* 2026-10-24 Fu：10px 太高，往下貼近底部。2026-10-31 Fu：再往下 6px（4px → −2px），
-     實機上與 Safari 收合後的網址膠囊之間還留一點空隙；再低會被膠囊蓋住中間的分頁 */
-  --tabbar-bottom: calc(env(safe-area-inset-bottom, 0px) - 2px);
+  /* 2026-10-24 Fu：10px 太高，往下貼近底部 */
+  --tabbar-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 }
 
 .tabbar {
