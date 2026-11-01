@@ -1302,5 +1302,9 @@
   - [ ] **Fu 確認**：日常用的瀏覽器能否被公開網頁存取 127.0.0.1（Local Network Access 會擋、會提示，還是放行）——修正後不影響安全，只用來決定稽核紀錄的結案方式。
   - [ ] **Fu 確認**：`.claude/settings.local.json` 裡對 `mcp__running-coach__sync_garmin_data` 的 allow 規則是否還需要（不進版控，由 Fu 自己決定）。
   - [ ] 若用 Tailscale MagicDNS 等主機名稱連 dashboard，要在 `RC_ALLOWED_HOSTS` 設好，否則會回 400。
-  - [ ] 稽核 deferred 的兩項待下一輪（`standard` profile）：①非 panel 的 Claude Code MCP 路徑（區網可寫文字經讀取工具進入擁有全部寫入工具的 session）；②API 後端聊天無鎖、無長度上限，MCP `sync_garmin_data` 的 `days` 無上限。
-  - [ ] 稽核列出的其他 hardening（錯誤訊息帶 token 目錄路徑、uvicorn 未固定 `proxy_headers`、Leaflet 無 SRI、`secret_patterns` 缺 `sk-ant-` 規則等）尚未處理，見稽核報告 REPORT.md §5。
+  - [x] 稽核 deferred ②：API 後端聊天也上 `SESSION_LOCK`（409）、提問上限 4000 字。
+  - [x] hardening：uvicorn 明確傳 `forwarded_allow_ips="127.0.0.1"`（不受環境變數影響）；`proxy_headers` 刻意維持開啟，關掉會讓本機轉送程式後的遠端請求全變成 127.0.0.1。
+  - [x] hardening：`secret_patterns` 補 `sk-ant-` 金鑰與 OAuth 參數規則（已對真實 DB 試跑匯出無誤判）。
+  - [x] hardening：Leaflet 帶 SRI 載入（headless Chromium 對真實 DB 副本驗證地圖正常）。
+  - [ ] 稽核 deferred ①待下一輪（`standard` profile）：非 panel 的 Claude Code MCP 路徑（區網可寫文字經讀取工具進入擁有全部寫入工具的 session）。MCP `sync_garmin_data` 的 `days` 維持不設上限（Fu 自己的 Claude Code 路徑，CLI 也照給的天數走）。
+  - [ ] 其餘 hardening 判斷暫不做：錯誤訊息帶 token 目錄路徑（只回給本機的 Fu，路徑有助排錯）；`raw_data_json` 存 owner 欄位、`/docs` 未關、`.gitignore` 補 `*.db` 等低影響項，見稽核報告 REPORT.md §5。
