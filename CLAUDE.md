@@ -127,7 +127,7 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 - 待辦清單、Phase 進度：[docs/dev/TODO.md](docs/dev/TODO.md)
 - 願景、架構、決策記錄、課表模板：[docs/dev/PLAN.md](docs/dev/PLAN.md)
 - Dashboard API/前端契約：[docs/dev/DASHBOARD_TASKS.md](docs/dev/DASHBOARD_TASKS.md)
-- 學員個人資料（不進版控）：`output/athlete_profile.md`、`output/current_training_plan.md`、`output/training_log.md`
+- 學員個人資料（不進版控）：`output/athlete_profile.md`、`output/current_training_plan.md`
 
 ## Agent skills
 
