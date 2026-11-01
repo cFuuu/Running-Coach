@@ -460,9 +460,9 @@ grill 過程中最先被推翻的，是「單押一派 vs 多派融合 vs 依情
 | 檔案 | 內容 | 將來對應資料表 |
 |---|---|---|
 | `output/athlete_profile.md` | 學員基本資料、目標賽事、訓練偏好、個人限制 | `athlete_profile` |
-| `output/current_training_plan.md` | 當期課表排程與配速指引 | `training_plan` |
+| `output/training_plan.md` | 當期課表排程與配速指引 | `training_plan` |
 
-實際執行紀錄由資料庫 `activities` / `daily_wellness` 承接。原本的 `output/training_log.md` 只寫過一次（2026-06-29～08-16 區間觀察），已於 2026-11-01 併入 `current_training_plan.md` 的歷史段落後刪除。
+實際執行紀錄由資料庫 `activities` / `daily_wellness` 承接。原本的 `output/training_log.md` 只寫過一次（2026-06-29～08-16 區間觀察），已於 2026-11-01 併入 `training_plan.md`（原 `current_training_plan.md`）的歷史段落後刪除。
 
 **離線 Dashboard 匯出檔**（N-30，2026-10-24 定案）：`output/offline/dashboard_offline.html` 是本機資料庫的唯讀快照，內含健康資料，不含任何帳密或 token。匯出時寫出前會掃描，發現 token、cookie、email 或 `userProfileId` 就中止。這份檔案另外會複製一份到 **Fu 本人的 iCloud Drive**（路徑由 `RC_OFFLINE_EXPORT_DIR` 設定，不寫死在程式碼），供 iPhone 離線閱讀。資料庫仍是唯一的真實來源，匯出檔只是快照，不會再寫回資料庫。流程見 [OFFLINE_EXPORT.md](OFFLINE_EXPORT.md)。
 
