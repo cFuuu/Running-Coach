@@ -165,7 +165,7 @@ function deltaParts(cur, prev, deltaFmt, fmt) {
   var d = cur - prev;
   var text = d > 0 ? '▲ ' + deltaFmt(Math.abs(d)) : (d < 0 ? '▼ ' + deltaFmt(Math.abs(d)) : '＝ 持平');
   var badge = h('span', 'neutral-badge trend-delta', text);
-  badge.title = '與前一段等長期間（' + spanText(p.start, p.end) + '）比較，只標增減';
+  badge.title = '圖卡的 ▲▼ 箭頭是與前一區間做比較 (' + spanText(p.start, p.end) + ')';
   return { badge: badge, note: '前期 ' + fmt(prev) };
 }
 
@@ -799,7 +799,7 @@ var CATEGORIES = [
 
 function compareHint() {
   var p = state.trendsPrev;
-  if (p) return '數字卡的 ▲▼：與前一段等長期間（' + spanText(p.start, p.end) + '）比較，只標增減';
+  if (p) return '圖卡的 ▲▼ 箭頭是與前一區間做比較 (' + spanText(p.start, p.end) + ')';
   var win = currentWindow();
   if (win && !win.start) return '選「全部」時沒有前一段期間，數字卡不顯示 ▲▼';
   return '';
