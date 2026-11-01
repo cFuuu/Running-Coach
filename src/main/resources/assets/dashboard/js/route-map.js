@@ -20,6 +20,11 @@ import { formatDuration, formatPace } from './charts.js';
 
 var LEAFLET_JS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
 var LEAFLET_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+// Subresource Integrity：CDN 上的檔案被換掉時瀏覽器拒絕執行，改走下面的 SVG 退路。
+// 這段程式也會打包進含全部個人資料的離線檔，沒有 SRI 等於把資料交給 CDN（2026-11-01 資安稽核）。
+// 值取自 cdnjs 公布的 SRI，並與下載檔案自行計算的 sha512 比對一致；升級版本時兩個都要換。
+var LEAFLET_JS_SRI = 'sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g==';
+var LEAFLET_CSS_SRI = 'sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==';
 var LOAD_TIMEOUT_MS = 8000;
 var TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_{shade}_Gray_Base/MapServer/tile/{z}/{y}/{x}';
 var TILE_MAX_NATIVE_ZOOM = 16;
@@ -50,9 +55,13 @@ function loadLeaflet() {
     var css = document.createElement('link');
     css.rel = 'stylesheet';
     css.href = LEAFLET_CSS;
+    css.integrity = LEAFLET_CSS_SRI;
+    css.crossOrigin = 'anonymous';
     document.head.appendChild(css);
     var script = document.createElement('script');
     script.src = LEAFLET_JS;
+    script.integrity = LEAFLET_JS_SRI;
+    script.crossOrigin = 'anonymous';
     var timer = setTimeout(function () { reject(new Error('timeout')); }, LOAD_TIMEOUT_MS);
     script.onload = function () { clearTimeout(timer); window.L ? resolve(window.L) : reject(new Error('no L')); };
     script.onerror = function () { clearTimeout(timer); reject(new Error('load failed')); };
