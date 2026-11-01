@@ -9,12 +9,15 @@ READ_ONLY 的工具餵給模型，漏分類的新 tool 會靜悄悄地從聊天�
 import asyncio
 import unittest
 
+from mcp.server import MCPServer
+
 from src.main.python.mcp.server import (
     PANEL_TOOL_NAMES,
     PANEL_WRITE_TOOL_NAMES,
     READ_ONLY_TOOL_NAMES,
     WRITE_TOOL_NAMES,
     mcp,
+    restrict_tools,
 )
 
 
@@ -63,6 +66,31 @@ class TestToolClassification(unittest.TestCase):
                      "save_external_workouts"):
             with self.subTest(tool=name):
                 self.assertNotIn(name, PANEL_TOOL_NAMES)
+
+
+class TestRestrictTools(unittest.TestCase):
+    """--panel／--read-only 由 server 自己移除工具，不只靠 Claude CLI 的權限判斷
+    （2026-11-01 資安稽核 NV-3）。用一個新的 server 測，不動共用的 `mcp`。"""
+
+    def _server_with_all_tools(self) -> MCPServer:
+        server = MCPServer("restrict-test")
+        for name in READ_ONLY_TOOL_NAMES | WRITE_TOOL_NAMES:
+            server.add_tool(lambda: None, name=name)
+        return server
+
+    def _names(self, server):
+        return {tool.name for tool in asyncio.run(server.list_tools())}
+
+    def test_panel_keeps_only_whitelist(self):
+        server = self._server_with_all_tools()
+        restrict_tools(server, PANEL_TOOL_NAMES)
+        self.assertEqual(self._names(server), PANEL_TOOL_NAMES)
+        self.assertNotIn("sync_garmin_data", self._names(server))
+
+    def test_read_only_keeps_no_write_tools(self):
+        server = self._server_with_all_tools()
+        restrict_tools(server, READ_ONLY_TOOL_NAMES)
+        self.assertEqual(self._names(server), READ_ONLY_TOOL_NAMES)
 
 
 if __name__ == "__main__":

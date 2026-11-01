@@ -20,8 +20,7 @@ from fastapi.testclient import TestClient
 from src.main.python.api import routes_analysis, routes_chat
 from src.main.python.api.app import create_app
 from src.main.python.mcp.server import (
-    PANEL_TOOL_NAMES,
-    PANEL_WRITE_TOOL_NAMES,
+    READ_ONLY_TOOL_NAMES,
     WRITE_TOOL_NAMES,
     coach,
 )
@@ -132,23 +131,20 @@ class TestBuildCommand(unittest.TestCase):
         """prompt 走 stdin（Windows 命令列約 32K 字元上限），-p 後面直接接旗標。"""
         self.assertEqual(self._value("-p"), "--output-format")
 
-    def test_panel_tools_preapproved(self):
+    def test_only_read_only_tools_preapproved(self):
+        """按鈕啟動、學員沒說話：連 §10.2 白名單寫入也不開（資安稽核 NV-4／NV-5）。"""
         allowed = set(self._value("--allowedTools").split(","))
-        self.assertEqual(allowed, {f"mcp__running-coach__{n}" for n in PANEL_TOOL_NAMES})
+        self.assertEqual(allowed, {f"mcp__running-coach__{n}" for n in READ_ONLY_TOOL_NAMES})
 
-    def test_non_whitelisted_write_tools_explicitly_disallowed(self):
+    def test_every_write_tool_explicitly_disallowed(self):
         disallowed = set(self._value("--disallowedTools").split(","))
-        self.assertEqual(
-            disallowed,
-            {f"mcp__running-coach__{n}" for n in WRITE_TOOL_NAMES - PANEL_WRITE_TOOL_NAMES},
-        )
-        self.assertNotIn("mcp__running-coach__add_context_note", self._value("--allowedTools"))
+        self.assertEqual(disallowed, {f"mcp__running-coach__{n}" for n in WRITE_TOOL_NAMES})
 
-    def test_mcp_config_is_json_string_with_only_running_coach_in_panel_mode(self):
+    def test_mcp_config_is_json_string_with_only_running_coach_in_read_only_mode(self):
         config = json.loads(self._value("--mcp-config"))
         self.assertEqual(list(config["mcpServers"]), ["running-coach"])
         entry = config["mcpServers"]["running-coach"]
-        self.assertEqual(entry["args"], FAKE_MCP_ENTRY["args"] + ["--panel"])
+        self.assertEqual(entry["args"], FAKE_MCP_ENTRY["args"] + ["--panel", "--read-only"])
         self.assertEqual(entry["command"], "python")
 
     def test_panel_flag_not_duplicated(self):

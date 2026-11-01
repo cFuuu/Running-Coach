@@ -123,9 +123,13 @@ def build_system_prompt() -> str:
 
 
 def build_command(config: AnalysisConfig) -> list[str]:
-    """組 `claude -p` 指令（與聊天共用 claude_session.build_command，prompt 走 stdin）。"""
+    """組 `claude -p` 指令（與聊天共用 claude_session.build_command，prompt 走 stdin）。
+
+    只開唯讀工具：按鈕啟動、學員沒說話，「不要記體感、不要建立或結案追蹤事項」
+    由工具層保證，不只靠上面的提示文字（2026-11-01 資安稽核 NV-4／NV-5）。
+    """
     return claude_session.build_command(
-        config.claude, system_prompt=build_system_prompt(), model=config.model
+        config.claude, system_prompt=build_system_prompt(), model=config.model, read_only=True
     )
 
 

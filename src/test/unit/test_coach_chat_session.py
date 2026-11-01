@@ -134,8 +134,10 @@ class TestRunTurn(SessionTestCase):
         cmd = runner.cmd
         self.assertEqual(cmd[cmd.index("--model") + 1], "opus")
         self.assertEqual(cmd[cmd.index("--append-system-prompt") + 1], coach_chat.build_system_prompt())
-        self.assertIn("--panel", json.loads(cmd[cmd.index("--mcp-config") + 1])
-                      ["mcpServers"]["running-coach"]["args"])
+        mcp_config = json.loads(cmd[cmd.index("--mcp-config") + 1])
+        mcp_args = mcp_config["mcpServers"]["running-coach"]["args"]
+        self.assertIn("--panel", mcp_args)
+        self.assertNotIn("--read-only", mcp_args, "聊天要保留 §10.2 白名單寫入")
 
     def test_failures_are_not_persisted(self):
         cases = {

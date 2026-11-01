@@ -12,7 +12,11 @@ coach_analysis 循環 import（coach_analysis 需要 coach_chat 的 DEFAULT_MODE
 - `--disallowedTools`：其餘寫入型工具（`WRITE_TOOL_NAMES - PANEL_WRITE_TOOL_NAMES`）明確禁止
 - `--permission-mode dontAsk`：任何未核准的工具一律直接拒絕，不會卡在等人按允許
 - `--mcp-config` 傳 JSON 字串：只取設定檔裡 running-coach 那一項，args 末尾加
-  `--panel`，讓 MCP server 進入 panel 模式（寫入型工具依 §10 收緊）
+  `--panel`，讓 MCP server 進入 panel 模式：寫入型工具依 §10 收緊，且 server
+  **自己移除**白名單以外的工具——不只靠 Claude CLI 的權限判斷（2026-11-01 資安
+  稽核 NV-3：專案 settings 可能另有 allow 規則）
+- `read_only=True`（「分析近況」用）：再加 `--read-only`，只留唯讀工具。按鈕啟動
+  的分析沒有學員發言，任何寫入都不是學員要求的（NV-4／NV-5）
 - `--strict-mcp-config`：不吃使用者全域的其他 MCP server
 - `--no-session-persistence`：不在 Claude Code 端留 session 紀錄（問答只存本專案資料庫）
 
@@ -33,13 +37,18 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.main.python.mcp.server import PANEL_TOOL_NAMES, PANEL_WRITE_TOOL_NAMES, WRITE_TOOL_NAMES
+from src.main.python.mcp.server import (
+    PANEL_FLAG,
+    PANEL_TOOL_NAMES,
+    READ_ONLY_FLAG,
+    READ_ONLY_TOOL_NAMES,
+    WRITE_TOOL_NAMES,
+)
 
 # 設定檔裡本專案 MCP server 的名稱；Claude Code 的工具全名是
 # mcp__<server>__<tool>。與設定檔的 key 不一致時工具會全部對不上
 # （init 事件裡看得到實際載入的工具清單）。
 MCP_SERVER_NAME = "running-coach"
-PANEL_FLAG = "--panel"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_MCP_CONFIG = PROJECT_ROOT / ".mcp.json"
@@ -99,8 +108,9 @@ def tool_short_name(full: str) -> str:
     return full[len(prefix):] if full.startswith(prefix) else full
 
 
-def panel_mcp_config_json(mcp_config: Path) -> str:
-    """讀 MCP 設定檔，只留 running-coach 那一項並在 args 末尾加 `--panel`，回傳 JSON 字串。
+def panel_mcp_config_json(mcp_config: Path, *, read_only: bool = False) -> str:
+    """讀 MCP 設定檔，只留 running-coach 那一項並在 args 末尾加 `--panel`
+    （read_only 時再加 `--read-only`），回傳 JSON 字串。
 
     改傳字串而不是檔案路徑，是為了不必另外寫一份「panel 版」設定檔（兩份會不同步）。
     設定檔格式不對時丟 ValueError，訊息只帶檔名與缺的欄位，不回顯內容。
@@ -113,28 +123,31 @@ def panel_mcp_config_json(mcp_config: Path) -> str:
             f"MCP 設定檔 {mcp_config} 讀不到 mcpServers.{MCP_SERVER_NAME}"
         ) from exc
     args = list(entry.get("args") or [])
-    if PANEL_FLAG not in args:
-        args.append(PANEL_FLAG)
+    for flag in (PANEL_FLAG, READ_ONLY_FLAG) if read_only else (PANEL_FLAG,):
+        if flag not in args:
+            args.append(flag)
     entry["args"] = args
     return json.dumps({"mcpServers": {MCP_SERVER_NAME: entry}}, ensure_ascii=False)
 
 
-def build_command(settings: ClaudeCodeSettings, *, system_prompt: str, model: str) -> list[str]:
+def build_command(
+    settings: ClaudeCodeSettings, *, system_prompt: str, model: str, read_only: bool = False
+) -> list[str]:
     """組 `claude -p` 指令（聊天與分析共用）。安全邊界見模組說明，每個旗標都不可省。
 
+    read_only：只開唯讀工具（分析用）；否則開 PANEL_TOOL_NAMES（聊天用）。
     prompt 不在指令裡，由 runner 從 stdin 送入。
     """
-    allowed = ",".join(tool_full_name(n) for n in sorted(PANEL_TOOL_NAMES))
-    disallowed = ",".join(
-        tool_full_name(n) for n in sorted(WRITE_TOOL_NAMES - PANEL_WRITE_TOOL_NAMES)
-    )
+    tools = READ_ONLY_TOOL_NAMES if read_only else PANEL_TOOL_NAMES
+    allowed = ",".join(tool_full_name(n) for n in sorted(tools))
+    disallowed = ",".join(tool_full_name(n) for n in sorted(WRITE_TOOL_NAMES - tools))
     cmd = [
         settings.resolved_bin() or settings.claude_bin,
         "-p",
         "--output-format", "stream-json",
         "--verbose",
         "--tools", "",
-        "--mcp-config", panel_mcp_config_json(settings.mcp_config),
+        "--mcp-config", panel_mcp_config_json(settings.mcp_config, read_only=read_only),
         "--strict-mcp-config",
         "--allowedTools", allowed,
         "--disallowedTools", disallowed,

@@ -175,6 +175,22 @@ PANEL_WRITE_TOOL_NAMES = frozenset(
 # 對話框能用的全部工具＝唯讀＋白名單寫入
 PANEL_TOOL_NAMES = READ_ONLY_TOOL_NAMES | PANEL_WRITE_TOOL_NAMES
 
+# 啟動旗標（claude_session 組 --mcp-config 時引用同一份）
+PANEL_FLAG = "--panel"
+READ_ONLY_FLAG = "--read-only"
+
+
+def restrict_tools(server: MCPServer, allowed: frozenset[str]) -> None:
+    """從 server 移除 `allowed` 以外的工具：模型連看都看不到，更不可能呼叫。
+
+    panel 模式的白名單由 server 自己執行，不只靠 Claude CLI 的
+    --allowedTools／--disallowedTools（2026-11-01 資安稽核 NV-3：CLI 也會載入
+    專案 settings，裡面可能另有 allow 規則）。分類完整性由
+    test_mcp_tool_classification 保證，故以兩個集合的聯集為全部工具。
+    """
+    for name in sorted((READ_ONLY_TOOL_NAMES | WRITE_TOOL_NAMES) - allowed):
+        server.remove_tool(name)
+
 
 # --- Tools（讀取型） ---
 
@@ -1015,9 +1031,14 @@ def main() -> None:
     )
     ap.add_argument("--db-path", required=True, help="SQLite 資料庫路徑")
     ap.add_argument(
-        "--panel",
+        PANEL_FLAG,
         action="store_true",
-        help="由 Dashboard 對話框（claude -p）啟動：寫入型工具依 PLAN.md §10 收緊",
+        help="由 Dashboard 對話框（claude -p）啟動：只提供 PLAN.md §10 白名單工具，寫入依 §10 收緊",
+    )
+    ap.add_argument(
+        READ_ONLY_FLAG,
+        action="store_true",
+        help="只提供唯讀工具（Dashboard「分析近況」用，隱含 --panel）",
     )
     args = ap.parse_args()
 
@@ -1025,7 +1046,11 @@ def main() -> None:
         raise SystemExit(f"找不到資料庫檔案：{args.db_path}")
 
     _db_path = args.db_path
-    _panel_mode = args.panel
+    _panel_mode = args.panel or args.read_only
+    if args.read_only:
+        restrict_tools(mcp, READ_ONLY_TOOL_NAMES)
+    elif args.panel:
+        restrict_tools(mcp, PANEL_TOOL_NAMES)
     mcp.run()
 
 
