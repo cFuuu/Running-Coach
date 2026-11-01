@@ -9256,6 +9256,15 @@ button.recent-row .rc-dist {
   margin-left: 4px;
 }
 
+/* ▲ 綠、▼ 紅：只看方向，與 TSB 正負柱同色 */
+.trend-kpis .trend-delta.is-up {
+  color: var(--pct-green);
+}
+
+.trend-kpis .trend-delta.is-down {
+  color: var(--pct-red);
+}
+
 /* ---- 開關列：chip 換行排列，右側是「標出訓練日」等選項 */
 .trend-chips-row {
   display: flex;

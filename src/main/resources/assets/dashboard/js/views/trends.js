@@ -16,7 +16,7 @@
  * rc-dashboard-settings 的 trendsToggles（讀寫一律經 theme.js）。改版前各類別內「圖表」的
  * 自訂（trends-load 等）已被開關列取代，不再讀取。
  *
- * 本頁只呈現不解讀（D.1）：數字卡的 ▲▼ 只標增減方向，不用紅綠，也不寫好壞。
+ * 本頁只呈現不解讀（D.1）：數字卡的 ▲▼ 只標增減方向（▲ 綠、▼ 紅，2026-11-01 Fu），不寫好壞。
  */
 
 import * as C from '../charts.js';
@@ -164,7 +164,7 @@ function deltaParts(cur, prev, deltaFmt, fmt) {
   if (!isNum(prev) || !isNum(cur)) return { badge: null, note: '前期無資料' };
   var d = cur - prev;
   var text = d > 0 ? '▲ ' + deltaFmt(Math.abs(d)) : (d < 0 ? '▼ ' + deltaFmt(Math.abs(d)) : '＝ 持平');
-  var badge = h('span', 'neutral-badge trend-delta', text);
+  var badge = h('span', 'neutral-badge trend-delta' + (d > 0 ? ' is-up' : (d < 0 ? ' is-down' : '')), text);
   badge.title = '圖卡的 ▲▼ 箭頭是與前一區間做比較 (' + spanText(p.start, p.end) + ')';
   return { badge: badge, note: '前期 ' + fmt(prev) };
 }
