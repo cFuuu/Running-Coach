@@ -210,6 +210,17 @@ class TestSecurityScan(BuildDashboardOfflineTestCase):
         self.plant_title(f"晨跑 {FAKE_EMAIL}")
         self.assert_aborts(FAKE_EMAIL)
 
+    def test_planted_api_key_inside_free_text_aborts(self):
+        """夾在一般文字裡的金鑰，「整個值就是長亂碼」的規則抓不到。"""
+        fake_key = "sk-ant-api03-" + "FAKEKEYfakekey0123456789"
+        self.plant_title(f"晨跑 備註 {fake_key} 記得換")
+        self.assert_aborts(fake_key)
+
+    def test_planted_oauth_param_aborts(self):
+        fake = "oauth_token=FAKEFAKEFAKE"
+        self.plant_title(f"晨跑 {fake}&x=1")
+        self.assert_aborts(fake)
+
     def test_identity_ref_from_db_aborts(self):
         self.plant_title(f"晨跑 {FAKE_USER_ID}")
         self.assert_aborts(FAKE_USER_ID)

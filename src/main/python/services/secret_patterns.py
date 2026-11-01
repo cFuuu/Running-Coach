@@ -15,6 +15,10 @@ VALUE_RULES: tuple[tuple[str, re.Pattern], ...] = (
     ("cookie 字串", re.compile(
         r"\b(?:JWT_FGP|SESSIONID|GARMIN-SSO(?:-[A-Z]+)*|CASTGC|cf_clearance|__cf_bm|__cflb)\s*=",
         re.IGNORECASE)),
+    # 2026-11-01 資安稽核：學員可能把金鑰或 Garmin 的 OAuth1 參數貼進聊天或筆記，
+    # 夾在一般文字裡時「整個值就是長亂碼」的規則抓不到
+    ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}")),
+    ("OAuth 參數", re.compile(r"\boauth_(?:token|token_secret|consumer_secret)\s*=", re.IGNORECASE)),
 )
 
 
