@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from src.main.python.api import routes_chat
 from src.main.python.api.app import create_app
 from src.main.python.models.db import get_connection
-from src.main.python.services import coach_chat, coach_chat_store
+from src.main.python.services import claude_session, coach_chat, coach_chat_store
 from src.test.unit.fixtures import build_fixture_db
 from src.test.unit.test_coach_chat import FakeBackend, text_round, tool_round
 
@@ -214,6 +214,45 @@ class TestConversationEndpoints(ChatRouteTestCase):
             "/api/chat/conversations/9999/messages", json={"text": "嗨"}
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_overlong_text_returns_422(self):
+        conversation_id = self.new_conversation()
+        response = self.client().post(
+            f"/api/chat/conversations/{conversation_id}/messages",
+            json={"text": "x" * (routes_chat.MAX_MESSAGE_CHARS + 1)},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.backend.calls, [])
+
+
+class TestApiBackendLock(ChatRouteTestCase):
+    """API 後端也與 session 後端、「分析近況」共用 SESSION_LOCK（2026-11-01 資安稽核）。"""
+
+    def test_busy_returns_409_without_calling_the_model(self):
+        self.backend.rounds = [text_round("不該被呼叫")]
+        conversation_id = self.new_conversation()
+        claude_session.SESSION_LOCK.acquire()
+        self.addCleanup(claude_session.SESSION_LOCK.release)
+        response = self.client().post(
+            f"/api/chat/conversations/{conversation_id}/messages", json={"text": "嗨"}
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.backend.calls, [], "忙碌時不該呼叫模型")
+
+    def test_lock_released_after_turn(self):
+        self.backend.rounds = [text_round("好。")]
+        conversation_id = self.new_conversation()
+        self.client().post(
+            f"/api/chat/conversations/{conversation_id}/messages", json={"text": "嗨"}
+        )
+        self.assertFalse(claude_session.SESSION_LOCK.locked())
+
+    def test_lock_released_after_error(self):
+        conversation_id = self.new_conversation()
+        self.client().post(
+            f"/api/chat/conversations/{conversation_id}/messages", json={"text": "嗨"}
+        )  # backend 沒有任何一輪可回 → error 事件
+        self.assertFalse(claude_session.SESSION_LOCK.locked())
 
 
 # --- SSE ---

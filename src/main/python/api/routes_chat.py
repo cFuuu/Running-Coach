@@ -39,6 +39,9 @@ SSE_HEADERS = {
     "X-Accel-Buffering": "no",
 }
 
+# 一則提問的字數上限。正常提問遠低於此；擋住一次塞進大段文字灌爆 context 與額度。
+MAX_MESSAGE_CHARS = 4000
+
 
 # 由 app.py 在建立 app 時以 dependency_overrides 覆寫成真正的設定。
 # 這個預設實作只是佔位，直接呼叫會報錯而不是回一份猜的設定。
@@ -209,23 +212,31 @@ async def post_message(
     就只剩 200＋`event: error` 可用）。回合中途的任何錯誤都走 `error` 事件，且該回合不落地。
 
     標題在這裡、送模型之前就建立（N-36 決策 5），回合失敗也保留。
+
+    兩種後端都先拿 `SESSION_LOCK`（與「分析近況」共用）：同一時間只跑一個教練回合。
+    API 後端原本不鎖，重複送出會並行花用 API key 的額度（2026-11-01 資安稽核）。
     """
     text = payload.get("text")
     if not isinstance(text, str) or not text.strip():
         raise HTTPException(status_code=422, detail="text 不可為空")
+    if len(text) > MAX_MESSAGE_CHARS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"一則提問最多 {MAX_MESSAGE_CHARS} 字（收到 {len(text)} 字）",
+        )
 
     resolved = _resolve_athlete_id(conn, athlete_id)
     if not coach_chat_store.conversation_exists(conn, resolved, conversation_id):
         raise HTTPException(status_code=404, detail=f"找不到 id={conversation_id} 的對話")
+
+    if not claude_session.SESSION_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail=claude_session.BUSY_MESSAGE)
 
     coach_chat_store.set_title_if_empty(
         conn, conversation_id, coach_chat_store.title_from_text(text)
     )
 
     if config.backend == coach_chat.BACKEND_SESSION:
-        # 聊天與「分析近況」共用一把鎖：同一時間只跑一個 Claude Code 子程序
-        if not claude_session.SESSION_LOCK.acquire(blocking=False):
-            raise HTTPException(status_code=409, detail=claude_session.BUSY_MESSAGE)
 
         def session_stream() -> Iterator[str]:
             try:
@@ -247,14 +258,17 @@ async def post_message(
         )
 
     async def event_stream() -> AsyncIterator[str]:
-        async for event in coach_chat.stream_turn(
-            conn=conn,
-            config=config,
-            backend=backend,
-            conversation_id=conversation_id,
-            text=text,
-            today=today,
-        ):
-            yield _sse_frame(event.event, event.data)
+        try:
+            async for event in coach_chat.stream_turn(
+                conn=conn,
+                config=config,
+                backend=backend,
+                conversation_id=conversation_id,
+                text=text,
+                today=today,
+            ):
+                yield _sse_frame(event.event, event.data)
+        finally:
+            claude_session.SESSION_LOCK.release()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=SSE_HEADERS)
