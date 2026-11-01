@@ -86,6 +86,11 @@ DEFAULT_PROFILE_FILENAME = "athlete_profile.md"
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
+# 只信任本機轉送來的 X-Forwarded-For（uvicorn 預設值，但會被環境變數
+# FORWARDED_ALLOW_IPS 改掉，故寫死）。proxy_headers 刻意維持開啟：若前面擺了
+# Cloudflare Tunnel 等本機轉送程式，它帶的 X-Forwarded-For 才能讓來源判斷看到
+# 真正的遠端位址；關掉反而會讓所有遠端請求都變成 127.0.0.1（2026-11-01 資安稽核）。
+FORWARDED_ALLOW_IPS = "127.0.0.1"
 # 等 server 開始接受連線的上限；逾時就放棄開瀏覽器（server 照常跑）
 BROWSER_WAIT_TIMEOUT_SEC = 15.0
 # Ctrl+C 後等既有連線（keep-alive、分析串流）自行結束的上限；逾時強制斷線，避免無限卡住
@@ -235,6 +240,8 @@ def main() -> None:
         host=args.host,
         port=args.port,
         timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_SEC,
+        proxy_headers=True,
+        forwarded_allow_ips=FORWARDED_ALLOW_IPS,
     )
 
 

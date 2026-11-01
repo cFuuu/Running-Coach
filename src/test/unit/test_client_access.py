@@ -10,9 +10,11 @@ import logging
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
+from src.main.python.api import app as app_module
 from src.main.python.api import client_access, routes_sync
 from src.main.python.api.app import create_app
 from src.main.python.services import coach_chat
@@ -140,6 +142,22 @@ class TestGuardOnApp(GuardedAppTestCase):
         r = TestClient(app, base_url="http://mypc.tailnet.ts.net:8000",
                        client=LOCAL_CLIENT).get("/api/meta")
         self.assertEqual(r.status_code, 200)
+
+
+class TestUvicornForwardedHeaders(unittest.TestCase):
+    """X-Forwarded-For 只信任本機，且不受環境變數 FORWARDED_ALLOW_IPS 影響。"""
+
+    def test_main_pins_forwarded_allow_ips(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "test.db"
+            build_fixture_db(db_path).close()
+            argv = ["app", "--db-path", str(db_path), "--no-browser"]
+            with mock.patch("sys.argv", argv), mock.patch("uvicorn.run") as run, \
+                    mock.patch.dict("os.environ", {"FORWARDED_ALLOW_IPS": "*"}):
+                app_module.main()
+        kwargs = run.call_args.kwargs
+        self.assertEqual(kwargs["forwarded_allow_ips"], "127.0.0.1")
+        self.assertTrue(kwargs["proxy_headers"], "關掉會讓本機轉送程式後的遠端請求全變成 127.0.0.1")
 
 
 if __name__ == "__main__":

@@ -63,8 +63,8 @@ def is_client_allowed(request: Request, allow_private_network: bool) -> bool:
     Starlette 的 `TestClient` 預設 host 是字串 `"testclient"`，因此測試必須傳
     `client=("127.0.0.1", 1)` 才會被放行——這正是這條規則該有的行為。
 
-    uvicorn 只信任來自 127.0.0.1 的 `X-Forwarded-For`，區網裝置無法靠偽造
-    標頭把自己講成本機。
+    uvicorn 只信任來自 127.0.0.1 的 `X-Forwarded-For`（`app.FORWARDED_ALLOW_IPS`，
+    明確傳給 uvicorn.run，不受環境變數影響），區網裝置無法靠偽造標頭把自己講成本機。
     """
     client = request.client
     if client is None or not client.host:
