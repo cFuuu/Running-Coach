@@ -1293,3 +1293,14 @@
   - [x] 路線改畫在數據欄下方不壓字、線寬 22→12，數據欄上下置中（2026-10-27 Fu 回饋，`1b4c795`）
   - [ ] **數字字體檔**（2026-10-27 Fu 決定列入後續，先不做）：數字與英文改用網路字型，中文維持系統字。字體檔（woff2，OFL 授權）放進 `assets/dashboard/`，離線檔也能用；畫圖前先 `document.fonts.load()`，載入失敗退回系統字。候選比較圖已給 Fu 看過（Montserrat、Saira、Archivo、Rubik、Barlow Condensed、Oswald、Bebas Neue、Roboto Mono），**推薦 Montserrat**（最接近 Strava）。待決：只用一套，或做成匯出時可切換的「字體」選項。
   - [ ] iPhone 真機測「分享…」存到相簿（併入 N-30 ⑤）
+
+- **🔵 N-38 資安稽核 run-1 的修正（2026-11-01，主體完成）**：稽核報告在 repo 外（`~/security-audit-skill/Running_coach/run-1/`）。5 項 needs_validation 中，NV-1／NV-2 的伺服器端前提已用本機 curl 實測成立；決策見 [PLAN.md §1](PLAN.md#1-決策記錄decisions-log) 2026-11-01 與 §10。
+  - [x] NV-1／NV-2：Host 與 Origin 守門（`client_access.LocalRequestGuard`，新環境變數 `RC_ALLOWED_HOSTS`）。修正後實測：陌生 Host 回 400、跨站寫入回 403，同源 dashboard、localhost、區網 IP 照常可用。
+  - [x] HTTP `/api/sync`：明確 `days` 上限 90、實際同步不可並行（409）。
+  - [x] NV-3：MCP server `--panel` 自己移除白名單外的工具（實測只剩 15 個，無 `sync_garmin_data`）。
+  - [x] NV-4／NV-5：「分析近況」只開唯讀工具（`--read-only`）；對話框記體感限今天或昨天；體感 note 上限 500 字。
+  - [ ] **Fu 確認**：日常用的瀏覽器能否被公開網頁存取 127.0.0.1（Local Network Access 會擋、會提示，還是放行）——修正後不影響安全，只用來決定稽核紀錄的結案方式。
+  - [ ] **Fu 確認**：`.claude/settings.local.json` 裡對 `mcp__running-coach__sync_garmin_data` 的 allow 規則是否還需要（不進版控，由 Fu 自己決定）。
+  - [ ] 若用 Tailscale MagicDNS 等主機名稱連 dashboard，要在 `RC_ALLOWED_HOSTS` 設好，否則會回 400。
+  - [ ] 稽核 deferred 的兩項待下一輪（`standard` profile）：①非 panel 的 Claude Code MCP 路徑（區網可寫文字經讀取工具進入擁有全部寫入工具的 session）；②API 後端聊天無鎖、無長度上限，MCP `sync_garmin_data` 的 `days` 無上限。
+  - [ ] 稽核列出的其他 hardening（錯誤訊息帶 token 目錄路徑、uvicorn 未固定 `proxy_headers`、Leaflet 無 SRI、`secret_patterns` 缺 `sk-ant-` 規則等）尚未處理，見稽核報告 REPORT.md §5。
