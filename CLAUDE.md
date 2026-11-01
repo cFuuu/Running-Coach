@@ -69,7 +69,7 @@ gh repo view
 
 ## 🐍 Python 環境（重要）
 
-本專案使用專屬 conda 環境 **`rc`**（Python 3.12）。
+本專案使用專屬 conda 環境 **`rc`**（Python 3.12，**最低 3.12.16**——安全性更新，不得降版；下限定義於 `environment.yml`）。
 
 **不可用裸 `python` 指令**——這台機器上它會指向無關的 venv（`hermes-agent`），沒有 pip 也沒有本專案任何套件。PATH 上的 `pip` 也指向另一個 Python 3.10 安裝，`pip install X` 後 `python -c "import X"` 會莫名失敗。
 

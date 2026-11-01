@@ -4,7 +4,7 @@
 #     python -m venv .venv && .venv/Scripts/activate && pip install -r requirements.txt
 #
 # 只列直接依賴，版本用 >= 讓次要更新可自動取得；如需完全重現請用 pip freeze 產生 lock 檔。
-# 開發時的實測環境為 Python 3.12.13。
+# Python 最低需求 3.12.16（安全性更新，下限定義於 environment.yml）。
 
 # Web API 與本機 dashboard 伺服器
 fastapi>=0.141.0

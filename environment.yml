@@ -16,7 +16,8 @@ channels:
   - defaults
 
 dependencies:
-  - python=3.12
+  # 3.12.16 為安全性更新，最低版本不得低於此；<3.13 避免跨小版本無預警升級
+  - python>=3.12.16,<3.13
   - pip
   - pip:
       - -r requirements.txt
