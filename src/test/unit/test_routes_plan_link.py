@@ -65,7 +65,7 @@ class PlanLinkRouteTestCase(unittest.TestCase):
         ).lastrowid
 
     def client(self, client=LOCAL_CLIENT):
-        return TestClient(self.app, client=client)
+        return TestClient(self.app, base_url="http://127.0.0.1", client=client)
 
     def put_link(self, activity_id, plan_id=None, client=LOCAL_CLIENT, json=None):
         body = {"activity_id": activity_id} if json is None else json

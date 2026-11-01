@@ -394,7 +394,7 @@ class TestAnalysisRoutes(unittest.TestCase):
         self.app.dependency_overrides[routes_chat.get_today] = lambda: TODAY
 
     def client(self, client=LOCAL_CLIENT):
-        return TestClient(self.app, client=client)
+        return TestClient(self.app, base_url="http://127.0.0.1", client=client)
 
     def conn(self):
         conn = get_connection(self.db_path)

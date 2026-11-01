@@ -205,7 +205,7 @@ class TestSessionRoutes(unittest.TestCase):
         self.app.dependency_overrides[routes_chat.get_today] = lambda: TODAY
 
     def client(self):
-        return TestClient(self.app, client=LOCAL_CLIENT)
+        return TestClient(self.app, base_url="http://127.0.0.1", client=LOCAL_CLIENT)
 
     def test_status_reports_session_backend(self):
         status = self.client().get("/api/chat/status").json()
@@ -265,7 +265,7 @@ class TestSessionRoutes(unittest.TestCase):
         body = self.client().get("/api/chat/recent-advice").json()
         self.assertEqual(body, {"advice": [{"date": "2026-03-08", "conversation_id": cid, "text": "本週減量。"}]})
         # 來源限制同其他聊天端點
-        other = TestClient(self.app, client=("192.168.1.5", 1))
+        other = TestClient(self.app, base_url="http://127.0.0.1", client=("192.168.1.5", 1))
         self.assertEqual(other.get("/api/chat/recent-advice").status_code, 403)
 
 

@@ -50,7 +50,7 @@ class TrackingRouteTest(unittest.TestCase):
         conn.close()
 
     def client(self, client=LOCAL_CLIENT):
-        return TestClient(self.app, client=client)
+        return TestClient(self.app, base_url="http://127.0.0.1", client=client)
 
     def test_list_returns_open_items_with_action(self):
         response = self.client().get("/api/chat/tracking")

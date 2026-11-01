@@ -34,8 +34,12 @@
     以上共用同一份來源判斷（見 api/client_access.py）。
     上面「不可對外網開放」的紅線不因此改變。
 
-    唯一的區網可寫端點是 `/api/daily-feel`（每日體感）：只寫本機資料庫、
-    不花錢不打外部 API，且主要在手機上使用，故沿用區網放行。
+    區網可寫端點是 `/api/daily-feel`（每日體感）與 `PUT /api/plan/{id}/link`
+    （課表連結）：只寫本機資料庫、不花錢不打外部 API，故沿用區網放行。
+
+    ⚠️ 來源位址分不出「同一台電腦上的惡意網頁」，故整個 app 外面另包
+    `client_access.LocalRequestGuard`：Host 只收 IP／localhost／`RC_ALLOWED_HOSTS`
+    （擋 DNS rebinding），寫入類請求的 Origin 必須同源（擋跨站請求）。
 
 不 hardcode 任何路徑或個人識別資訊：--db-path 必填，athlete 從資料庫查
 （見 dashboard_queries.resolve_athlete_id）。
@@ -49,11 +53,13 @@ import socket
 import threading
 import time
 import webbrowser
+from collections.abc import Iterable
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from src.main.python.api import client_access
 from src.main.python.api import routes_analysis
 from src.main.python.api import routes_chat
 from src.main.python.api import routes_dashboard
@@ -92,8 +98,12 @@ def create_app(
     chat_config: ChatConfig | None = None,
     analysis_config: AnalysisConfig | None = None,
     profile_path: Path | None = None,
+    allowed_host_names: Iterable[str] | None = None,
 ) -> FastAPI:
     """建立 FastAPI 應用程式。db_path 由呼叫端提供，不預設任何路徑。
+
+    allowed_host_names：IP 與 localhost 以外額外接受的 Host 名稱，省略時讀
+    `RC_ALLOWED_HOSTS`（見 client_access.LocalRequestGuard）。
 
     chat_config 省略時從環境變數讀（見 services/coach_chat.py 的設定表）。
     聊天停用時（session 模式找不到 Claude Code，或 api 模式沒設 ANTHROPIC_API_KEY）
@@ -143,6 +153,14 @@ def create_app(
     else:
         print(f"[warn] 找不到前端目錄 {static_dir}，僅提供 /api 端點")
 
+    app.add_middleware(
+        client_access.LocalRequestGuard,
+        extra_host_names=(
+            allowed_host_names
+            if allowed_host_names is not None
+            else client_access.allowed_host_names_from_env()
+        ),
+    )
     return app
 
 

@@ -300,7 +300,7 @@ class TestLapStrip(DashboardQueryTestCase):
             assets_dir=assets_dir,
             chat_config=coach_chat.ChatConfig(api_key_present=False),
         )
-        sessions = TestClient(app).get("/api/sessions", params={"range": "all"}).json()["sessions"]
+        sessions = TestClient(app, base_url="http://127.0.0.1").get("/api/sessions", params={"range": "all"}).json()["sessions"]
         by_title = {s["title"]: s for s in sessions}
         self.assertEqual(len(by_title["測試晨跑"]["lap_strip"]), 3)
         self.assertEqual(by_title["測試手動分圈跑"]["lap_strip"], [])

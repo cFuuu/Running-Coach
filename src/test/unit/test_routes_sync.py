@@ -78,7 +78,7 @@ class SyncRouteTestCase(unittest.TestCase):
         )
 
     def client(self, client=LOCAL_CLIENT):
-        return TestClient(self.app, client=client)
+        return TestClient(self.app, base_url="http://127.0.0.1", client=client)
 
 
 class TestOriginRestriction(SyncRouteTestCase):
@@ -113,7 +113,7 @@ class TestOriginRestriction(SyncRouteTestCase):
 
     def test_unparseable_host_is_rejected(self):
         """fail closed：TestClient 預設的 "testclient" 不是合法 IP。"""
-        r = TestClient(self.app).post("/api/sync", json={"dry_run": True})
+        r = TestClient(self.app, base_url="http://127.0.0.1").post("/api/sync", json={"dry_run": True})
         self.assertEqual(r.status_code, 403)
 
     def test_status_returns_200_even_when_not_allowed(self):
@@ -251,12 +251,12 @@ class TestChatOriginRuleUnchanged(unittest.TestCase):
         )
 
     def test_chat_still_rejects_lan_by_default(self):
-        r = TestClient(self.app, client=LAN_CLIENT).get("/api/chat/conversations")
+        r = TestClient(self.app, base_url="http://127.0.0.1", client=LAN_CLIENT).get("/api/chat/conversations")
         self.assertEqual(r.status_code, 403)
         self.assertIn("RC_CHAT_ALLOW_PRIVATE_NETWORK", r.json()["detail"])
 
     def test_chat_still_allows_localhost(self):
-        r = TestClient(self.app, client=LOCAL_CLIENT).get("/api/chat/conversations")
+        r = TestClient(self.app, base_url="http://127.0.0.1", client=LOCAL_CLIENT).get("/api/chat/conversations")
         self.assertEqual(r.status_code, 200)
 
     def test_sync_and_chat_flags_are_independent(self):
@@ -268,7 +268,7 @@ class TestChatOriginRuleUnchanged(unittest.TestCase):
             chat_config=chat_cfg,
         )
         app.dependency_overrides[routes_sync.get_sync_runner] = lambda: FakeRunner()
-        client = TestClient(app, client=LAN_CLIENT)
+        client = TestClient(app, base_url="http://127.0.0.1", client=LAN_CLIENT)
         self.assertEqual(client.get("/api/chat/conversations").status_code, 200)
         self.assertEqual(client.post("/api/sync", json={}).status_code, 403)
 

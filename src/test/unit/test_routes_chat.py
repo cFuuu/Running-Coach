@@ -54,7 +54,7 @@ class ChatRouteTestCase(unittest.TestCase):
         self.app.dependency_overrides[routes_chat.get_session_runner] = lambda: _refusing_runner
 
     def client(self, client=LOCAL_CLIENT):
-        return TestClient(self.app, client=client)
+        return TestClient(self.app, base_url="http://127.0.0.1", client=client)
 
     def new_conversation(self) -> int:
         return self.client().post("/api/chat/conversations").json()["id"]
@@ -88,7 +88,7 @@ class TestClientRestriction(ChatRouteTestCase):
                 api_key_present=True, backend=coach_chat.BACKEND_API, allow_private_network=True
             ),
         )
-        response = TestClient(app, client=("8.8.8.8", 1)).get("/api/chat/conversations")
+        response = TestClient(app, base_url="http://127.0.0.1", client=("8.8.8.8", 1)).get("/api/chat/conversations")
         self.assertEqual(response.status_code, 403)
 
     def test_status_stays_200_for_a_disallowed_client(self):

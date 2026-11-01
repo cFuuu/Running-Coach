@@ -288,7 +288,7 @@ def collect_snapshot(
             logging.getLogger(name).setLevel(logging.WARNING)
         cache: dict[str, dict] = {}
         # 分析報告端點只允許本機來源（fail closed：TestClient 預設 host 不是合法 IP 會被擋）
-        with TestClient(app, client=("127.0.0.1", 1)) as client:
+        with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 1)) as client:
 
             def get(url: str) -> dict:
                 if url in cache:

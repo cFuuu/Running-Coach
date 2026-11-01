@@ -137,7 +137,7 @@ class TestDailyFeelRoutes(unittest.TestCase):
             assets_dir=assets_dir,
             chat_config=coach_chat.ChatConfig(api_key_present=False),
         )
-        self.client = TestClient(app)
+        self.client = TestClient(app, base_url="http://127.0.0.1")
 
     def test_put_get_delete_roundtrip(self):
         r = self.client.put("/api/daily-feel/2026-10-22", json={"feel": "energetic"})
