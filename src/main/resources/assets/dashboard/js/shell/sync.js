@@ -9,6 +9,7 @@ import { $, clear, h } from '../core/dom.js';
 import { shortDateTime, displayDate } from '../core/format.js';
 import { loadHome } from '../views/home.js';
 import { loadCalendarBody } from '../views/calendar.js';
+import { loadRangeData } from './loader.js';
 
 // N-19 §7。同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，
 // 90 天約 12 分鐘），所以流程刻意分兩步：
@@ -223,9 +224,11 @@ export function requestSync() {
       if (result.activities !== undefined) parts.push('活動 ' + result.activities + ' 筆');
       if (result.wellness !== undefined) parts.push('身體數據 ' + result.wellness + ' 筆');
       setSyncMessage('同步完成：' + (parts.join('　·　') || '無新資料'), 'ok');
-      // 同步會改變資料，首頁與行事曆必須重讀，否則畫面還停在同步前
+      // 同步會改變資料，首頁、行事曆與目前區間（趨勢／紀錄）都必須重讀，
+      // 否則畫面還停在同步前（漏了區間資料時，首頁與趨勢的訓練負荷會對不上）
       loadHome();
       if (state.calendarData) loadCalendarBody();
+      loadRangeData();
     });
   }).catch(function (err) {
     setSyncBusy(false, '同步資料');
