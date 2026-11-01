@@ -10,6 +10,7 @@ import unittest
 from types import SimpleNamespace
 
 from src.main.python.models.db import get_connection
+from src.main.python.services import daily_feel_store
 from src.main.python.mcp.server import (
     _BEHAVIOR_CONSTRAINTS,
     _ROLE,
@@ -483,22 +484,51 @@ class TestDailyFeelTools(unittest.TestCase):
 
     def test_panel_mode_does_not_overwrite_existing_feel(self):
         """PLAN.md §10：對話框裡當天已有紀錄就不覆寫，回已記的內容。"""
-        record_daily_feel(_fake_ctx(self.conn), date="2026-10-22", feel="tired", note="原話")
+        today = datetime.date.today().isoformat()
+        record_daily_feel(_fake_ctx(self.conn), date=today, feel="tired", note="原話")
         result = record_daily_feel(
-            _fake_ctx(self.conn, panel_mode=True), date="2026-10-22", feel="energetic"
+            _fake_ctx(self.conn, panel_mode=True), date=today, feel="energetic"
         )
         self.assertFalse(result["saved"])
         self.assertIn("已記為疲憊", result["reason"])
         self.assertEqual(result["existing"]["feel"], "tired")
-        feels = get_daily_feel(_fake_ctx(self.conn), start_date="2026-10-22", end_date="2026-10-22")
+        feels = get_daily_feel(_fake_ctx(self.conn), start_date=today, end_date=today)
         self.assertEqual((feels[0]["feel"], feels[0]["note"]), ("tired", "原話"))
 
     def test_panel_mode_writes_when_day_is_empty(self):
-        result = record_daily_feel(
-            _fake_ctx(self.conn, panel_mode=True), date="2026-10-23", feel="normal"
-        )
+        for day in (datetime.date.today(), datetime.date.today() - datetime.timedelta(days=1)):
+            with self.subTest(day=day):
+                result = record_daily_feel(
+                    _fake_ctx(self.conn, panel_mode=True), date=day.isoformat(), feel="normal"
+                )
+                self.assertTrue(result["saved"])
+                self.assertEqual(result["source"], "coach")
+
+    def test_panel_mode_rejects_other_dates(self):
+        """資安稽核 NV-5：任意日期會成為把對話框內容寫到區網可讀端點的管道。"""
+        today = datetime.date.today()
+        for day in (today - datetime.timedelta(days=2), today + datetime.timedelta(days=1),
+                    datetime.date(2099, 12, 31)):
+            with self.subTest(day=day):
+                result = record_daily_feel(
+                    _fake_ctx(self.conn, panel_mode=True), date=day.isoformat(), feel="normal"
+                )
+                self.assertFalse(result["saved"])
+                self.assertEqual(
+                    get_daily_feel(_fake_ctx(self.conn), start_date=day.isoformat(),
+                                   end_date=day.isoformat()), [])
+
+    def test_claude_code_path_keeps_any_date(self):
+        """日期限制只在對話框；Claude Code 補記過去的體感照舊。"""
+        result = record_daily_feel(_fake_ctx(self.conn), date="2026-10-01", feel="tired")
         self.assertTrue(result["saved"])
-        self.assertEqual(result["source"], "coach")
+
+    def test_overlong_note_rejected(self):
+        result = record_daily_feel(
+            _fake_ctx(self.conn), date="2026-10-22", feel="tired",
+            note="x" * (daily_feel_store.MAX_NOTE_CHARS + 1),
+        )
+        self.assertFalse(result["saved"])
 
 
 class TestTrackingTools(unittest.TestCase):

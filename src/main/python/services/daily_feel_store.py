@@ -21,6 +21,9 @@ FEEL_LEVELS = ("tired", "normal", "energetic")
 # 給教練回覆用的中文名稱，與 dashboard 首頁的三個按鈕同名
 FEEL_LABELS = {"tired": "疲憊", "normal": "普通", "energetic": "充沛"}
 SOURCES = ("dashboard", "coach", "backfill")
+# note 是原話補充，一兩句就夠。上限擋住塞長文：區網可寫的 note 會經 get_daily_feel
+# 進到教練的 context（2026-11-01 資安稽核 NV-4／NV-5）。
+MAX_NOTE_CHARS = 500
 
 
 def _to_iso(value: datetime.date | str) -> str:
@@ -48,7 +51,11 @@ def set_feel(
     if source not in SOURCES:
         raise ValueError(f"source 必須是 {'/'.join(SOURCES)} 之一，收到：{source}")
     date_iso = _to_iso(date)
+    if note is not None and not isinstance(note, str):
+        raise ValueError("note 必須是文字")
     note = note.strip() if note and note.strip() else None
+    if note is not None and len(note) > MAX_NOTE_CHARS:
+        raise ValueError(f"note 最多 {MAX_NOTE_CHARS} 字（收到 {len(note)} 字）")
 
     conn.execute(
         """

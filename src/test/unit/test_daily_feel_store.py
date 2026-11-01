@@ -10,6 +10,7 @@ from src.main.python.api.app import create_app
 from src.main.python.models.db import get_connection
 from src.main.python.services import coach_chat
 from src.main.python.services.daily_feel_store import (
+    MAX_NOTE_CHARS,
     delete_feel,
     get_feels_in_range,
     set_feel,
@@ -55,6 +56,20 @@ class TestDailyFeelStore(unittest.TestCase):
             set_feel(self.conn, self.athlete_id, "2026-10-22", "very_tired", "dashboard")
         with self.assertRaises(ValueError):
             set_feel(self.conn, self.athlete_id, "2026-10-22", "tired", "garmin")
+
+    def test_note_length_capped(self):
+        """區網可寫的 note 會進教練 context，擋住塞長文（資安稽核 NV-4／NV-5）。"""
+        row = set_feel(self.conn, self.athlete_id, "2026-10-22", "tired", "dashboard",
+                       note="x" * MAX_NOTE_CHARS)
+        self.assertEqual(len(row["note"]), MAX_NOTE_CHARS)
+        with self.assertRaises(ValueError):
+            set_feel(self.conn, self.athlete_id, "2026-10-23", "tired", "dashboard",
+                     note="x" * (MAX_NOTE_CHARS + 1))
+
+    def test_rejects_non_text_note(self):
+        """原本非字串的 note 會在 .strip() 炸成 500。"""
+        with self.assertRaises(ValueError):
+            set_feel(self.conn, self.athlete_id, "2026-10-22", "tired", "dashboard", note=123)
 
     def test_rejects_malformed_date(self):
         """非 ISO 格式的日期會與其他表對不上，寫入前就擋下。"""
@@ -158,6 +173,15 @@ class TestDailyFeelRoutes(unittest.TestCase):
         )
         self.assertEqual(
             self.client.put("/api/daily-feel/not-a-date", json={"feel": "tired"}).status_code, 400
+        )
+        self.assertEqual(
+            self.client.put("/api/daily-feel/2026-10-22",
+                            json={"feel": "tired", "note": {"x": 1}}).status_code, 400
+        )
+        self.assertEqual(
+            self.client.put("/api/daily-feel/2026-10-22",
+                            json={"feel": "tired", "note": "x" * (MAX_NOTE_CHARS + 1)}).status_code,
+            400,
         )
 
 

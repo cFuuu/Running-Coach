@@ -683,7 +683,8 @@ def record_daily_feel(
 
     ⚠️ 在 Dashboard 對話框裡（PLAN.md §10），當天已有紀錄就**不覆寫**，回傳
     `saved: False` 與 `existing`（已記的內容）——照實告訴學員已記為什麼，
-    要改請學員在 Dashboard 首頁的體感按鈕自己改。
+    要改請學員在 Dashboard 首頁的體感按鈕自己改。對話框裡也**只能記今天或昨天**，
+    更早或未來的日期回 `saved: False`。
 
     ⚠️ 體感永遠不進事實層、不參與任何計算（見 get_daily_feel）。
     """
@@ -691,6 +692,21 @@ def record_daily_feel(
     if resolved_athlete_id is None:
         return {"saved": False, "reason": "資料庫中沒有任何學員資料"}
     if _is_panel(ctx):
+        # 學員只會說今天或昨天的體感；任意日期會讓注入的指令把對話框看得到的內容
+        # 寫進區網可讀的 /api/daily-feel（2026-11-01 資安稽核 NV-5）
+        today = datetime.date.today()
+        try:
+            day = _parse_date(date)
+        except ValueError as exc:
+            return {"saved": False, "reason": str(exc)}
+        if day not in (today, today - datetime.timedelta(days=1)):
+            return {
+                "saved": False,
+                "reason": (
+                    f"對話框裡只能記今天或昨天的體感（收到 {date}）。"
+                    "其他日期請學員在 Dashboard 自己記。"
+                ),
+            }
         try:
             existing = daily_feel_store.get_feels_in_range(
                 _conn(ctx), resolved_athlete_id, date, date

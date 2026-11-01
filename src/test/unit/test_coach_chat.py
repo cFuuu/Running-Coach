@@ -421,8 +421,10 @@ class TestTurnLoop(CoachChatTestCase):
         self.assertIn("followed_up", brief)  # 已滿 3 天，程式給的結論是要追問
 
     def test_whitelisted_write_tool_is_executed_in_panel_mode(self):
+        # 對話框只能記今天或昨天（資安稽核 NV-5），故用真正的今天
+        today = datetime.date.today().isoformat()
         backend = FakeBackend([
-            tool_round([("toolu_1", "record_daily_feel", {"date": "2026-03-10", "feel": "tired"})]),
+            tool_round([("toolu_1", "record_daily_feel", {"date": today, "feel": "tired"})]),
             text_round("記下了。"),
         ])
         events = self.run_turn(backend)
