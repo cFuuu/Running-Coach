@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from src.main.python.api import routes_sync
 from src.main.python.api.app import create_app
-from src.main.python.services import coach_chat
+from src.main.python.services import coach_chat, garmin_sync_runner
 from src.test.unit.fixtures import build_fixture_db
 
 LOCAL_CLIENT = ("127.0.0.1", 1)
@@ -158,6 +158,19 @@ class TestParameterValidation(SyncRouteTestCase):
         r = self.client().post("/api/sync", json={"days": True})
         self.assertEqual(r.status_code, 422)
 
+    def test_days_at_cap_passed_through(self):
+        cap = garmin_sync_runner.MAX_AUTO_SYNC_DAYS
+        r = self.client().post("/api/sync", json={"days": cap, "dry_run": True})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.runner.calls[0]["days"], cap)
+
+    def test_days_over_cap_rejected(self):
+        """資安稽核實測 days=3650 會估算 29201 次 Garmin 請求；HTTP 路徑一律夾在上限內。"""
+        r = self.client().post(
+            "/api/sync", json={"days": garmin_sync_runner.MAX_AUTO_SYNC_DAYS + 1})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(self.runner.calls, [])
+
     def test_dry_run_defaults_to_false(self):
         self.client().post("/api/sync", json={})
         self.assertFalse(self.runner.calls[0]["dry_run"])
@@ -174,6 +187,26 @@ class TestParameterValidation(SyncRouteTestCase):
     def test_athlete_id_resolved_from_db_when_omitted(self):
         self.client().post("/api/sync", json={"dry_run": True})
         self.assertIsInstance(self.runner.calls[0]["athlete_id"], int)
+
+
+class TestConcurrency(SyncRouteTestCase):
+    def test_real_sync_rejected_while_another_runs(self):
+        routes_sync.SYNC_LOCK.acquire()
+        self.addCleanup(routes_sync.SYNC_LOCK.release)
+        r = self.client().post("/api/sync", json={})
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(self.runner.calls, [])
+
+    def test_dry_run_not_blocked_by_running_sync(self):
+        """預估不打 API，不必排隊。"""
+        routes_sync.SYNC_LOCK.acquire()
+        self.addCleanup(routes_sync.SYNC_LOCK.release)
+        r = self.client().post("/api/sync", json={"dry_run": True})
+        self.assertEqual(r.status_code, 200)
+
+    def test_lock_released_after_sync(self):
+        self.client().post("/api/sync", json={})
+        self.assertFalse(routes_sync.SYNC_LOCK.locked())
 
 
 class TestResultPassthrough(SyncRouteTestCase):

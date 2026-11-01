@@ -29,6 +29,13 @@ DASHBOARD_TASKS.md D.1 原本寫「頁面無寫入路徑……無『同步 Garmi
    例外訊息，而 `garmin_auth`／`garmin_api_client` 的例外訊息本來就
    只講「需要重新認證」不夾帶 token。見 `test_routes_sync.py` 的斷言。
 
+## 天數上限與並行鎖（2026-11-01 資安稽核）
+
+前端從不送 `days`（一律自動回推），HTTP 路徑因此把明確的 `days` 也夾在
+`MAX_AUTO_SYNC_DAYS` 以內——更早的缺口本來就該走匯出包。實際同步（非 dry_run）
+同一時間只跑一個，重複觸發回 409，不疊出好幾個同時打 Garmin 的同步。
+CLI 與 MCP 路徑不受這兩條影響。
+
 ## 為什麼保留 dry_run 這個參數
 
 同步是**長時間操作**（wellness 逐日各打數個端點並自我節流，90 天約 12 分鐘）。
@@ -40,6 +47,7 @@ dashboard 沒有理由自己發明一套。
 from __future__ import annotations
 
 import sqlite3
+import threading
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -55,6 +63,10 @@ _FORBIDDEN_DETAIL = (
     "資料同步僅限本機使用。要讓區網裝置使用，"
     "請在啟動 server 的環境設定 RC_SYNC_ALLOW_PRIVATE_NETWORK=1。"
 )
+
+# 實際同步（非 dry_run）同一時間只跑一個；忙碌時回 409
+SYNC_LOCK = threading.Lock()
+BUSY_DETAIL = "已有同步正在進行，請等它完成再試。"
 
 
 def allow_private_network() -> bool:
@@ -113,6 +125,14 @@ def run_sync(
             raise HTTPException(status_code=422, detail="days 必須是整數")
         if days < 1:
             raise HTTPException(status_code=422, detail=f"days 必須 >= 1（收到 {days}）")
+        if days > garmin_sync_runner.MAX_AUTO_SYNC_DAYS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"days 最多 {garmin_sync_runner.MAX_AUTO_SYNC_DAYS}（收到 {days}）；"
+                    "更早的資料請下載官方匯出包後走 garmin_import_runner"
+                ),
+            )
 
     dry_run = payload.get("dry_run", False)
     if not isinstance(dry_run, bool):
@@ -128,4 +148,11 @@ def run_sync(
     if resolved is None:
         raise HTTPException(status_code=404, detail="資料庫中沒有任何學員資料")
 
-    return runner(conn, resolved, days=days, dry_run=dry_run)
+    if dry_run:
+        return runner(conn, resolved, days=days, dry_run=True)
+    if not SYNC_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail=BUSY_DETAIL)
+    try:
+        return runner(conn, resolved, days=days, dry_run=False)
+    finally:
+        SYNC_LOCK.release()
