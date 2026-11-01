@@ -38,7 +38,7 @@
 
 **輸出**：
 - 檔名帶匯出日期，例如 `dashboard_offline_2026-10-24.html`。
-- 目的資料夾與專案的 `output\` 各有一份，只有 html，沒有 txt。
+- 目的資料夾與專案的 `output\offline\` 各有一份，只有 html，沒有 txt。
 - 同一天重跑會覆蓋；不同天的舊檔不會自動清掉。
 - iPhone 捷徑「取得檔案」的路徑是寫死檔名，日期每天不同，所以需要改路徑，或改成選資料夾後取最新一個。
 
@@ -68,7 +68,7 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 | 參數 | 說明 |
 |---|---|
 | `--db-path` | 資料庫路徑，預設 `output/running_coach.db` |
-| `--out` | 輸出 HTML 路徑，預設 `output/dashboard_offline.html` |
+| `--out` | 輸出 HTML 路徑，預設 `output/offline/dashboard_offline.html` |
 | `--copy-to` | 另外複製一份到這個資料夾；預設讀 `RC_OFFLINE_EXPORT_DIR`，沒設就不複製 |
 | `--dated` | 檔名加上匯出日期（`export_offline` 預設帶） |
 | `--detail-months N` | 只保留近 N 個月的單場明細，`0` 為全部 |

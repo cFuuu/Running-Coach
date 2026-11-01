@@ -48,7 +48,7 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
    - URL 清單要和前端實際發出的請求一致。可以參考既有離線檔的 key：326 個 `exact` key，以及 `calendar`、`feels`、`generated_at`。
 2. 把 JSON gzip 壓縮後轉成 base64，寫進 `window.__SNAPSHOT_GZ__`；`__SNAPSHOT_AT__` 寫入匯出時間。
 3. 內嵌 `styles.css` 和 JS 模組（importmap ＋ `data:` URL）。
-4. 寫出 `output/dashboard_offline.html`。有指定 iCloud 目錄時，再複製一份到 iCloud。
+4. 寫出 `output/offline/dashboard_offline.html`。有指定 iCloud 目錄時，再複製一份到 iCloud。
 
 **實作結果（W4a，2026-10-24）**
 - **URL 清單唯一定義處**：`snapshot_requests()`（依 URL 原樣回應的 `exact`）與 `span_requests()`（`/api/calendar`、`/api/daily-feel`）。前端新增請求時在 `snapshot_requests()` 補一行，例如前期比較的 `custom:` 區間。range 清單取自 `/api/meta` 的 `ranges`，不另寫一份。
@@ -74,7 +74,7 @@ base64 會讓檔案多 33%。**只做 ①**，整份 HTML 約 1.3 MB，經過捷
 | 參數 | 預設 | 說明 |
 |---|---|---|
 | `--db-path` | `output/running_coach.db` | 同其他 CLI，明確指定資料庫 |
-| `--out` | `output/dashboard_offline.html` | 本機輸出位置 |
+| `--out` | `output/offline/dashboard_offline.html` | 本機輸出位置 |
 | `--copy-to` | 讀環境變數 `RC_OFFLINE_EXPORT_DIR`；沒設就不複製 | iCloud Drive 裡的目標資料夾。**路徑不寫死在程式碼**，並把 key 加進 `.env.example`（本專案沒有 dotenv 載入器，要在 shell 設定或直接帶參數） |
 | `--detail-months` | `0`（全部） | 只保留近 N 個月的單場明細 |
 | `--no-gzip` | 關 | 除錯用，輸出未壓縮的 JSON |
