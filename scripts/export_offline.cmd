@@ -11,8 +11,8 @@ rem If the first argument does not start with "-", it is the destination folder;
 rem everything else is passed through to build_dashboard_offline.py.
 rem
 rem Overridable env vars:
-rem     RC_PYTHON             python.exe of the conda env "rc"
-rem                           (default %USERPROFILE%\anaconda3\envs\rc\python.exe)
+rem     RC_PYTHON             python.exe of the uv venv (create it with: uv sync)
+rem                           (default <project root>\.venv\Scripts\python.exe)
 rem     RC_DB_PATH            SQLite database (default output\running_coach.db)
 rem     RC_OFFLINE_EXPORT_DIR default destination folder
 rem                           (default %USERPROFILE%\iCloudDrive\HTML-decode)
@@ -20,13 +20,13 @@ rem                           (default %USERPROFILE%\iCloudDrive\HTML-decode)
 setlocal
 cd /d "%~dp0.."
 
-if not defined RC_PYTHON set "RC_PYTHON=%USERPROFILE%\anaconda3\envs\rc\python.exe"
+if not defined RC_PYTHON set "RC_PYTHON=%CD%\.venv\Scripts\python.exe"
 if not defined RC_DB_PATH set "RC_DB_PATH=output\running_coach.db"
 if not defined RC_OFFLINE_EXPORT_DIR set "RC_OFFLINE_EXPORT_DIR=%USERPROFILE%\iCloudDrive\HTML-decode"
 
 if not exist "%RC_PYTHON%" (
-    echo [error] python of conda env "rc" not found: %RC_PYTHON%
-    echo         Set RC_PYTHON to its python.exe.
+    echo [error] python of the uv venv not found: %RC_PYTHON%
+    echo         Run "uv sync" in the project root, or set RC_PYTHON to its python.exe.
     exit /b 1
 )
 
