@@ -41,7 +41,7 @@
 | 🟡 | [N-14 tempo／interval 主課段切分](#n-14) | 抓主課段而非整場平均比對區間 | 依 N-10 結論 |
 | 🟡 | [Phase 0 重建規律期](#phase0-rebuild) | 正式週期前以頻率為目標的前置期 | 排程器純規則，可雲端做 |
 | 🟡 | [排程器強度分配改 Daniels 百分比](#daniels-split) | 現為「非 LSD 量的 35%」，與 N-6 定案不符 | 宜與 N-12 一併處理 |
-| 🟡 | [N-39 conda → uv 環境遷移](#n-39) | 維持 Python 3.12，只換環境管理工具；升 3.13.18 另開一輪 | 計畫待 Fu 確認；`.mcp.json` 與對話面板路徑須實測 |
+| 🟡 | [N-39 conda → uv 環境遷移](#n-39) | 維持 Python 3.12，只換環境管理工具；升 3.13.18 另開一輪 | 步驟 1–8 已完成；剩合併後清理與升 3.13 |
 | ⚪ | [N-32 更早歷史的逐點資料](#n-32) | 2025-10-24 前的活動補逐點／座標（API 每場約 3 秒，或用匯出包） | 需 token，地端 |
 | ⚪ | [1B-6 Strava 備援層](#1b-6) | token 過期 vs 結構性失效的判斷；Strava OAuth | 低優先 |
 
@@ -122,8 +122,8 @@
 
 ### 開發環境與資料庫快照
 
-**環境**：conda `rc`（Python 3.12），套件見 `requirements.txt`／`environment.yml`。測試 **838 項**全通過（2026-10-20 實跑確認）。
-**執行測試**：`"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m unittest discover -s src/test/unit -p "test_*.py"`
+**環境**：uv `.venv`（Python 3.12.16），套件見 `pyproject.toml`／`uv.lock`（N-39，2026-11-04 由 conda `rc` 遷移）。測試 **1220 項**全通過（2026-11-04 在 uv 環境實跑確認）。
+**執行測試**：`.venv/Scripts/python.exe -m unittest discover -s src/test/unit -p "test_*.py"`
 
 **資料庫內容**（`output/running_coach.db`，不進版控；以下為 2026-09-01 同步後的快照，筆數已過時，僅供了解各表用途）
 
@@ -140,7 +140,7 @@
 
 ✅ **已可增量同步**（1B 完成）。日常更新直接跑，會自動回推到上次斷點：
 ```bash
-"C:/Users/cFu/anaconda3/envs/rc/python.exe" -m src.main.python.services.garmin_sync_runner --db-path output/running_coach.db
+.venv/Scripts/python.exe -m src.main.python.services.garmin_sync_runner --db-path output/running_coach.db
 ```
 同步會一併抓逐圈明細並套用既有分類器補 `workout_type`（1B-8）。
 ⚠️ 但**逐秒資料仍需 FIT**，故同步進來的活動在 `assess_session_quality` 中
@@ -1425,21 +1425,23 @@
   - [ ] 稽核 deferred ①待下一輪（`standard` profile）：非 panel 的 Claude Code MCP 路徑（區網可寫文字經讀取工具進入擁有全部寫入工具的 session）。MCP `sync_garmin_data` 的 `days` 維持不設上限（Fu 自己的 Claude Code 路徑，CLI 也照給的天數走）。
   - [ ] 其餘 hardening 判斷暫不做：錯誤訊息帶 token 目錄路徑（只回給本機的 Fu，路徑有助排錯）；`raw_data_json` 存 owner 欄位、`/docs` 未關、`.gitignore` 補 `*.db` 等低影響項，見稽核報告 REPORT.md §5。
 
-- <a id="n-39"></a>**⬜ N-39 conda → uv 環境遷移（2026-11-04 Fu 提出，計畫待確認）**：參考 Fu 在 Caparoc5 的操作 SOP（`UV_SETUP_FROM_SCRATCH.md`），但該 SOP 為另一專案而寫，下列為本專案的調整版。
+- <a id="n-39"></a>**🔵 N-39 conda → uv 環境遷移（2026-11-04 Fu 提出，步驟 1–8 完成，剩合併後清理與升 3.13）**：參考 Fu 在 Caparoc5 的操作 SOP（`UV_SETUP_FROM_SCRATCH.md`），但該 SOP 為另一專案而寫，下列為本專案的調整版。
   - **範圍**：只換環境管理工具，**Python 維持 3.12**（最低 3.12.16，安全性下限不變）。升 3.13.18 另開一輪（見最後一項），避免兩個變數同時動、測試失敗時無法歸因。
   - **與 SOP 的差異**：已有 `requirements.txt`，走 `uv add -r`，不需掃描 import；測試用 unittest，不裝 pytest／ruff／pyinstaller；無 packaging。
-  - [ ] **0 準備**：`git pull --rebase`、`git status` 確認乾淨、開 `chore/migrate-to-uv` 分支。
-  - [ ] **1 gitignore**：補 `.venv/`（現只有 `venv/`，不會匹配 `.venv`）。`pyproject.toml`、`uv.lock`、`.python-version` 進版控。
-  - [ ] **2 記錄基準**：用 conda 環境的直譯器 `pip list --format=freeze` 存到專案外（scratchpad／TEMP），供步驟 4 比對。
-  - [ ] **3 建環境**：`uv init --bare --no-workspace`；`uv python pin 3.12`（確認解出 ≥3.12.16）；`uv add -r requirements.txt`。
-  - [ ] **4 整理 pyproject**：`requires-python = ">=3.12.16,<3.13"`；把 `requirements.txt` 的註解搬進去（**不要加 garth**、`mcp<3` 的原因、httpx 保底的原因）。比對版本差異，重點看 `mcp`、`garminconnect`、`anthropic`、`curl_cffi`、`fastapi`。
-  - [ ] **5 驗證環境**：`uv run python -m unittest discover -s src/test/unit -p "test_*.py"` 全過（基準 838 項）。
-  - [ ] **6 改寫死路徑**：
+  - [x] **0 準備**：`git pull --rebase`、`git status` 確認乾淨、開 `chore/migrate-to-uv` 分支。
+  - [x] **1 gitignore**：補 `.venv/`（現只有 `venv/`，不會匹配 `.venv`）。`pyproject.toml`、`uv.lock`、`.python-version` 進版控。
+  - [x] **2 記錄基準**：用 conda 環境的直譯器 `pip list --format=freeze` 存到專案外（scratchpad／TEMP），供步驟 4 比對。
+  - [x] **3 建環境**：`uv init --bare --no-workspace`；`uv python pin 3.12`（確認解出 ≥3.12.16）；`uv add -r requirements.txt`。
+  - [x] **4 整理 pyproject**：`requires-python = ">=3.12.16,<3.13"`；把 `requirements.txt` 的註解搬進去（**不要加 garth**、`mcp<3` 的原因、httpx 保底的原因）。比對版本差異，重點看 `mcp`、`garminconnect`、`anthropic`、`curl_cffi`、`fastapi`。
+  - [x] **5 驗證環境**：`uv run python -m unittest discover -s src/test/unit -p "test_*.py"` 全過（基準 838 項）。
+  - [x] **6 改寫死路徑**：
     - `.mcp.json` 的 `command` 改指向 `.venv\Scripts\python.exe`（不用 `uv run`：stdio MCP 對啟動延遲與 stdout 污染敏感）。⚠️ 對話面板（`claude_session.panel_mcp_config_json`）也讀這一項，**改完兩條路徑都要驗**。
     - `scripts/dashboard.cmd`、`scripts/export_offline.cmd` 的 `RC_PYTHON` 預設改 `.venv\Scripts\python.exe`；**維持純 ASCII**（cp950 限制）。
     - 檢查 `.claude/settings.local.json` 與 Claude Desktop 設定有無 conda 路徑。
-  - [ ] **7 實測**：重啟 Claude Code 後呼叫 `get_today`；啟動 dashboard 並開瀏覽器；對話面板問一句；`scripts\export_offline` 匯出一次；`ANTHROPIC_API_KEY` 等環境變數在新流程拿得到（`uv run` 不自動讀 `.env`）。
-  - [ ] **8 文件**：`CLAUDE.md`（Python 環境、驗證方式、常用指令，並把「版本唯一來源」改為 `pyproject.toml`）、`TODO.md` 開發環境快照、`PLAN.md`、`docs/dev/SCRIPTS.md`、`docs/research/` 內的 conda 字樣視情況處理。
+  - [x] **7 實測**：重啟 Claude Code 後呼叫 `get_today`；啟動 dashboard 並開瀏覽器；對話面板問一句；`scripts\export_offline` 匯出一次；`ANTHROPIC_API_KEY` 等環境變數在新流程拿得到（`uv run` 不自動讀 `.env`）。
+  - [x] **8 文件**：`CLAUDE.md`（Python 環境、驗證方式、常用指令，並把「版本唯一來源」改為 `pyproject.toml`）、`TODO.md` 開發環境快照、`PLAN.md`、`docs/dev/SCRIPTS.md`、`docs/research/` 內的 conda 字樣視情況處理。
   - [ ] **9 合併後清理**（順序不可反）：驗證通過並合併 → 刪 `environment.yml`、`requirements.txt` → 最後才 `conda env remove -n rc`（唯一不易回退的一步）。不要動 Anaconda 本身。
   - [ ] **10 另開一輪升 Python 3.13.18**（遷移合併後）：`.python-version` 與 `requires-python` 改 `>=3.13.18,<3.14` → `uv sync` → 單元測試 → **實際同步一次 Garmin**（`curl_cffi` TLS 指紋路徑單元測試測不到）→ dashboard 與 MCP 各驗一次 → 更新 CLAUDE.md 的版本說明。
+  - **實測結果（2026-11-04）**：uv 0.13.7＋Python 3.12.16；1220 項單元測試全過；dashboard 啟動後 `/api/today` 回應正常；`export_offline` 匯出成功；對 `.mcp.json` 新路徑做 stdio 連線，列出 19 個 tools、`get_today` 回傳正常。套件版本比 conda 新（fastapi 0.141→0.162、mcp 2.0→2.3、anthropic 1.4→2.4、garminconnect 0.3.11→0.3.20、curl-cffi 0.16→0.17、starlette 1.6→1.10），測試無退步。
+  - [ ] **Fu 待辦**：① 重啟 Claude Code，確認 `running-coach` MCP 連得上；② 實際同步一次 Garmin（`garminconnect`／`curl-cffi` 都升了版，單元測試涵蓋不到真實連線）；③ 在 dashboard 對話面板問一句（走 `.mcp.json` 新路徑）；④ PATH 上 `hermes\bin` 的舊 uv（0.11.21）排在 winget 版前面，需調整順序或之後都用 `uv --version` 確認。
   - **回退點**：步驟 5 前任何問題可直接刪 `.venv` 重來，conda `rc` 全程保留；步驟 6 起以分支 revert 回到 conda 狀態。

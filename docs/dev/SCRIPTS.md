@@ -54,14 +54,14 @@
 
 | 變數 | 預設 | 用途 |
 |---|---|---|
-| `RC_PYTHON` | `%USERPROFILE%\anaconda3\envs\rc\python.exe` | conda 環境 `rc` 的直譯器 |
+| `RC_PYTHON` | `<專案根目錄>\.venv\Scripts\python.exe` | uv 環境（`.venv`）的直譯器；不存在時先在專案根目錄跑 `uv sync` |
 | `RC_DB_PATH` | `output\running_coach.db` | 來源資料庫（只讀） |
 | `RC_OFFLINE_EXPORT_DIR` | `%USERPROFILE%\iCloudDrive\HTML-decode` | 預設目的資料夾 |
 
 ### 直接呼叫 Python
 
 ```bash
-RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+RC=".venv/Scripts/python.exe"
 "$RC" scripts/build_dashboard_offline.py --db-path output/running_coach.db --copy-to "<資料夾>" --dated
 ```
 
@@ -83,7 +83,7 @@ RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
 ## 3. 跑測試
 
 ```bash
-RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+RC=".venv/Scripts/python.exe"
 "$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
 "$RC" -m unittest src.test.unit.test_build_dashboard_offline   # 只跑離線匯出
 ```

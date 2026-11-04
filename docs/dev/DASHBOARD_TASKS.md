@@ -20,14 +20,14 @@ Task A、B 現在可以平行進行——contract（含 schema）已經是實測
 
 ## 執行環境（重要）
 
-**專用 conda 環境 `rc`（Python 3.12）**。不可用裸 `python`（指向無關的 venv，沒有這些套件）。一律用絕對路徑：
+**專案 uv 環境 `.venv`（Python 3.12）**。不可用裸 `python`（指向無關的 venv，沒有這些套件）。一律呼叫 `.venv` 的直譯器（從專案根目錄執行）：
 
 ```bash
-RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+RC=".venv/Scripts/python.exe"
 "$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
 ```
 
-已裝套件見 `requirements.txt`：`fastapi`、`uvicorn`、`fitparse`。詳見 `AGENTS.md` 的 Python Environment 章節。
+已裝套件見 `pyproject.toml`：`fastapi`、`uvicorn`、`fitparse`。詳見 `CLAUDE.md` 的「Python 環境」章節。
 
 ---
 
@@ -384,7 +384,7 @@ Task A 完成前，依上方 contract 自建**虛構**假資料開發。
 ## 整合驗證（主 session 執行，Task A/B 完成後）
 
 ```bash
-RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+RC=".venv/Scripts/python.exe"
 ```
 1. `"$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v` — 既有 44 項（Task C 完成時的數字，Task A/B 會再增加）全過
 2. 資料已在 `output/running_coach.db`（520 活動、1651 daily_wellness、243 場有分圈/逐秒），**不需重新匯入**，除非要驗證匯入本身的冪等性

@@ -69,34 +69,33 @@ gh repo view
 
 ## 🐍 Python 環境（重要）
 
-本專案使用專屬 conda 環境 **`rc`**（Python 3.12，**最低 3.12.16**——安全性更新，不得降版；下限定義於 `environment.yml`）。
+本專案使用 **uv** 管理環境：專案根目錄的 `.venv`（Python 3.12，**最低 3.12.16**——安全性更新，不得降版；下限定義於 `pyproject.toml` 的 `requires-python`）。
 
 **不可用裸 `python` 指令**——這台機器上它會指向無關的 venv（`hermes-agent`），沒有 pip 也沒有本專案任何套件。PATH 上的 `pip` 也指向另一個 Python 3.10 安裝，`pip install X` 後 `python -c "import X"` 會莫名失敗。
 
-一律用絕對路徑呼叫該環境的直譯器：
+一律呼叫專案 `.venv` 的直譯器（從專案根目錄執行；跨工具呼叫不保留 activate，所以不靠啟用）：
 
 ```bash
 # Bash tool
-RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+RC=".venv/Scripts/python.exe"
 "$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
 "$RC" -m src.main.python.services.garmin_import_runner --help
 ```
 
 ```powershell
-# PowerShell tool（conda 不在 PATH 上，同樣用絕對路徑呼叫）
-& "C:\Users\cFu\anaconda3\envs\rc\python.exe" --version
-& "C:\Users\cFu\anaconda3\Scripts\conda.exe" env list
+# PowerShell tool
+& ".\.venv\Scripts\python.exe" --version
 ```
 
-`conda activate rc` 在使用者自己的互動式終端機有效，但**跨工具呼叫不會保留**——每次 Bash/PowerShell 呼叫都是全新 shell，activate 不會持續生效，改用絕對路徑。
+套件依賴：`pyproject.toml` 宣告直接依賴、`uv.lock` 鎖定全部版本（版本唯一真實來源；兩者都進版控，`.venv/` 不進）。常用 uv 指令：`uv sync`（依 lock 重建環境）、`uv add <套件>`、`uv lock --upgrade-package <套件>` 再 `uv sync`。
 
-套件依賴：`requirements.txt`（版本唯一真實來源）與 `environment.yml`（conda 包裝，內部用 pip 安裝 requirements.txt）。重建環境：`conda env create -f environment.yml`。
+⚠️ **uv 版本需 ≥ 0.13**（舊版內建 Python 清單最新只到 3.12.13，低於下限）。這台機器 PATH 上 `hermes\bin` 的舊版 uv 排在 winget 版前面，新開的終端機打 `uv` 可能仍是舊版；用 `uv --version` 確認，或直接呼叫 `%LOCALAPPDATA%\Microsoft\WinGet\Packages\astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe\uv.exe`。
 
 ## ✅ 本專案驗證方式
 執行 `src/test/` 下的單元/整合測試；若有 CLI/API，實際呼叫一次確認回應正確。若前端功能有變動，啟動 dev server 並在瀏覽器實際確認，不能只憑閱讀程式碼判斷。
 
 ```bash
-RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+RC=".venv/Scripts/python.exe"
 "$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
 ```
 
@@ -145,7 +144,7 @@ Issue 存於 GitHub Issues（cFuuu/Running-Coach），用 gh CLI 操作。見 `d
 
 ## 🚀 常用指令
 ```bash
-RC="C:/Users/cFu/anaconda3/envs/rc/python.exe"
+RC=".venv/Scripts/python.exe"
 
 # 跑測試
 "$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
