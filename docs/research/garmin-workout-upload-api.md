@@ -31,7 +31,7 @@
 ## 2. Endpoint（未驗證）
 
 該 repo 使用 `garth` 的 `garth.client.request(method, "connectapi", url, ...)`。
-本專案已於 2026-03-28 排除 garth（見 `requirements.txt` 註解），改用 `garminconnect`，
+本專案已於 2026-03-28 排除 garth（見 `pyproject.toml` 註解），改用 `garminconnect`，
 但**端點路徑與 payload 形狀與 HTTP client 無關**，可直接沿用。
 
 | 動作 | Method | 路徑 | 備註 |

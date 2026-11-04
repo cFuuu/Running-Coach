@@ -1440,7 +1440,7 @@
     - 檢查 `.claude/settings.local.json` 與 Claude Desktop 設定有無 conda 路徑。
   - [x] **7 實測**：重啟 Claude Code 後呼叫 `get_today`；啟動 dashboard 並開瀏覽器；對話面板問一句；`scripts\export_offline` 匯出一次；`ANTHROPIC_API_KEY` 等環境變數在新流程拿得到（`uv run` 不自動讀 `.env`）。
   - [x] **8 文件**：`CLAUDE.md`（Python 環境、驗證方式、常用指令，並把「版本唯一來源」改為 `pyproject.toml`）、`TODO.md` 開發環境快照、`PLAN.md`、`docs/dev/SCRIPTS.md`、`docs/research/` 內的 conda 字樣視情況處理。
-  - [ ] **9 合併後清理**（順序不可反）：驗證通過並合併 → 刪 `environment.yml`、`requirements.txt` → 最後才 `conda env remove -n rc`（唯一不易回退的一步）。不要動 Anaconda 本身。
+  - [ ] **9 合併後清理**（順序不可反）：驗證通過並合併 → 刪 `environment.yml`、`requirements.txt`（✅ 2026-11-04 已刪，確認雲端無 session 使用；`.vscode/settings.json` 的 conda 終端機 profile 同日改為 `.venv`）→ 最後才 `conda env remove -n rc`（唯一不易回退的一步）。不要動 Anaconda 本身。
   - [ ] **10 另開一輪升 Python 3.13.18**（遷移合併後）：`.python-version` 與 `requires-python` 改 `>=3.13.18,<3.14` → `uv sync` → 單元測試 → **實際同步一次 Garmin**（`curl_cffi` TLS 指紋路徑單元測試測不到）→ dashboard 與 MCP 各驗一次 → 更新 CLAUDE.md 的版本說明。
   - **實測結果（2026-11-04）**：uv 0.13.7＋Python 3.12.16；1220 項單元測試全過；dashboard 啟動後 `/api/today` 回應正常；`export_offline` 匯出成功；對 `.mcp.json` 新路徑做 stdio 連線，列出 19 個 tools、`get_today` 回傳正常。套件版本比 conda 新（fastapi 0.141→0.162、mcp 2.0→2.3、anthropic 1.4→2.4、garminconnect 0.3.11→0.3.20、curl-cffi 0.16→0.17、starlette 1.6→1.10），測試無退步。
   - [ ] **Fu 待辦**：① 重啟 Claude Code，確認 `running-coach` MCP 連得上；② 實際同步一次 Garmin（`garminconnect`／`curl-cffi` 都升了版，單元測試涵蓋不到真實連線）；③ 在 dashboard 對話面板問一句（走 `.mcp.json` 新路徑）；④ PATH 上 `hermes\bin` 的舊 uv（0.11.21）排在 winget 版前面，需調整順序或之後都用 `uv --version` 確認。

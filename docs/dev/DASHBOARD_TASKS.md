@@ -628,7 +628,7 @@ POST /api/chat/tracking/{id}   body {"action": "accept"|"decline"|"resolve"|"sto
 
 ### D.6 雲端／地端分工
 
-前提：① 本機未推的 commit 先 push（由 Fu 決定）；② 雲端**沒有也不得有** `output/running_coach.db` 與 `ANTHROPIC_API_KEY`，只能用 `fixtures.build_fixture_db()`＋`?mock=1`；③ 雲端環境需能 `pip install -r requirements.txt`，若要自檢版面需有 Playwright＋chromium，否則只做靜態檢查、視覺交給地端。
+前提：① 本機未推的 commit 先 push（由 Fu 決定）；② 雲端**沒有也不得有** `output/running_coach.db` 與 `ANTHROPIC_API_KEY`，只能用 `fixtures.build_fixture_db()`＋`?mock=1`；③ 雲端環境需能 `uv sync`（依 `pyproject.toml`＋`uv.lock` 建環境），若要自檢版面需有 Playwright＋chromium，否則只做靜態檢查、視覺交給地端。
 
 | 階段 | 雲端可做 | 必須地端 | 依賴 |
 |---|---|---|---|
