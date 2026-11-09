@@ -137,6 +137,8 @@ function tableSection(data, highlight) {
         b.classList.toggle('is-active', on);
         b.setAttribute('aria-selected', on ? 'true' : 'false');
       });
+      // 分頁鈕在表格上方，切換時視窗多半已捲回頂端；切完回到所在列，不必再往下找
+      if (currentRow) currentRow.scrollIntoView({ block: 'center' });
     });
     buttons.push(btn);
     tabs.appendChild(btn);
