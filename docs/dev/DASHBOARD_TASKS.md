@@ -265,6 +265,16 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 - **VDOT** 為 Daniels 原版公式（實際距離直接代入）；不走心率換算（次最大推估，系統性偏高）
 - **AI 分析**不在此 API，另見下方 `/api/analysis`
 
+### `GET /api/today?date=YYYY-MM-DD&athlete_id=1`（2026-11-09 補：首頁切換日期，N-40）
+
+首頁「學員檔案」與「訓練負荷」目前值用。`date` 省略＝系統今天；給了就是「要看的那一天」。
+
+- **退回只在看真正的今天時發生**：`date` 等於系統今天（或省略）時，今天還沒同步會退回 2 天內最近一天（`readiness.today_fallback`、`load.as_of`、`hrv.as_of`、`garmin_reference.health_status.as_of` 標日期）。`date` 是過去日期時**一律不退回**，那天沒資料就是 `null`——否則會把前一天的數字當成那一天的。
+- **`freshness` 一律相對系統今天**（`days_behind` 不隨 `date` 變），側邊列「最後同步」共用。
+- `planned`（當日／隔日課表）、`races`（剩餘天數）、`last_activity`（≤ 該日最近一場）、`readiness.latest_evaluable` 都以 `date` 為準。
+- 格式錯誤回 400。查詢層對應 `dashboard_queries.get_today(..., today=, system_today=)`；路由一律傳 `system_today=date.today()`。
+- 首頁看過去日期時，訓練負荷 30 日走勢與體能狀態卡片**不另加參數**，改用既有的 `range=custom:<date−29>:<date>`（預設 `30d` 錨定資料庫最新日，不會跟著所選日期走）。離線快照不顯示切換，烘入的網址不變。
+
 ### `/api/analysis*`（2026-10-15 新增：總覽「AI 分析」按鈕）
 
 按鈕 → `POST /api/analysis` → 後端在背景啟動 **Claude Code 無互動 session**（`claude -p`，`services/coach_analysis.py`），

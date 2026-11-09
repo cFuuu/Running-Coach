@@ -174,7 +174,9 @@ def _parse_date_param(value: str, param_name: str) -> datetime.date:
 @router.get("/today")
 def read_today(
     date: str | None = Query(
-        default=None, description="覆寫『今天』，格式 YYYY-MM-DD；省略時用系統今天"
+        default=None,
+        description="要看的那一天，格式 YYYY-MM-DD；省略時用系統今天。"
+        "不是系統今天時不退回前幾天的資料（首頁切換日期，N-40）",
     ),
     athlete_id: int | None = AthleteParam,
     conn: sqlite3.Connection = Depends(get_conn),
@@ -184,10 +186,13 @@ def read_today(
     下場／目標賽事剩餘天數（來自學員檔）。
 
     純呈現層薄封裝——實際邏輯全在 dashboard_queries.get_today()。
+    system_today 一律傳真正的今天：date 指向過去時才能關掉退回、
+    freshness.days_behind 也才會相對真正的今天（側邊列共用）。
     """
     today = _parse_date_param(date, "date") if date else None
     return queries.get_today(
-        conn, athlete_id, today, race_schedule=race_names.load_race_schedule(profile_path)
+        conn, athlete_id, today, race_schedule=race_names.load_race_schedule(profile_path),
+        system_today=datetime.date.today(),
     )
 
 

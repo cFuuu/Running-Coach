@@ -1170,10 +1170,18 @@ def get_today(
     athlete_id: int | None = None,
     today: datetime.date | None = None,
     race_schedule: dict | None = None,
+    system_today: datetime.date | None = None,
 ) -> dict:
     """今日卡：今日／明日課表、規則引擎的準備度判讀、訓練負荷、最近一場活動。
 
-    today 可覆寫（預設系統今天）——供測試與需要重現特定日期畫面時使用。
+    today 是「要看的那一天」（預設系統今天）——首頁切換日期（N-40）與測試用。
+
+    system_today 是真正的今天（省略時視為與 today 相同，即「看的就是今天」）。
+    兩者不同時代表在看過去（或未來）某一天：
+    - 準備度、負荷、HRV、Garmin 健康狀態**不退回**前幾天——退回只為了涵蓋
+      「手錶今天還沒同步」，套到過去日期會讓人把前一天的數字當成那一天的
+      （PLAN.md §1 2026-11-09）。沒資料就是 None。
+    - freshness.days_behind 一律相對 system_today（側邊列「最後同步」共用）。
 
     race_schedule：學員檔的目標賽事與賽程（race_names.load_race_schedule()），
     用來輸出 races（下場賽事／目標賽事剩餘天數）；省略時 races 為 None。
@@ -1185,6 +1193,9 @@ def get_today(
     """
     resolved = resolve_athlete_id(conn, athlete_id)
     today = today or datetime.date.today()
+    system_today = system_today or today
+    # 只有看的是真正的今天才退回前幾天（見 docstring）
+    allow_fallback = today == system_today
     tomorrow = today + datetime.timedelta(days=1)
     races = race_names_module.race_countdown(race_schedule, today) if race_schedule else None
 
@@ -1213,7 +1224,7 @@ def get_today(
     activity_latest = latest_activity_row["d"] if latest_activity_row else None
     most_recent = max((d for d in (wellness_latest, activity_latest) if d), default=None)
     days_behind = (
-        (today - datetime.date.fromisoformat(most_recent)).days
+        (system_today - datetime.date.fromisoformat(most_recent)).days
         if most_recent
         else None
     )
@@ -1238,7 +1249,9 @@ def get_today(
     # 今天常常還沒同步（手錶隔天早上才上傳）。準備度與負荷都退回
     # _TODAY_FALLBACK_DAYS 天內最近一個有資料的日子，並標明是哪一天
     # （與下方 HRV 的退回同一個窗口；超出窗口就誠實顯示無資料）。
-    fallback_start = today - datetime.timedelta(days=_TODAY_FALLBACK_DAYS)
+    # 看過去日期時窗口為 0 天：只認那一天本身。
+    fallback_days = _TODAY_FALLBACK_DAYS if allow_fallback else 0
+    fallback_start = today - datetime.timedelta(days=fallback_days)
     today_fallback = None
     if (today_readiness is None or today_readiness["readiness"] is None) and latest_evaluable \
             and latest_evaluable["date"] >= fallback_start:
@@ -1256,7 +1269,7 @@ def get_today(
     load_date = next(
         (
             today - datetime.timedelta(days=offset)
-            for offset in range(_TODAY_FALLBACK_DAYS + 1)
+            for offset in range(fallback_days + 1)
             if today - datetime.timedelta(days=offset) not in no_data_dates
         ),
         None,
@@ -1447,14 +1460,15 @@ def get_today(
         },
         "load": load_fact,
         "hrv": hrv_fact,
-        "garmin_reference": _garmin_health_reference(conn, resolved, today),
+        "garmin_reference": _garmin_health_reference(conn, resolved, today, fallback_days),
         "consecutive_training_days": consecutive_training_days,
         "last_activity": last_activity,
     }
 
 
 def _garmin_health_reference(
-    conn: sqlite3.Connection, athlete_id: int, today: datetime.date
+    conn: sqlite3.Connection, athlete_id: int, today: datetime.date,
+    fallback_days: int | None = None,
 ) -> dict | None:
     """Garmin 健康狀態卡（HR／HRV／呼吸／血氧）的參考摘要，供首頁「注意」旗標與 AI 教練引用。
 
@@ -1462,9 +1476,12 @@ def _garmin_health_reference(
     不重算。2026-10-23 起：**規則引擎（readiness.py）仍不讀**，但首頁與 AI 教練可在
     標明「Garmin 參考」的前提下引用；不走 data_confidence.fact()，刻意與三欄位契約
     長得不同（reference_only），下游若誤當 fact 用會立刻壞掉。
-    今天還沒同步時退回 _TODAY_FALLBACK_DAYS 內最近一天，並以 as_of 標明。
+    今天還沒同步時退回 fallback_days（預設 _TODAY_FALLBACK_DAYS）內最近一天，並以
+    as_of 標明；看過去日期時呼叫端傳 0，只認那一天。
     """
-    window_start = today - datetime.timedelta(days=_TODAY_FALLBACK_DAYS)
+    if fallback_days is None:
+        fallback_days = _TODAY_FALLBACK_DAYS
+    window_start = today - datetime.timedelta(days=fallback_days)
     latest = conn.execute(
         "SELECT MAX(date) AS d FROM health_status WHERE athlete_id = ? AND date <= ? AND date >= ?",
         (athlete_id, today.isoformat(), window_start.isoformat()),

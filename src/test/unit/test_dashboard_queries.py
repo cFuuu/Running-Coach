@@ -957,6 +957,49 @@ class TestToday(DashboardQueryTestCase):
         self.assertIsNone(result["readiness"]["today_fallback"])
         self.assertIsNone(result["load"])
 
+    # --- N-40 首頁切換日期：看過去日期時不退回、days_behind 相對真正的今天 ---
+
+    def test_past_date_without_data_does_not_fall_back(self):
+        """看過去某天（3/11 無資料、真正的今天 3/13）：準備度、負荷、HRV、
+        Garmin 健康狀態都不可退回 3/10——否則會把前一天的數字當成那一天的。"""
+        self._insert_health_status("2026-03-10", [("HRV", "BELOW")])
+        result = queries.get_today(
+            self.conn, today=datetime.date(2026, 3, 11), system_today=datetime.date(2026, 3, 13)
+        )
+        self.assertEqual(result["date"], "2026-03-11")
+        self.assertIsNone(result["readiness"]["today"]["readiness"])
+        self.assertIsNone(result["readiness"]["today_fallback"])
+        self.assertIsNone(result["load"])
+        self.assertIsNone(result["hrv"])
+        self.assertIsNone(result["garmin_reference"])
+
+    def test_today_still_falls_back_when_system_today_matches(self):
+        """看的就是真正的今天（明確傳入同一天）時，退回行為與以往相同。"""
+        day = datetime.date(2026, 3, 11)
+        result = queries.get_today(self.conn, today=day, system_today=day)
+        self.assertEqual(result["readiness"]["today_fallback"]["date"], "2026-03-10")
+        self.assertEqual(result["load"]["as_of"], "2026-03-10")
+        self.assertEqual(result["hrv"]["as_of"], "2026-03-10")
+
+    def test_past_date_with_data_shows_that_day(self):
+        """過去某天自己有資料時照常呈現，as_of 皆為 None（不是退回來的）。"""
+        result = queries.get_today(
+            self.conn, today=datetime.date(2026, 3, 10), system_today=datetime.date(2026, 3, 13)
+        )
+        self.assertIsNotNone(result["readiness"]["today"]["readiness"])
+        self.assertIsNone(result["load"]["as_of"])
+        self.assertIsNone(result["hrv"]["as_of"])
+
+    def test_days_behind_is_relative_to_system_today(self):
+        """freshness 是側邊列「最後同步」共用的，必須相對真正的今天，
+        不隨首頁看的日期變動（fixture 最新資料 3/10）。"""
+        for viewed in (datetime.date(2026, 3, 1), datetime.date(2026, 3, 10)):
+            with self.subTest(viewed=viewed):
+                result = queries.get_today(
+                    self.conn, today=viewed, system_today=datetime.date(2026, 3, 13)
+                )
+                self.assertEqual(result["freshness"]["days_behind"], 3)
+
     def test_races_countdown_from_schedule(self):
         schedule = {
             "target": {"name": "目標馬", "date": "2026-03-20"},
@@ -1194,6 +1237,13 @@ class TestTrainingLoad(DashboardQueryTestCase):
         short = queries.get_training_load(self.conn, range_key="7d")
         long = queries.get_training_load(self.conn, range_key="30d")
         self.assertLess(len(short["series"]), len(long["series"]))
+
+    def test_custom_range_ends_at_chosen_date(self):
+        """首頁看過去日期（N-40）時用 custom 區間取「截至那天的近 30 日」走勢，
+        序列最後一天必須是所選日期，不可被錨定到資料庫最新日。"""
+        result = queries.get_training_load(self.conn, range_key="custom:2026-02-04:2026-03-05")
+        self.assertEqual(len(result["series"]), 30)
+        self.assertEqual(result["series"][-1]["date"], "2026-03-05")
 
     def test_no_athlete_returns_empty_series(self):
         empty_conn = get_connection(":memory:")
@@ -1550,6 +1600,43 @@ class TestOverview(DashboardQueryTestCase):
         self.addCleanup(empty_conn.close)
         result = queries.get_overview(empty_conn, range_key="30d", today=self.TODAY)
         self.assertFalse(result["available"])
+
+
+class TestTodayRouteDateParam(unittest.TestCase):
+    """GET /api/today?date=：路由一律以系統今天當 system_today（N-40）。
+    fixture 資料在 2026-03，對真正的今天而言都是過去日期。"""
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+
+        from src.main.python.api.app import create_app
+        from src.main.python.services import coach_chat
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        db_path = Path(self._tmp.name) / "test.db"
+        build_fixture_db(db_path).close()
+        assets_dir = Path(self._tmp.name) / "assets"
+        assets_dir.mkdir()
+        app = create_app(
+            str(db_path), assets_dir=assets_dir,
+            chat_config=coach_chat.ChatConfig(api_key_present=False),
+        )
+        self.client = TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 1))
+
+    def test_past_date_has_no_fallback_and_days_behind_uses_system_today(self):
+        resp = self.client.get("/api/today", params={"date": "2026-03-11"})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["date"], "2026-03-11")
+        self.assertIsNone(body["load"])
+        self.assertIsNone(body["hrv"])
+        self.assertIsNone(body["readiness"]["today_fallback"])
+        expected = (datetime.date.today() - datetime.date(2026, 3, 10)).days
+        self.assertEqual(body["freshness"]["days_behind"], expected)
+
+    def test_invalid_date_is_400(self):
+        self.assertEqual(self.client.get("/api/today", params={"date": "2026-3-1x"}).status_code, 400)
 
 
 class TestNoFastapiDependency(unittest.TestCase):
