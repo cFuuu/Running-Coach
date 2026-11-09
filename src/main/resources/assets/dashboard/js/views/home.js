@@ -208,7 +208,8 @@ var GARMIN_HEALTH_STATUS_LABEL = { BELOW: '低於範圍', ABOVE: '高於範圍' 
 
 /** Garmin 健康狀態中範圍外的指標（今日 API 的 garmin_reference）；沒有資料回傳空陣列。 */
 function garminHealthOutliers() {
-  var ref = state.today && state.today.garmin_reference;
+  var day = homeDay();
+  var ref = day && day.garmin_reference;
   return (ref && ref.caution && ref.health_status && ref.health_status.outliers) || [];
 }
 
@@ -340,7 +341,8 @@ function readinessRow(def, entry) {
  * 資料來自今日 API 的 hrv.garmin_reference（for_display_only），分類文字與配色沿用 HRV 卡片。
  */
 function garminHrvRow() {
-  var hrv = state.today && state.today.hrv;
+  var day = homeDay();
+  var hrv = day && day.hrv;
   var ref = hrv && hrv.garmin_reference;
   var status = ref && ref.status;
   var row = h('div', 'wt-row rd-row');
@@ -402,10 +404,12 @@ function feelTips() {
 function renderFeelBlock(dateStr) {
   var block = h('div', 'today-block feel-block');
   var title = h('div', 'today-block-title');
-  title.appendChild(subTitleLabel('smile', '今日體感狀況'));
+  // 首頁切到過去日期時（N-40）記的是那一天，標題不寫「今日」
+  var past = dateStr !== todayISO();
+  title.appendChild(subTitleLabel('smile', past ? '當日體感狀況' : '今日體感狀況'));
   title.appendChild(infoTip('今日體感狀況', feelTips()));
   block.appendChild(title);
-  block.appendChild(h('div', 'feel-sub', '自行評估今天身體狀況'));
+  block.appendChild(h('div', 'feel-sub', past ? '自行評估當天身體狀況' : '自行評估今天身體狀況'));
 
   var group = h('div', 'feel-options');
   group.setAttribute('role', 'group');
@@ -507,7 +511,8 @@ export function renderTodayReadinessBlock(readiness) {
     entry = fallback;
     todayMissing = false;
   }
-  var shownDate = entry && entry.date ? entry.date : (state.today && state.today.date);
+  var day = homeDay();
+  var shownDate = entry && entry.date ? entry.date : (day && day.date);
   if (shownDate) title.appendChild(h('span', 'today-note fig-title-date', C.shortDate(shownDate) + ' (' + dowLabel(shownDate) + ')'));
   // ⓘ 靠標題列最右邊，所以要在日期之後才加
   title.appendChild(infoTip('綜合整備狀態', readinessTips(entry)));
@@ -536,7 +541,8 @@ export function renderTodayReadinessBlock(readiness) {
   if (unsynced) block.appendChild(h('div', 'sync-fallback-note is-muted', '今日資料尚未同步'));
   if (todayMissing) {
     var reasons = (entry && entry.not_assessed || []).map(function (na) { return na.reason; });
-    block.appendChild(h('div', 'today-note wt-note', reasons.length ? reasons[0] : '今日尚無足夠資料可評估'));
+    block.appendChild(h('div', 'today-note wt-note',
+      reasons.length ? reasons[0] : (isPastHomeDate() ? '當日無足夠資料可評估' : '今日尚無足夠資料可評估')));
     var latest = readiness && readiness.latest_evaluable;
     if (latest) {
       var lrow = h('div', 'today-note');
@@ -707,17 +713,21 @@ function renderFreshness(data) {
 export function renderToday() {
   var node = $('today-body');
   clear(node);
-  var data = state.today;
-  if (!data) { showLoading(node, '載入今日狀態'); return; }
+  renderHomeDateNav();
+  // 資料新鮮度與側邊列永遠看真正的今天（state.today），不隨首頁所選日期變動
+  if (state.today) {
+    renderFreshness(state.today);
+    renderSidebarSync();
+  }
+  var data = homeDay();
+  if (!data) { showLoading(node, isPastHomeDate() ? '載入當日狀態' : '載入今日狀態'); return; }
 
-  renderFreshness(data);
-  renderSidebarSync();
-
+  var past = isPastHomeDate();
   var planBlock = h('div', 'today-block');
   var planned = data.planned || {};
   planBlock.appendChild(planBlockTitle(planned));
-  planBlock.appendChild(renderTodayPlanRow('今日', planned.today));
-  planBlock.appendChild(renderTodayPlanRow('明日', planned.tomorrow));
+  planBlock.appendChild(renderTodayPlanRow(past ? '當日' : '今日', planned.today));
+  planBlock.appendChild(renderTodayPlanRow(past ? '隔日' : '明日', planned.tomorrow));
 
   // 課表在左、窄窄的「今日體感狀況」在右（區塊太窄時上下排）
   var top = h('div', 'today-top');
@@ -817,10 +827,11 @@ export function renderHomeLoad() {
   var node = $('home-load');
   if (!node) return;
   clear(node);
-  var load = state.today && state.today.load;
+  var day = homeDay();
+  var load = day && day.load;
   var kpi = state.todayKpi;
-  if (!state.today || !kpi) { showLoading(node, '載入訓練負荷'); return; }
-  if (!load) { showUnavailable(node, '今日尚無訓練負荷資料'); return; }
+  if (!day || !kpi) { showLoading(node, '載入訓練負荷'); return; }
+  if (!load) { showUnavailable(node, isPastHomeDate() ? '當日無訓練負荷資料' : '今日尚無訓練負荷資料'); return; }
   if (load.as_of) node.appendChild(h('div', 'sync-fallback-note is-muted', unsyncedNote(load.as_of)));
 
   var rows = kpi.loadSeries || [];
@@ -877,15 +888,25 @@ export function renderHomeBody() {
   renderGarminWall(node, state.todayKpi && state.todayKpi.garminCards, HOME_GARMIN_KEYS, '載入體能狀態');
 }
 
+// 首頁訓練負荷走勢與體能狀態卡片的天數；看今天時用等長的預設 range（30d），兩者須一致
+var HOME_KPI_DAYS = 30;
+var HOME_KPI_RANGE = '30d';
+
 /**
  * 首頁的身體狀況與訓練負荷趨勢都取固定的近 30 天（不吃頂列 range），
  * 散在兩支既有端點，這裡併發取回。任一支失敗就當那幾張卡沒資料。
+ * 首頁切到過去日期時（N-40）改用 custom 區間「截至那天的近 30 天」——
+ * 預設 range 錨定的是資料庫最新日，不會跟著所選日期走。
  */
 export function loadTodayKpi() {
+  var date = state.homeDate;
+  var range = date ? 'custom:' + addDaysISO(date, 1 - HOME_KPI_DAYS) + ':' + date : HOME_KPI_RANGE;
   Promise.all([
-    api('/api/training-load?range=30d').catch(function () { return null; }),
-    api('/api/garmin-cards?range=30d').catch(function () { return { cards: {} }; })
+    api('/api/training-load?range=' + range).catch(function () { return null; }),
+    api('/api/garmin-cards?range=' + range).catch(function () { return { cards: {} }; })
   ]).then(function (res) {
+    // 回來前已切到別天：丟棄，避免舊日期的卡片蓋掉新的
+    if (date !== state.homeDate) return;
     var load = res[0];
     state.todayKpi = {
       loadSeries: (load && load.series) || [],
@@ -1402,6 +1423,7 @@ export function loadRecentSessions() {
 
 export function loadToday() {
   showLoading($('today-body'), '載入今日狀態');
+  // state.today 永遠是真正的今天（側邊列、設定頁、行事曆共用）；首頁看過去日期時另抓那一天
   api('/api/today').then(function (data) {
     state.today = data;
     renderToday();
@@ -1411,8 +1433,144 @@ export function loadToday() {
     // 可能不在畫面上，但它沒有圖表、不吃容器寬度，直接寫入即可）
     renderSettingsSync();
   }).catch(function (err) {
+    if (!state.homeDate) showError($('today-body'), err.message);
+  });
+  if (state.homeDate) loadHomeDay();
+}
+
+// ------------------------------------------------------------ 首頁切換日期（N-40）
+//
+// 「學員檔案／訓練負荷／體能狀態」可切到過去任一天，資料由 /api/today?date= 與
+// custom 區間當場計算，不另存。「當週課表／跑力綜覽／近期活動」維持真正的今天。
+// 所選日期只放記憶體，重新整理後回到今天。離線快照沒有其他日期的資料，不顯示切換。
+
+/** 首頁目前看的那一天的 /api/today（看今天時就是 state.today）。 */
+function homeDay() {
+  return state.homeDate ? state.homeDay : state.today;
+}
+
+function isPastHomeDate() {
+  return !!state.homeDate;
+}
+
+/** 可切換的最早日期：/api/meta 的整體資料起日（meta 未到時不設下限）。 */
+function homeDateMin() {
+  var bounds = state.meta && state.meta.data_bounds;
+  return (bounds && bounds.earliest_date) || null;
+}
+
+function homeDateLabel(iso) {
+  return displayDate(iso) + ' (' + dowLabel(iso) + ')';
+}
+
+var homeDaySeq = 0;
+
+function loadHomeDay() {
+  var date = state.homeDate;
+  var seq = ++homeDaySeq;
+  api('/api/today?date=' + date).then(function (data) {
+    if (seq !== homeDaySeq || date !== state.homeDate) return;
+    state.homeDay = data;
+    renderToday();
+    renderHomeLoad();
+    renderHomeBody();
+  }).catch(function (err) {
+    if (seq !== homeDaySeq || date !== state.homeDate) return;
     showError($('today-body'), err.message);
   });
+}
+
+/** 切到某一天（早於下限會夾回下限；今天或以後＝回到今天）。 */
+function setHomeDate(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return;
+  var min = homeDateMin();
+  if (min && iso < min) iso = min;
+  var next = iso >= todayISO() ? null : iso;
+  if (next === state.homeDate) { renderHomeDateNav(); return; }
+  state.homeDate = next;
+  state.homeDay = null;
+  state.todayKpi = null;
+  renderToday();
+  renderHomeLoad();
+  renderHomeBody();
+  if (next) loadHomeDay();
+  loadTodayKpi();
+}
+
+/** 訓練負荷、體能狀態標題列的說明：看過去日期時改寫成「截至 YYYY/MM/DD」並標色。 */
+function renderHomeDateHints() {
+  ['h-load-now', 'h-kpi'].forEach(function (id) {
+    var hint = document.querySelector('#' + id + ' .panel-hint');
+    if (!hint) return;
+    if (hint.dataset.defaultText === undefined) hint.dataset.defaultText = hint.textContent;
+    var base = hint.dataset.defaultText.replace(/^截至最新｜/, '');
+    hint.textContent = state.homeDate ? '截至 ' + homeDateLabel(state.homeDate) + '｜' + base : hint.dataset.defaultText;
+    hint.classList.toggle('is-past-date', !!state.homeDate);
+  });
+}
+
+/**
+ * 學員檔案標題列右側的「‹ 日期 ›」＋「回到今天」。元素只建一次（掛在 #h-today 裡），
+ * 之後每次 renderToday 只更新文字與上下限。日期鈕上疊一個透明的原生 date input，
+ * 點下去就是系統的日期選擇器（手機為滾輪）。
+ */
+function renderHomeDateNav() {
+  if (isOfflineSnapshot()) return;
+  var heading = $('h-today');
+  if (!heading) return;
+  var nav = heading.querySelector('.home-date-nav');
+  if (!nav) {
+    nav = h('span', 'home-date-nav');
+    nav.setAttribute('role', 'group');
+    nav.setAttribute('aria-label', '切換首頁日期');
+    var prev = h('button', 'calendar-nav-btn home-date-step', '‹');
+    prev.type = 'button';
+    prev.setAttribute('aria-label', '前一天');
+    prev.addEventListener('click', function () {
+      setHomeDate(addDaysISO(state.homeDate || todayISO(), -1));
+    });
+    var picker = h('span', 'home-date-picker');
+    picker.appendChild(h('span', 'home-date-label'));
+    var input = h('input', 'home-date-input');
+    input.type = 'date';
+    input.setAttribute('aria-label', '選擇日期');
+    // Chrome 桌機點欄位本身不會開選擇器，明確叫出來；不支援的瀏覽器照原生行為
+    input.addEventListener('click', function () {
+      try { if (input.showPicker) input.showPicker(); } catch (e) { /* 已開啟或不支援 */ }
+    });
+    input.addEventListener('change', function () { setHomeDate(input.value); });
+    picker.appendChild(input);
+    var next = h('button', 'calendar-nav-btn home-date-step', '›');
+    next.type = 'button';
+    next.setAttribute('aria-label', '後一天');
+    next.addEventListener('click', function () {
+      if (state.homeDate) setHomeDate(addDaysISO(state.homeDate, 1));
+    });
+    var reset = h('button', 'home-date-reset', '回到今天');
+    reset.type = 'button';
+    reset.addEventListener('click', function () { setHomeDate(todayISO()); });
+    nav.appendChild(prev);
+    nav.appendChild(picker);
+    nav.appendChild(next);
+    nav.appendChild(reset);
+    heading.appendChild(nav);
+  }
+
+  var today = todayISO();
+  var shown = state.homeDate || today;
+  var min = homeDateMin();
+  var steps = nav.querySelectorAll('.home-date-step');
+  steps[0].disabled = !!(min && shown <= min);
+  steps[1].disabled = !state.homeDate;
+  var label = nav.querySelector('.home-date-label');
+  label.textContent = homeDateLabel(shown);
+  label.classList.toggle('is-past-date', !!state.homeDate);
+  var dateInput = nav.querySelector('.home-date-input');
+  dateInput.max = today;
+  if (min) dateInput.min = min;
+  dateInput.value = shown;
+  nav.querySelector('.home-date-reset').hidden = !state.homeDate;
+  renderHomeDateHints();
 }
 
 /** 首頁全部區塊的資料（同步完成後也呼叫這裡重新整理）。 */

@@ -2619,6 +2619,112 @@ body.coach-open .coach-panel {
   color: var(--hdr-strong);
 }
 
+/* ---- 首頁切換日期（N-40）：學員檔案標題列右側的「‹ 日期 › 回到今天」 ----
+   箭頭沿用行事曆的 .calendar-nav-btn；放在標題列內改 32px 高（不撐高標題列）。
+   區塊太窄時整組換到下一行靠右，不產生橫向捲動。 */
+#block-today>.panel-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 8px;
+}
+
+.home-date-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 -4px auto;
+  font-weight: 400;
+}
+
+.home-date-nav .calendar-nav-btn {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0;
+  line-height: 1;
+}
+
+.home-date-nav .calendar-nav-btn:disabled {
+  opacity: .4;
+  border-color: var(--border);
+  cursor: default;
+}
+
+.home-date-picker {
+  position: relative;
+  display: inline-flex;
+}
+
+.home-date-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 看的不是今天：日期鈕改用「非今日資料」的琥珀色（同 .sync-fallback-note），避免誤當今天 */
+.home-date-label.is-past-date {
+  border-color: var(--badge-clipped-border);
+  background: var(--badge-clipped-bg);
+  color: var(--badge-clipped-text);
+  font-weight: 600;
+}
+
+/* 透明的原生 date input 疊在日期上，點到的是它，開的是系統日期選擇器。
+   字級 16px 只為避免 iOS Safari 對小於 16px 的輸入框自動放大畫面（看不見，不影響版面） */
+.home-date-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.home-date-picker:hover .home-date-label,
+.home-date-picker:focus-within .home-date-label {
+  border-color: var(--accent);
+}
+
+.home-date-reset {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.home-date-reset:hover {
+  border-color: var(--accent);
+}
+
+.home-date-reset[hidden] {
+  display: none;
+}
+
+/* 訓練負荷、體能狀態標題列的「截至 YYYY/MM/DD」 */
+.panel-title .panel-hint.is-past-date {
+  color: var(--badge-clipped-text);
+  font-weight: 600;
+}
+
 #block-load .kpi-card,
 #block-body .kpi-card,
 #block-ability .kpi-card,

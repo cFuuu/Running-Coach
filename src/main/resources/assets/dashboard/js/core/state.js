@@ -35,6 +35,10 @@ export var state = {
   trendsPrev: null,      // 趨勢頁數字卡的前一段等長期間 { range, start, end, loadSeries, wellness, sessions, overview }
 
   homeOverview: null,    // 首頁用的 /api/overview（固定 30d，只取 VDOT、最佳成績、本週 Zone 2 等不受範圍影響的欄位）
+  // 首頁切換日期（N-40）：null＝看真正的今天；否則是 'YYYY-MM-DD'（過去某天），重新整理後回到 null。
+  // 那一天的 /api/today 放 homeDay，state.today 永遠是真正的今天（側邊列「最後同步」共用）。
+  homeDate: null,
+  homeDay: null,
 
   view: 'home',          // 目前 view：home|calendar|trends|sessions|tools|settings
 
