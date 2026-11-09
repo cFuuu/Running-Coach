@@ -10,6 +10,17 @@
         "output/running_coach.db"
       ],
       "env": {}
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@playwright/mcp@0.0.84"
+      ],
+      "env": {}
     }
   }
 }

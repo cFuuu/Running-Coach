@@ -68,3 +68,6 @@ temp/
 # Agent skill tooling (matt-pocock-skills) — personal workflow tooling, not project code
 .agents/
 .claude/skills/
+
+# Playwright MCP — screenshots/traces/console logs it writes by default
+.playwright-mcp/
