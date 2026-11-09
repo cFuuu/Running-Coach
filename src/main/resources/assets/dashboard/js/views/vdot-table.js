@@ -2,7 +2,7 @@
  * vdot-table.js — VDOT 對照表大視窗（N-41，2026-11-09 Fu 定案）
  *
  * 由首頁跑力卡 ⓘ 的「查看 VDOT 對照表 →」開啟。內容：
- *   ①你的均衡成績：目前 VDOT 的各距離等效成績與 PB 並排、差距
+ *   ①你的均衡成績：目前 VDOT 的各距離等效成績與近半年最佳並排、差距
  *   ②等級文字
  *   ③VDOT 20–85 對照表：等效成績＋E／M／T／I 配速，目前所在列標示並自動捲到
  *
@@ -14,6 +14,7 @@ import * as C from '../charts.js';
 import { api } from '../core/api.js';
 import { clear, h, showError, showLoading } from '../core/dom.js';
 import { openModal } from '../core/modal.js';
+import { addDaysISO, todayISO } from '../core/format.js';
 
 var DISTANCE_LABEL = { '3k': '3K', '5k': '5K', '10k': '10K', half_marathon: '半馬', marathon: '全馬' };
 // 欄名對應手錶的 %HRR 心率區間（PLAN.md §1 2026-11-09）；不做 R、不做 Z1
@@ -63,15 +64,22 @@ function card(title, hint) {
   return box;
 }
 
-function pbByDistance(personalBests) {
+// 均衡成績只跟近期的比賽比（同 RQ 的做法，2026-11-10 Fu）：生涯 PB 多半是體能較好時跑的，
+// 拿來比目前的跑力，每個距離都會顯示「快」，看不出缺耐力還是缺速度。
+var RECENT_BEST_DAYS = 180;
+
+/** 各距離在近 RECENT_BEST_DAYS 天內最快的一場（records 已由快到慢排序） */
+function recentBestByDistance(personalBests) {
+  var since = addDaysISO(todayISO(), -RECENT_BEST_DAYS);
   var out = {};
   (personalBests || []).forEach(function (pb) {
-    if (pb.records && pb.records.length) out[pb.distance] = pb.records[0];
+    var best = (pb.records || []).find(function (r) { return r.date >= since; });
+    if (best) out[pb.distance] = best;
   });
   return out;
 }
 
-/** PB 減均衡成績（秒）→「慢 1:23」「快 0:45」「持平」 */
+/** 近期最佳減均衡成績（秒）→「慢 1:23」「快 0:45」「持平」 */
 function gapText(sec) {
   var s = Math.round(sec);
   if (s === 0) return '持平';
@@ -88,11 +96,11 @@ function mineSection(data, opts, outOfRange) {
     box.appendChild(inner);
     return box;
   }
-  var pbs = pbByDistance(opts.personalBests);
+  var pbs = recentBestByDistance(opts.personalBests);
   var table = h('table', 'vt-table vt-mine');
   var thead = h('thead');
   var hr = h('tr');
-  ['距離', '均衡成績', 'PB', 'PB 比均衡'].forEach(function (t) { hr.appendChild(h('th', null, t)); });
+  ['距離', '均衡成績', '近半年最佳', '比均衡'].forEach(function (t) { hr.appendChild(h('th', null, t)); });
   thead.appendChild(hr);
   table.appendChild(thead);
   var tbody = h('tbody');
@@ -109,7 +117,8 @@ function mineSection(data, opts, outOfRange) {
   table.appendChild(tbody);
   inner.appendChild(table);
   inner.appendChild(h('p', 'vt-note',
-    '均衡成績是目前跑力在各距離「應該跑得出」的成績。PB 比均衡慢的距離是相對弱項：'
+    '均衡成績是目前跑力在各距離「應該跑得出」的成績。近半年最佳是 ' + RECENT_BEST_DAYS
+    + ' 天內各距離最快的比賽，比均衡慢的距離是相對弱項：'
     + '長距離（半馬、全馬）慢，代表有氧耐力還有空間；短距離（3K、5K）慢，代表速度不足。'));
   box.appendChild(inner);
   return box;
