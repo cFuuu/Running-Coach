@@ -21,6 +21,7 @@ from src.main.python.services import dashboard_queries as queries
 from src.main.python.services import garmin_cards
 from src.main.python.services import race_names
 from src.main.python.services import training_plan_store
+from src.main.python.services import vdot_engine
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -367,3 +368,28 @@ def write_plan_link(
         else queries.get_activity_plan_match(conn, resolved, activity_id)
     )
     return result
+
+
+# --------------------------------------------------------------------------
+# /api/vdot-table：VDOT 對照表（N-41，跑力卡 ⓘ →「查看 VDOT 對照表」大視窗）
+# --------------------------------------------------------------------------
+
+
+@router.get("/vdot-table")
+def read_vdot_table(
+    vdot: str | None = Query(
+        default=None, description="目前跑力（可含小數）；給了就另回該精確值的對照列 current"
+    ),
+) -> dict:
+    """VDOT 對照表：各距離等效成績＋E／M／T／I 配速。不讀資料庫——公式只在 vdot_engine。
+
+    vdot 收字串自己轉：非數字或超出範圍回 400（與 _parse_date_param 同風格），
+    而不是 FastAPI 型別驗證的 422。範圍檢查只在 vdot_engine 一處。
+    """
+    try:
+        return vdot_engine.vdot_equivalence_table(float(vdot) if vdot else None)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"vdot 必須是 {vdot_engine.VDOT_TABLE_MIN}～{vdot_engine.VDOT_TABLE_MAX} 的數字：{vdot}",
+        ) from exc

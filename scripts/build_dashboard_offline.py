@@ -63,6 +63,7 @@ DEFAULT_KEEP_LONG_KM = 21.0  # 半馬 21.0975 km 以上；--detail-months 時舊
 MODULE_PREFIX = "@rc/js/"
 # 與 app.py 的 DEFAULT_PROFILE_FILENAME 相同語意：學員檔與資料庫放同一個資料夾
 from src.main.python.api.app import DEFAULT_PROFILE_FILENAME  # noqa: E402
+from src.main.python.services import vdot_engine  # noqa: E402  對照表範圍（vdot_table_request）
 
 
 class SecurityScanError(RuntimeError):
@@ -84,6 +85,7 @@ class SnapshotContext:
     span_start: datetime.date        # 行事曆／體感資料涵蓋的起日
     span_end: datetime.date          # 行事曆／體感資料涵蓋的訖日
     prev_ranges: tuple[str, ...] = ()  # 趨勢 KPI 前期比較的 custom:起:訖（每個有起日的 range 一個）
+    current_vdot: float | None = None  # 首頁跑力卡的 VDOT（/api/overview 的 vdot.race.value.value）
 
 
 # 首頁固定用 30d 的請求（views/home.js：loadHomeOverview、loadTodayKpi），與頂列 range 無關
@@ -133,8 +135,26 @@ def snapshot_requests(ctx: SnapshotContext) -> list[str]:
         urls += [f"{endpoint}?range={range_key}" for endpoint in RANGE_ENDPOINTS]
     for prev in ctx.prev_ranges:  # views/trends.js ensurePrevious
         urls += [f"{endpoint}?range={prev}" for endpoint in PREV_ENDPOINTS]
+    urls.append(vdot_table_request(ctx.current_vdot))  # views/home.js openVdotTable
     urls += [f"/api/sessions/{sid}" for sid in ctx.detail_ids]  # shell/loader.js loadSessionDetail
     return list(dict.fromkeys(urls))
+
+
+def vdot_table_request(vdot: float | None) -> str:
+    """VDOT 對照表的請求：與 views/home.js openVdotTable 同規則（`vdot.toFixed(1)`）。
+
+    超出對照表範圍時前端會改打不帶 vdot 的版本，所以這裡直接烘那一份。
+    跑力值本身已在後端四捨五入到 1 位小數，`:.1f` 與 JS toFixed(1) 結果一致。
+    """
+    if vdot is None or not (vdot_engine.VDOT_TABLE_MIN <= vdot <= vdot_engine.VDOT_TABLE_MAX):
+        return "/api/vdot-table"
+    return f"/api/vdot-table?vdot={vdot:.1f}"
+
+
+def current_vdot(overview: dict) -> float | None:
+    """首頁跑力卡顯示的 VDOT；未評時 None。"""
+    value = ((overview.get("vdot") or {}).get("race") or {}).get("value")
+    return value.get("value") if isinstance(value, dict) else None
 
 
 def span_requests(ctx: SnapshotContext) -> dict[str, str]:
@@ -335,7 +355,11 @@ def collect_snapshot(
             )
             windows = [get(f"/api/wellness-trend?range={r}") for r in ranges]
             prev_ranges = tuple(p for p in (previous_range(w.get("start_date"), w["end_date"]) for w in windows) if p)
-            ctx = dataclasses.replace(ctx, detail_ids=detail_ids, prev_ranges=prev_ranges)
+            home_overview = get(f"/api/overview?range={HOME_FIXED_RANGE}")
+            ctx = dataclasses.replace(
+                ctx, detail_ids=detail_ids, prev_ranges=prev_ranges,
+                current_vdot=current_vdot(home_overview),
+            )
 
             exact: dict[str, dict] = {}
             for url in snapshot_requests(ctx):

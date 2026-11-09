@@ -868,6 +868,36 @@
     notice: '此服務僅供區網存取且無身分驗證，切勿對外網開放。（目前顯示的是開發用虛構假資料）'
   };
 
+  // ---- /api/vdot-table（N-41）----
+  // ⚠️ 數字是**隨便編的**（時間與 VDOT 成反比），只為了讓大視窗的版面看得到；
+  // 刻意不寫 Daniels 公式——公式只能在後端 vdot_engine 一份。
+  var MOCK_VDOT_BASE_SEC = { '3k': 760, '5k': 1310, '10k': 2720, half_marathon: 6030, marathon: 12500 };
+  var MOCK_VDOT_ZONES = { easy: [1.15, 1.25], marathon: [1.0, 1.03], tempo: [0.9, 0.93], interval: [0.8, 0.85] };
+
+  function mockVdotRow(vdot) {
+    var scale = 44 / vdot;
+    var times = {};
+    Object.keys(MOCK_VDOT_BASE_SEC).forEach(function (k) { times[k] = MOCK_VDOT_BASE_SEC[k] * scale; });
+    var mp = times.marathon / 42.195;
+    var paces = {};
+    Object.keys(MOCK_VDOT_ZONES).forEach(function (k) {
+      paces[k] = { fast_sec_per_km: mp * MOCK_VDOT_ZONES[k][0], slow_sec_per_km: mp * MOCK_VDOT_ZONES[k][1] };
+    });
+    return { vdot: vdot, race_times_sec: times, paces: paces };
+  }
+
+  function buildVdotTable(vdotParam) {
+    var rows = [];
+    for (var v = 20; v <= 85; v += 1) rows.push(mockVdotRow(v));
+    var current = vdotParam === null ? null : parseFloat(vdotParam);
+    if (current !== null && !(current >= 20 && current <= 85)) throw new Error('API 回應 400（/api/vdot-table）');
+    return {
+      vdot_min: 20, vdot_max: 85,
+      distances: Object.keys(MOCK_VDOT_BASE_SEC), pace_zones: Object.keys(MOCK_VDOT_ZONES),
+      rows: rows, current: current === null ? null : mockVdotRow(current)
+    };
+  }
+
   /**
    * 模擬 fetch：依 path 回傳對應假資料。
    * app.js 只在 window.MOCK_API 存在且未被 ?mock=0 停用時才會使用。
@@ -1067,6 +1097,7 @@
     if (pathname === '/api/training-load') return buildTrainingLoad(range);
     if (pathname === '/api/overview') return buildOverview(range);
     if (pathname === '/api/garmin-cards') return buildGarminCards(range);
+    if (pathname === '/api/vdot-table') return buildVdotTable(params.get('vdot'));
     // 假資料模式沒有 Garmin token，同步永遠不可用——回 client_allowed:false
     // 讓按鈕維持停用，而不是讓人在 demo 模式按下去打真的 API。
     if (pathname === '/api/sync/status') {

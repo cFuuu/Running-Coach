@@ -1460,6 +1460,6 @@
   - **配速**：沿用課表的固定係數（`vdot_engine.compute_pace_zones`），欄名「E·Z2、M·Z3、T·Z4、I·Z5」；不做 R、不做 Z1。
   - **後端**：新增 `GET /api/vdot-table?vdot=`（可選，給「你的那一列」用精確值）；表格由 `vdot_engine` 產生，公式只此一份。
   - **前端**：新做共用大視窗元件（桌機置中約 720px、暗背景；手機底部滑出幾乎全螢幕，成績／配速分頁；✕／Esc／點背景關閉，捲動不關）。跑力卡 ⓘ 小視窗底部加「查看 VDOT 對照表 →」開啟。字級與面板樣式沿用既有 token。
-  - [ ] ① 後端端點＋單元測試（邊界 20／85、單調性、與 `compute_pace_zones` 一致）；更新 DASHBOARD_TASKS.md 契約。
-  - [ ] ② 大視窗元件與對照表 UI；離線快照把 `/api/vdot-table` 一併烘入（或離線時隱藏連結）。
+  - [x] ① 後端端點＋單元測試（邊界 20／85、單調性、與 `compute_pace_zones` 一致）；更新 DASHBOARD_TASKS.md 契約。
+  - [x] ② 大視窗元件與對照表 UI；離線快照把 `/api/vdot-table` 一併烘入（或離線時隱藏連結）。（2026-11-09：共用元件 `js/core/modal.js`、`js/views/vdot-table.js`；離線依首頁跑力值烘入）
   - [ ] ③ 瀏覽器實測：桌機與 390px 手機寬度、亮暗主題、自動捲到目前列。
