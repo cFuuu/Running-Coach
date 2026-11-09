@@ -61,3 +61,34 @@ export function wrapChart(svg) {
   wrap.appendChild(svg);
   return wrap;
 }
+
+/**
+ * 按鈕＋下拉面板的開關（行事曆月份選擇器、首頁日期選擇器共用）：點按鈕切換、
+ * 點外面或按 Esc 關閉（Esc 時焦點還給按鈕），並維護 aria-expanded。
+ * onOpen 在面板顯示前呼叫，用來重畫面板內容。回傳 close，供面板內選定後關閉。
+ *
+ * 點外面用事件路徑判斷：面板內的按鈕常會重畫面板，evt.target 此時已不在 DOM 裡，
+ * contains() 會誤判成點到外面。
+ */
+export function bindDropdown(wrap, trigger, panel, onOpen) {
+  function onOutsideClick(evt) { if (evt.composedPath().indexOf(wrap) === -1) close(); }
+  function onKeydown(evt) { if (evt.key === 'Escape') { close(); trigger.focus(); } }
+
+  function open() {
+    if (onOpen) onOpen();
+    panel.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onOutsideClick);
+    document.addEventListener('keydown', onKeydown);
+  }
+
+  function close() {
+    panel.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onOutsideClick);
+    document.removeEventListener('keydown', onKeydown);
+  }
+
+  trigger.addEventListener('click', function () { if (panel.hidden) open(); else close(); });
+  return close;
+}

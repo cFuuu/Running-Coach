@@ -11,7 +11,7 @@
 import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, activityColorVar, DAY_STATE_LABEL } from '../core/state.js';
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
-import { $, clear, h, showLoading, showError } from '../core/dom.js';
+import { $, clear, h, showLoading, showError, bindDropdown } from '../core/dom.js';
 import { sundayOf, mondayOf, addDaysISO, dowLabel, planSummary, shortPlanNote, raceDisplayName, displayDate } from '../core/format.js';
 import { infoTip } from '../core/facts.js';
 import { sportOf, sportIconNode, SPORT_KEYS, SPORT_LABEL } from '../core/sport-icons.js';
@@ -897,27 +897,10 @@ function buildMonthPicker(currentMonth, todayMonth) {
     panel.appendChild(todayBtn);
   }
 
-  // 用事件路徑判斷：點年份按鈕會重畫面板，evt.target 此時已不在 DOM 裡，contains() 會誤判成點到外面
-  function onOutsideClick(evt) { if (evt.composedPath().indexOf(wrap) === -1) close(); }
-  function onKeydown(evt) { if (evt.key === 'Escape') { close(); trigger.focus(); } }
-
-  function open() {
+  var close = bindDropdown(wrap, trigger, panel, function () {
     pickerYear = parseInt(currentMonth.slice(0, 4), 10);
     renderPanel();
-    panel.hidden = false;
-    trigger.setAttribute('aria-expanded', 'true');
-    document.addEventListener('click', onOutsideClick);
-    document.addEventListener('keydown', onKeydown);
-  }
-
-  function close() {
-    panel.hidden = true;
-    trigger.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('click', onOutsideClick);
-    document.removeEventListener('keydown', onKeydown);
-  }
-
-  trigger.addEventListener('click', function () { if (panel.hidden) open(); else close(); });
+  });
   return wrap;
 }
 

@@ -2619,7 +2619,7 @@ body.coach-open .coach-panel {
   color: var(--hdr-strong);
 }
 
-/* ---- 首頁切換日期（N-40）：學員檔案標題列右側的「‹ 日期 › 回到今天」 ----
+/* ---- 首頁切換日期（N-40）：學員檔案標題列右側的「‹ 日期 ▾ ›」 ----
    箭頭沿用行事曆的 .calendar-nav-btn；放在標題列內改 32px 高（不撐高標題列）。
    區塊太窄時整組換到下一行靠右，不產生橫向捲動。 */
 #block-today>.panel-title {
@@ -2650,73 +2650,72 @@ body.coach-open .coach-panel {
   cursor: default;
 }
 
-.home-date-picker {
-  position: relative;
-  display: inline-flex;
-}
-
-.home-date-label {
-  display: inline-flex;
-  align-items: center;
+/* 日期鈕與日曆面板沿用行事曆月份選擇器（.cal-month-*），這裡只調高度與日期格 */
+.home-date-trigger {
   min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+/* 行事曆的月份鈕在手機（≤600px）縮成 40px 純圖示並藏 ▾；日期鈕要照常顯示日期（兩個 class 蓋過那條規則） */
+.cal-month-trigger.home-date-trigger {
+  width: auto;
+  padding: 0 10px;
+}
+
+.home-date-trigger .cal-month-chevron {
+  display: inline;
+}
+
 /* 看的不是今天：日期鈕改用「非今日資料」的琥珀色（同 .sync-fallback-note），避免誤當今天 */
-.home-date-label.is-past-date {
+.home-date-trigger.is-past-date {
   border-color: var(--badge-clipped-border);
   background: var(--badge-clipped-bg);
   color: var(--badge-clipped-text);
   font-weight: 600;
 }
 
-/* 透明的原生 date input 疊在日期上，點到的是它，開的是系統日期選擇器。
-   字級 16px 只為避免 iOS Safari 對小於 16px 的輸入框自動放大畫面（看不見，不影響版面） */
-.home-date-input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  font-size: 16px;
-  cursor: pointer;
+.home-date-trigger.is-past-date .cal-month-chevron {
+  color: currentColor;
 }
 
-.home-date-picker:hover .home-date-label,
-.home-date-picker:focus-within .home-date-label {
-  border-color: var(--accent);
+/* 面板對齊整組「‹ 日期 ›」的右緣（日期列靠標題列右側），手機上才不會超出畫面 */
+.home-date-nav {
+  position: relative;
 }
 
-.home-date-reset {
+.home-date-picker.cal-month-picker {
+  position: static;
+}
+
+.cal-month-year-btn:disabled {
+  opacity: .35;
+  cursor: default;
+  background: transparent;
+}
+
+.home-date-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.home-date-dow {
+  padding-bottom: 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.home-date-day {
   min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  background: var(--surface);
-  color: var(--accent-text);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 400;
-  white-space: nowrap;
-  cursor: pointer;
+  padding: 0;
+  font-variant-numeric: tabular-nums;
 }
 
-.home-date-reset:hover {
-  border-color: var(--accent);
-}
-
-.home-date-reset[hidden] {
-  display: none;
+.home-date-day:disabled {
+  opacity: .35;
+  border-color: transparent;
+  cursor: default;
 }
 
 /* 訓練負荷、體能狀態標題列的「截至 YYYY/MM/DD」 */

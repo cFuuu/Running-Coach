@@ -39,6 +39,9 @@ export var state = {
   // 那一天的 /api/today 放 homeDay，state.today 永遠是真正的今天（側邊列「最後同步」共用）。
   homeDate: null,
   homeDay: null,
+  // 所選日期那一週（週一到週日）的 /api/calendar days，給學員檔案的「本週訓練狀況」用；
+  // 當週課表面板仍用 weekDays（真正的本週）
+  homeWeekDays: null,
 
   view: 'home',          // 目前 view：home|calendar|trends|sessions|tools|settings
 

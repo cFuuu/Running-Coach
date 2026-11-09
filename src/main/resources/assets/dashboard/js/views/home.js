@@ -15,7 +15,7 @@
 import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL } from '../core/state.js';
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
-import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
+import { $, clear, h, showLoading, showError, showUnavailable, bindDropdown } from '../core/dom.js';
 import { confBadge, kpiCard, infoTip, closeInfoPopover, infoPopoverState, hrvStatusMark, tipSection } from '../core/facts.js';
 import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel, raceDisplayName, displayDate } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
@@ -1076,6 +1076,13 @@ function hoursText(sec) {
   return C.formatNumber(sec / 3600, 1);
 }
 
+/** 只保留到 dateStr 為止的實際執行：之後的日子課表照算（分母），活動與完成狀態清掉（給完成度摘要用的副本）。 */
+function daysUntil(days, dateStr) {
+  return days.map(function (d) {
+    return d.date <= dateStr ? d : Object.assign({}, d, { activities: [], day_state: 'future' });
+  });
+}
+
 /**
  * 本週訓練狀況：本課表週（週一到週日）實際跑量對照課表、實際累計時間，環形圖顯示里程完成率。
  * 時間只列實際，不對照預計時間（分母不可靠，見 plan-week.js planWeekSummary）。
@@ -1088,23 +1095,23 @@ export function renderWeekTraining() {
   var node = $('week-training');
   if (!node) return;
   clear(node);
+  // 看過去日期時改用那一週，且只算到那一天為止——呈現「那天打開首頁」會看到的完成度
+  var past = isPastHomeDate();
+  var weekDays = past ? state.homeWeekDays : state.weekDays;
   var title = h('div', 'today-block-title');
-  title.appendChild(subTitleLabel('ring', '本週訓練狀況'));
-  if (state.weekDays && state.weekDays.length) {
-    var first = state.weekDays[0].date;
-    var last = state.weekDays[state.weekDays.length - 1].date;
-    title.appendChild(h('span', 'today-note fig-title-date',
-      C.shortDate(first) + ' (' + dowLabel(first) + ') ~ ' + C.shortDate(last) + ' (' + dowLabel(last) + ')'));
+  title.appendChild(subTitleLabel('ring', past ? '當週訓練狀況' : '本週訓練狀況'));
+  if (weekDays && weekDays.length) {
+    title.appendChild(h('span', 'today-note fig-title-date', planWeekLabel(weekDays)));
   }
   node.appendChild(title);
 
   var body = h('div');
   node.appendChild(body);
-  if (!state.weekDays) { showLoading(body, '載入本週訓練狀況'); return; }
+  if (!weekDays) { showLoading(body, '載入' + (past ? '當週' : '本週') + '訓練狀況'); return; }
 
-  var s = planWeekSummary(state.weekDays);
+  var s = planWeekSummary(past ? daysUntil(weekDays, state.homeDate) : weekDays);
   if (s.plannedSessions === 0) {
-    showUnavailable(body, '本週沒有課表，無法計算完成量');
+    showUnavailable(body, (past ? '當週' : '本週') + '沒有課表，無法計算完成量');
     return;
   }
 
@@ -1498,6 +1505,15 @@ function loadHomeDay() {
     if (seq !== homeDaySeq || date !== state.homeDate) return;
     showError($('today-body'), err.message);
   });
+  // 本週訓練狀況跟著所選日期的那一週（2026-11-10 Fu）
+  loadPlanWeek(date).then(function (days) {
+    if (seq !== homeDaySeq || date !== state.homeDate) return;
+    state.homeWeekDays = days;
+    renderWeekTraining();
+  }).catch(function (err) {
+    if (seq !== homeDaySeq || date !== state.homeDate) return;
+    if ($('week-training')) showError($('week-training'), err.message);
+  });
 }
 
 /** 切到某一天（早於下限會夾回下限；今天或以後＝回到今天）。 */
@@ -1509,6 +1525,7 @@ function setHomeDate(iso) {
   if (next === state.homeDate) { renderHomeDateNav(); return; }
   state.homeDate = next;
   state.homeDay = null;
+  state.homeWeekDays = null;
   state.todayKpi = null;
   renderToday();
   renderHomeLoad();
@@ -1530,9 +1547,9 @@ function renderHomeDateHints() {
 }
 
 /**
- * 學員檔案標題列右側的「‹ 日期 ›」＋「回到今天」。元素只建一次（掛在 #h-today 裡），
- * 之後每次 renderToday 只更新文字與上下限。日期鈕上疊一個透明的原生 date input，
- * 點下去就是系統的日期選擇器（手機為滾輪）。
+ * 學員檔案標題列右側的「‹ 日期 ▾ ›」。元素只建一次（掛在 #h-today 裡），之後每次
+ * renderToday 只更新文字與上下限。點日期開日曆面板，外觀沿用行事曆的月份選擇器
+ * （.cal-month-*，2026-11-10 Fu）；不另放「回到今天」，面板裡點今天那格即可。
  */
 function renderHomeDateNav() {
   if (isOfflineSnapshot()) return;
@@ -1549,48 +1566,110 @@ function renderHomeDateNav() {
     prev.addEventListener('click', function () {
       setHomeDate(addDaysISO(state.homeDate || todayISO(), -1));
     });
-    var picker = h('span', 'home-date-picker');
-    picker.appendChild(h('span', 'home-date-label'));
-    var input = h('input', 'home-date-input');
-    input.type = 'date';
-    input.setAttribute('aria-label', '選擇日期');
-    // Chrome 桌機點欄位本身不會開選擇器，明確叫出來；不支援的瀏覽器照原生行為
-    input.addEventListener('click', function () {
-      try { if (input.showPicker) input.showPicker(); } catch (e) { /* 已開啟或不支援 */ }
-    });
-    input.addEventListener('change', function () { setHomeDate(input.value); });
-    picker.appendChild(input);
     var next = h('button', 'calendar-nav-btn home-date-step', '›');
     next.type = 'button';
     next.setAttribute('aria-label', '後一天');
     next.addEventListener('click', function () {
       if (state.homeDate) setHomeDate(addDaysISO(state.homeDate, 1));
     });
-    var reset = h('button', 'home-date-reset', '回到今天');
-    reset.type = 'button';
-    reset.addEventListener('click', function () { setHomeDate(todayISO()); });
     nav.appendChild(prev);
-    nav.appendChild(picker);
+    nav.appendChild(buildHomeDatePicker());
     nav.appendChild(next);
-    nav.appendChild(reset);
     heading.appendChild(nav);
   }
 
-  var today = todayISO();
-  var shown = state.homeDate || today;
+  var shown = state.homeDate || todayISO();
   var min = homeDateMin();
   var steps = nav.querySelectorAll('.home-date-step');
   steps[0].disabled = !!(min && shown <= min);
   steps[1].disabled = !state.homeDate;
-  var label = nav.querySelector('.home-date-label');
-  label.textContent = homeDateLabel(shown);
-  label.classList.toggle('is-past-date', !!state.homeDate);
-  var dateInput = nav.querySelector('.home-date-input');
-  dateInput.max = today;
-  if (min) dateInput.min = min;
-  dateInput.value = shown;
-  nav.querySelector('.home-date-reset').hidden = !state.homeDate;
+  var trigger = nav.querySelector('.home-date-trigger');
+  trigger.querySelector('.home-date-label').textContent = homeDateLabel(shown);
+  trigger.classList.toggle('is-past-date', !!state.homeDate);
   renderHomeDateHints();
+}
+
+var WEEKDAY_HEAD = ['一', '二', '三', '四', '五', '六', '日'];
+
+/** 'YYYY-MM' 加減月份 */
+function shiftMonthISO(ym, delta) {
+  var d = new Date(ym + '-01T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + delta);
+  return d.toISOString().slice(0, 7);
+}
+
+/**
+ * 日期按鈕＋日曆面板：上方「‹ YYYY 年 M 月 ›」切月份，下方週一到週日的日期格。
+ * 今天只描邊、選到的那天實心（同月份選擇器）；今天以後與資料起日以前不能選。
+ */
+function buildHomeDatePicker() {
+  var wrap = h('span', 'cal-month-picker home-date-picker');
+  var trigger = h('button', 'cal-month-trigger home-date-trigger');
+  trigger.type = 'button';
+  trigger.setAttribute('aria-label', '選擇日期');
+  trigger.setAttribute('aria-haspopup', 'dialog');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.appendChild(h('span', 'home-date-label'));
+  trigger.insertAdjacentHTML('beforeend', '<svg class="cal-month-chevron" viewBox="0 0 12 12" aria-hidden="true" focusable="false">'
+    + '<path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" '
+    + 'stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  wrap.appendChild(trigger);
+
+  var panel = h('div', 'cal-month-panel home-date-panel');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', '選擇日期');
+  panel.hidden = true;
+  wrap.appendChild(panel);
+
+  var viewMonth = null;
+
+  function renderPanel() {
+    clear(panel);
+    var today = todayISO();
+    var selected = state.homeDate || today;
+    var min = homeDateMin();
+    var head = h('div', 'cal-month-year');
+    var prevMonth = h('button', 'cal-month-year-btn', '‹');
+    prevMonth.type = 'button';
+    prevMonth.setAttribute('aria-label', '上個月');
+    prevMonth.disabled = !!(min && viewMonth <= min.slice(0, 7));
+    prevMonth.addEventListener('click', function () { viewMonth = shiftMonthISO(viewMonth, -1); renderPanel(); });
+    var nextMonth = h('button', 'cal-month-year-btn', '›');
+    nextMonth.type = 'button';
+    nextMonth.setAttribute('aria-label', '下個月');
+    nextMonth.disabled = viewMonth >= today.slice(0, 7);
+    nextMonth.addEventListener('click', function () { viewMonth = shiftMonthISO(viewMonth, 1); renderPanel(); });
+    head.appendChild(prevMonth);
+    head.appendChild(h('span', 'cal-month-year-label',
+      viewMonth.slice(0, 4) + ' 年 ' + parseInt(viewMonth.slice(5, 7), 10) + ' 月'));
+    head.appendChild(nextMonth);
+    panel.appendChild(head);
+
+    var grid = h('div', 'home-date-grid');
+    WEEKDAY_HEAD.forEach(function (d) { grid.appendChild(h('span', 'home-date-dow', d)); });
+    var first = viewMonth + '-01';
+    var lead = (new Date(first + 'T00:00:00Z').getUTCDay() + 6) % 7; // 週一為第一欄
+    for (var i = 0; i < lead; i++) grid.appendChild(h('span'));
+    for (var day = first; day.slice(0, 7) === viewMonth; day = addDaysISO(day, 1)) {
+      var cell = h('button', 'cal-month-cell home-date-day'
+        + (day === selected ? ' is-selected' : '') + (day === today ? ' is-today' : ''),
+        String(parseInt(day.slice(8, 10), 10)));
+      cell.type = 'button';
+      cell.disabled = day > today || !!(min && day < min);
+      if (day === selected) cell.setAttribute('aria-current', 'date');
+      (function (target) {
+        cell.addEventListener('click', function () { close(); setHomeDate(target); });
+      }(day));
+      grid.appendChild(cell);
+    }
+    panel.appendChild(grid);
+  }
+
+  var close = bindDropdown(wrap, trigger, panel, function () {
+    viewMonth = (state.homeDate || todayISO()).slice(0, 7);
+    renderPanel();
+  });
+  return wrap;
 }
 
 /** 首頁全部區塊的資料（同步完成後也呼叫這裡重新整理）。 */
