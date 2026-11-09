@@ -10406,8 +10406,8 @@ html.modal-open body {
 /* ⓘ 小視窗最底下的「查看 … →」：開大視窗的入口 */
 .tip-more-link {
   display: block;
-  margin-top: 12px;
-  padding: 6px 0;
+  margin-bottom: 8px;
+  padding: 0 0 6px;
   border: 0;
   background: none;
   color: var(--accent-text);

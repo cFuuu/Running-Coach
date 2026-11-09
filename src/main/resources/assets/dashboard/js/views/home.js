@@ -1175,7 +1175,8 @@ function vdotCard(vdot) {
         return p.distance + ' ' + C.formatDuration(p.time_sec) + ' → ' + C.formatNumber(p.vdot, 1);
       }), { note: '把手錶 ' + ref.as_of + ' 的完賽預測用同一公式換算。Garmin 演算法未公開，僅供對照，不作為依據。' }));
   }
-  tip.push(vdotTableLink(race));
+  // 放最上面：說明很長、小視窗會在內部捲動，放底部要先捲才看得到（2026-11-10 Fu）
+  tip.unshift(vdotTableLink(race));
   if (!race.value) {
     return kpiCard({
       label: '跑力', abbr: 'VDOT', value: '未評',
@@ -1197,7 +1198,7 @@ function vdotCard(vdot) {
   });
 }
 
-/** 跑力 ⓘ 小視窗最底下的「查看 VDOT 對照表 →」：關掉小視窗、改開大視窗（N-41） */
+/** 跑力 ⓘ 小視窗最上面的「查看 VDOT 對照表 →」：關掉小視窗、改開大視窗（N-41） */
 function vdotTableLink(race) {
   var link = h('button', 'tip-more-link', '查看 VDOT 對照表 →');
   link.type = 'button';
