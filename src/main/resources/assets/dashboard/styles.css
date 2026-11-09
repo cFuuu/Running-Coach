@@ -10167,3 +10167,287 @@ button.recent-row .rc-dist {
     padding: 0 8px;
   }
 }
+
+/* ------------------------------------------------------------ 共用大視窗（js/core/modal.js）＋ VDOT 對照表（N-41）
+ *
+ * 大視窗：桌機置中、最寬 720px、暗背景；手機（≤767px）底部滑出幾乎全螢幕，
+ * 內容區底部讓開 iPhone home indicator 安全區。視窗開著時鎖住頁面捲動，
+ * 捲動的是 .modal-body。z-index 400 高於 ⓘ 小視窗（300）與手機分頁列（100）。
+ * 字級、圓角、標題列配色都沿用既有 token；VDOT 對照表的小卡用跑力綜覽的類別色。
+ */
+:root {
+  --modal-backdrop: rgba(15, 23, 32, 0.45);
+}
+
+:root[data-theme="dark"] {
+  --modal-backdrop: rgba(0, 0, 0, 0.6);
+}
+
+html.modal-open,
+html.modal-open body {
+  overflow: hidden;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap);
+  background: var(--modal-backdrop);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  max-height: min(88vh, 900px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 10px 30px var(--panel-shadow);
+  overflow: hidden;
+}
+
+.modal:focus {
+  outline: none;
+}
+
+.modal-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px var(--gap);
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.modal-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover,
+.modal-close:focus-visible {
+  color: var(--text);
+  background: var(--surface-sunken);
+  outline: none;
+}
+
+/* 捲動區。--modal-pad 同時給 .vt-full 的 sticky 欄名抵銷內距用（sticky 會從內距內緣起算） */
+.modal-body {
+  --modal-pad: var(--gap);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--modal-pad);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+@media (max-width: 767px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 0 0;
+  }
+
+  .modal {
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .modal-body {
+    --modal-pad: 12px;
+    padding-bottom: calc(var(--gap) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: no-preference) {
+  .modal {
+    animation: modal-sheet-in 0.2s ease-out;
+  }
+}
+
+@keyframes modal-sheet-in {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+}
+
+/* ⓘ 小視窗最底下的「查看 … →」：開大視窗的入口 */
+.tip-more-link {
+  display: block;
+  margin-top: 12px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.tip-more-link:hover {
+  text-decoration: underline;
+}
+
+.tip-more-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* VDOT 對照表：「全寬面板＋淡色標題列小卡」，標題列用跑力綜覽的類別色。
+   .vt-card 不可設 overflow（hidden 會變成捲動容器，表格欄名的 sticky 就失效） */
+.vt-card {
+  border: 1px solid var(--cat-ability-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.vt-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--cat-ability-border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--cat-ability-bg);
+  color: var(--cat-ability-text);
+  font-size: var(--fs-sm);
+}
+
+.vt-card-hint {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+.vt-card-body {
+  padding: 8px 14px 12px;
+}
+
+.vt-note {
+  margin: 8px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.vt-card-body > .vt-note:first-child {
+  margin-top: 0;
+  font-size: var(--fs-sm);
+}
+
+.vt-level {
+  margin: 12px 0;
+  color: var(--text-muted);
+}
+
+.vt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.vt-table th,
+.vt-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.vt-table th:first-child {
+  text-align: left;
+}
+
+.vt-table thead th {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.vt-table tbody th {
+  font-weight: 600;
+}
+
+/* 整張表的欄名固定在捲動區頂端 */
+.vt-full thead th {
+  position: sticky;
+  top: calc(-1 * var(--modal-pad, 0px));
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+.vt-full tbody tr.is-current > * {
+  background: var(--cat-ability-bg);
+  color: var(--cat-ability-text);
+  font-weight: 600;
+}
+
+.vt-full tbody tr.is-current > th {
+  box-shadow: inset 4px 0 0 var(--cat-ability-strong);
+}
+
+.vt-table-wrap {
+  padding: 0 8px 12px;
+}
+
+.vt-table-note {
+  padding: 0 6px;
+}
+
+/* 成績／配速分頁只在手機出現；桌機兩組欄位並排 */
+.vt-tabs {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .vt-tabs {
+    display: flex;
+    margin-top: 4px;
+  }
+
+  .vt-table-wrap[data-tab="race"] .vt-pace,
+  .vt-table-wrap[data-tab="pace"] .vt-race {
+    display: none;
+  }
+
+  .vt-table th,
+  .vt-table td {
+    padding: 5px 4px;
+  }
+
+  .vt-table-wrap {
+    padding: 0 4px 12px;
+  }
+
+  .vt-card-body {
+    padding: 8px 10px 12px;
+  }
+}

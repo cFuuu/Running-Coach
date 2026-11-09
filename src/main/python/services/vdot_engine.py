@@ -336,6 +336,58 @@ def _vdot_to_race_time_sec(
     return (low_sec + high_sec) / 2
 
 
+# --- VDOT 對照表（N-41，2026-11-09 Fu 定案）---
+# 範圍與 RQ 跑力文章一致；低於 30 屬公式外推（全馬 5 小時以上含走路成分），
+# 數字較不準，Fu 仍選 20–85。
+VDOT_TABLE_MIN = 20
+VDOT_TABLE_MAX = 85
+VDOT_TABLE_STEP = 1
+# 對照表的距離欄（順序即欄位順序）；key 與 /api/overview personal_bests 的 distance 相同
+VDOT_TABLE_DISTANCES: tuple[str, ...] = ("3k", "5k", "10k", "half_marathon", "marathon")
+# 配速欄沿用課表的固定係數（compute_pace_zones），不做 R、不做 Z1；LSD 與 Easy 同區間不另列
+VDOT_TABLE_PACE_ZONES: tuple[str, ...] = ("easy", "marathon", "tempo", "interval")
+
+
+def vdot_equivalents(vdot: float) -> dict[str, Any]:
+    """單一 VDOT 的對照列：各距離等效完賽時間（秒）＋ E／M／T／I 配速區間（秒/公里）。
+
+    等效時間用 _vdot_to_race_time_sec（vdot_from_race 的反函式），配速直接取
+    compute_pace_zones——兩者都是課表與 VDOT 推估用的同一份公式，這裡不另算。
+    """
+    zones = compute_pace_zones(vdot)
+    return {
+        "vdot": vdot,
+        "race_times_sec": {
+            key: _vdot_to_race_time_sec(vdot, _DISTANCE_KM[key]) for key in VDOT_TABLE_DISTANCES
+        },
+        "paces": {key: zones[key] for key in VDOT_TABLE_PACE_ZONES},
+    }
+
+
+def vdot_equivalence_table(vdot: float | None = None) -> dict[str, Any]:
+    """VDOT 對照表：VDOT_TABLE_MIN～MAX 每 VDOT_TABLE_STEP 一列。
+
+    給 vdot 時另回 current（該精確值的對照列，供「你的均衡成績」用）；
+    vdot 必須是 [VDOT_TABLE_MIN, VDOT_TABLE_MAX] 內的有限數值，否則 ValueError。
+    """
+    current = None
+    if vdot is not None:
+        if not (VDOT_TABLE_MIN <= vdot <= VDOT_TABLE_MAX):  # NaN 也會落在這裡
+            raise ValueError(f"vdot 必須介於 {VDOT_TABLE_MIN}～{VDOT_TABLE_MAX}：{vdot}")
+        current = vdot_equivalents(float(vdot))
+    return {
+        "vdot_min": VDOT_TABLE_MIN,
+        "vdot_max": VDOT_TABLE_MAX,
+        "distances": list(VDOT_TABLE_DISTANCES),
+        "pace_zones": list(VDOT_TABLE_PACE_ZONES),
+        "rows": [
+            vdot_equivalents(float(v))
+            for v in range(VDOT_TABLE_MIN, VDOT_TABLE_MAX + 1, VDOT_TABLE_STEP)
+        ],
+        "current": current,
+    }
+
+
 def estimate_vdot_and_paces(
     activities: list[dict[str, Any]],
     max_hr_bpm: float | None = None,

@@ -295,6 +295,30 @@ steps                    INTEGER  -- 全天步數，來源 UDSFile，涵蓋近 6
 - 來源限制比照 `/api/daily-feel`：區網放行，不另設開關（2026-10-24 Fu 決定，手機上要能按「這場是課表」）。
 - 已知缺口：課表被 `superseded_by` 取代時，新的一列不帶入連結（N-7 處理）。寫入後**不**重算活動的生效課種（N-28 `workout_type`，只看外部課表）；已匯入的活動要等該日外部課表重寫或跑 `resolve_for_dates` 回填才會更新。
 
+### `GET /api/vdot-table?vdot=42.9`（2026-11-09 新增：VDOT 對照表大視窗，N-41）
+
+首頁跑力卡 ⓘ →「查看 VDOT 對照表 →」用。不讀資料庫、不吃 `athlete_id`；表格由 `vdot_engine.vdot_equivalence_table()` 產生，**Daniels 公式只在後端一份，前端不得重算**。
+
+```json
+{
+  "vdot_min": 20, "vdot_max": 85,
+  "distances": ["3k", "5k", "10k", "half_marathon", "marathon"],
+  "pace_zones": ["easy", "marathon", "tempo", "interval"],
+  "rows": [
+    {"vdot": 20.0,
+     "race_times_sec": {"3k": 1498.3, "5k": 2559.0, "10k": 5333.9, "half_marathon": 11713.0, "marathon": 23735.4},
+     "paces": {"easy": {"fast_sec_per_km": 641.2, "slow_sec_per_km": 697.5}, "marathon": {...}, "tempo": {...}, "interval": {...}}}
+  ],
+  "current": {"vdot": 42.9, "race_times_sec": {...}, "paces": {...}}
+}
+```
+
+- `rows`：VDOT 20–85 每 1 一列（66 列）。`race_times_sec` 為等效完賽時間（秒，未四捨五入），`distances` 的 key 與 `/api/overview` 的 `personal_bests[].distance` 相同。
+- `paces`：秒/公里區間，**等於 `compute_pace_zones(vdot)`**（課表的固定係數 `_PACE_ZONE_FACTORS`），前端欄名 E·Z2／M·Z3／T·Z4／I·Z5；不做 R、不做 Z1、LSD 與 Easy 同區間不另列。
+- `vdot`（可選）：給了就多回 `current`＝該精確值的對照列（「你的均衡成績」用）；沒給 `current` 為 `null`。前端送 `vdot.toFixed(1)`。
+- 400：`vdot` 不是數字、NaN／inf、或不在 20–85（含端點）。前端遇到時改打不帶 `vdot` 的版本，表格照常顯示、不標示所在列。
+- 離線快照：`build_dashboard_offline.vdot_table_request()` 依首頁跑力值烘入同一個 URL（未評或超出範圍時烘不帶 `vdot` 的版本）。
+
 ---
 
 ## Task A：後端查詢層 + FastAPI

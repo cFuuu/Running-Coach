@@ -13,6 +13,7 @@ from src.main.python.services.vdot_engine import (
     project_to_marathon_time_sec,
     running_vo2,
     select_candidate,
+    vdot_equivalence_table,
     vdot_from_race,
 )
 
@@ -320,6 +321,70 @@ class TestComputePaceZones(unittest.TestCase):
             high_vdot_zones["easy"]["fast_sec_per_km"],
             low_vdot_zones["easy"]["fast_sec_per_km"],
         )
+
+
+class TestVdotEquivalenceTable(unittest.TestCase):
+    """N-41 VDOT 對照表：範圍、單調性、與既有公式一致。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.table = vdot_equivalence_table()
+
+    def test_covers_20_to_85_step_1(self):
+        vdots = [row["vdot"] for row in self.table["rows"]]
+        self.assertEqual(len(vdots), 66)
+        self.assertEqual(vdots[0], 20)
+        self.assertEqual(vdots[-1], 85)
+        self.assertEqual(vdots, [float(v) for v in range(20, 86)])
+        self.assertEqual((self.table["vdot_min"], self.table["vdot_max"]), (20, 85))
+        self.assertIsNone(self.table["current"])
+
+    def test_columns(self):
+        self.assertEqual(self.table["distances"], ["3k", "5k", "10k", "half_marathon", "marathon"])
+        self.assertEqual(self.table["pace_zones"], ["easy", "marathon", "tempo", "interval"])
+        for row in self.table["rows"]:
+            self.assertEqual(list(row["race_times_sec"]), self.table["distances"])
+            self.assertEqual(list(row["paces"]), self.table["pace_zones"])
+
+    def test_times_and_paces_strictly_decrease_with_vdot(self):
+        rows = self.table["rows"]
+        for slower, faster in zip(rows, rows[1:]):
+            for key in self.table["distances"]:
+                self.assertGreater(slower["race_times_sec"][key], faster["race_times_sec"][key])
+            for key in self.table["pace_zones"]:
+                self.assertGreater(
+                    slower["paces"][key]["fast_sec_per_km"], faster["paces"][key]["fast_sec_per_km"]
+                )
+
+    def test_race_times_round_trip_to_same_vdot(self):
+        for row in self.table["rows"]:
+            for key, time_sec in row["race_times_sec"].items():
+                self.assertAlmostEqual(vdot_from_race(KM[key], time_sec), row["vdot"], places=1)
+
+    def test_paces_equal_compute_pace_zones(self):
+        for row in self.table["rows"]:
+            zones = compute_pace_zones(row["vdot"])
+            for key in self.table["pace_zones"]:
+                self.assertEqual(row["paces"][key], zones[key])
+
+    def test_exact_vdot_row(self):
+        table = vdot_equivalence_table(42.9)
+        current = table["current"]
+        self.assertEqual(current["vdot"], 42.9)
+        self.assertEqual(current["paces"]["tempo"], compute_pace_zones(42.9)["tempo"])
+        # 介於 42 與 43 兩列之間
+        row42, row43 = table["rows"][22], table["rows"][23]
+        self.assertEqual((row42["vdot"], row43["vdot"]), (42, 43))
+        for key in table["distances"]:
+            self.assertLess(row43["race_times_sec"][key], current["race_times_sec"][key])
+            self.assertLess(current["race_times_sec"][key], row42["race_times_sec"][key])
+
+    def test_bounds_inclusive_and_out_of_range_rejected(self):
+        self.assertEqual(vdot_equivalence_table(20)["current"]["vdot"], 20)
+        self.assertEqual(vdot_equivalence_table(85)["current"]["vdot"], 85)
+        for bad in (19.9, 85.1, float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                vdot_equivalence_table(bad)
 
 
 class TestEstimateVdotAndPaces(unittest.TestCase):

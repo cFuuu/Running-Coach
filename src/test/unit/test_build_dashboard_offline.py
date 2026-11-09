@@ -75,6 +75,9 @@ class TestOutput(BuildDashboardOfflineTestCase):
         for range_key in ("7d", "30d", "90d", "1y", "all"):
             for endpoint in offline.RANGE_ENDPOINTS:
                 self.assertIn(f"{endpoint}?range={range_key}", exact)
+        # N-41：VDOT 對照表依首頁跑力卡的值烘入（未評時為不帶 vdot 的版本）
+        vdot = offline.current_vdot(exact["/api/overview?range=30d"])
+        self.assertEqual(len(exact[offline.vdot_table_request(vdot)]["rows"]), 66)
         # 全部歷史：每場活動都有明細（含非跑步），逐秒資料改成欄式
         detail_keys = [k for k in exact if re.fullmatch(r"/api/sessions/\d+", k)]
         self.assertEqual(len(detail_keys), 5)
@@ -348,6 +351,18 @@ class TestHelpers(unittest.TestCase):
         urls = offline.snapshot_requests(ctx)
         for endpoint in offline.PREV_ENDPOINTS:
             self.assertIn(f"{endpoint}?range=custom:2026-08-25:2026-09-23", urls)
+
+    def test_vdot_table_request(self):
+        # 與 views/home.js 的 toFixed(1) 一致；未評或超出對照表範圍改烘不帶 vdot 的版本
+        self.assertEqual(offline.vdot_table_request(42.9), "/api/vdot-table?vdot=42.9")
+        self.assertEqual(offline.vdot_table_request(43.0), "/api/vdot-table?vdot=43.0")
+        self.assertEqual(offline.vdot_table_request(None), "/api/vdot-table")
+        self.assertEqual(offline.vdot_table_request(18.2), "/api/vdot-table")
+        ctx = offline.SnapshotContext(FIXTURE_TODAY, ("30d",), (), FIXTURE_TODAY, FIXTURE_TODAY,
+                                      current_vdot=40.2)
+        self.assertIn("/api/vdot-table?vdot=40.2", offline.snapshot_requests(ctx))
+        self.assertIsNone(offline.current_vdot({"vdot": {"race": {"value": None}}}))
+        self.assertEqual(offline.current_vdot({"vdot": {"race": {"value": {"value": 40.2}}}}), 40.2)
 
     def test_month_grid(self):
         # 2026-03：1 號是週日、31 號是週二 → 3/1 ~ 4/4

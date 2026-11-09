@@ -16,7 +16,7 @@ import * as C from '../charts.js';
 import { state, WORKOUT_TYPE_LABEL, ACTIVITY_TYPE_LABEL, DAY_STATE_LABEL, CONFIDENCE_LABEL, HRV_STATUS_LABEL } from '../core/state.js';
 import { api, apiSend, isOfflineSnapshot } from '../core/api.js';
 import { $, clear, h, showLoading, showError, showUnavailable } from '../core/dom.js';
-import { confBadge, kpiCard, infoTip, closeInfoPopover, hrvStatusMark, tipSection } from '../core/facts.js';
+import { confBadge, kpiCard, infoTip, closeInfoPopover, infoPopoverState, hrvStatusMark, tipSection } from '../core/facts.js';
 import { addDaysISO, todayISO, dowLabel, shortPlanNote, warmupsByMain, warmupLabel, raceDisplayName, displayDate } from '../core/format.js';
 import { customizer, layoutOf } from '../core/customize.js';
 import { loadPlanWeek, planWeekLabel, renderPlanWeek, planWeekTile, planWeekTileValue, planWeekSummary } from './plan-week.js';
@@ -24,6 +24,7 @@ import { activityDots, firstRunningActivity } from './calendar.js';
 import { renderSettingsSync } from './settings.js';
 import { zoneSplitBar } from './overview.js';
 import { renderGarminWall, renderGarminCard } from './garmin.js';
+import { openVdotTable } from './vdot-table.js';
 import { navigate } from '../shell/router.js';
 import { renderSidebarSync } from '../shell/sync.js';
 
@@ -1153,6 +1154,7 @@ function vdotCard(vdot) {
         return p.distance + ' ' + C.formatDuration(p.time_sec) + ' → ' + C.formatNumber(p.vdot, 1);
       }), { note: '把手錶 ' + ref.as_of + ' 的完賽預測用同一公式換算。Garmin 演算法未公開，僅供對照，不作為依據。' }));
   }
+  tip.push(vdotTableLink(race));
   if (!race.value) {
     return kpiCard({
       label: '跑力', abbr: 'VDOT', value: '未評',
@@ -1172,6 +1174,23 @@ function vdotCard(vdot) {
     series: history.length > 1 ? history : null,
     tip: tip
   });
+}
+
+/** 跑力 ⓘ 小視窗最底下的「查看 VDOT 對照表 →」：關掉小視窗、改開大視窗（N-41） */
+function vdotTableLink(race) {
+  var link = h('button', 'tip-more-link', '查看 VDOT 對照表 →');
+  link.type = 'button';
+  link.addEventListener('click', function () {
+    var trigger = infoPopoverState.button; // 大視窗關閉後焦點還給 ⓘ 按鈕
+    closeInfoPopover(false);
+    openVdotTable({
+      vdot: race.value ? race.value.value : null,
+      reason: race.reason,
+      personalBests: state.homeOverview ? state.homeOverview.personal_bests : [],
+      returnFocus: trigger
+    });
+  });
+  return link;
 }
 
 // 展開中的距離（distance 代碼）；重繪時保留，切換頁面再回來也還在
