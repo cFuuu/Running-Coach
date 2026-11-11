@@ -105,5 +105,23 @@ class TestLoadClientNeverLogsInWithPassword(unittest.TestCase):
             self.assertIn("RuntimeError", str(ctx.exception))
 
 
+class TestCliOutputEncoding(unittest.TestCase):
+    """Windows 輸出被導向時預設 cp950，CLI 必須改用 UTF-8 才印得出 emoji。"""
+
+    def test_help_does_not_crash_on_cp950_stdout(self):
+        import io
+
+        cp950_out = io.TextIOWrapper(io.BytesIO(), encoding="cp950")
+        with mock.patch("sys.stdout", cp950_out), mock.patch(
+            "sys.argv", ["garmin_auth", "--help"]
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                garmin_auth.main()
+            cp950_out.flush()
+            text = cp950_out.buffer.getvalue().decode("utf-8")
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("一次性認證", text)
+
+
 if __name__ == "__main__":
     unittest.main()

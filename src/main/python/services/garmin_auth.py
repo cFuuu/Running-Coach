@@ -215,6 +215,12 @@ def logout(tokenstore: str | None = None) -> int:
 
 
 def main() -> int:
+    # Windows 上輸出被導向（pipe／檔案／工具呼叫）時預設用 cp950，
+    # 印不出說明與狀態訊息裡的 emoji 而直接崩潰；CLI 一律改用 UTF-8 輸出
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
     ap = argparse.ArgumentParser(
         description=(
             "Garmin Connect 一次性認證。這是專案中唯一允許帳密登入的入口——"
