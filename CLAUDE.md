@@ -1,42 +1,14 @@
 # CLAUDE.md - Running Coach
 
-> **文件版本**：1.3
+> **文件版本**：1.4
 > **最後更新**：2026-11-11
 > **專案**：Running Coach
 > **簡介**：AI 跑步教練 App
 
-本檔案提供本專案的指引。下方「🤝 協作規範」為本專案的溝通、Git、執行與驗證規則；其餘一般工作習慣（工具選用、先讀再改、>30 秒操作用 Task Agent、3+ 步驟任務用 TodoWrite、技術債預防順序等）定義在使用者的全域 `CLAUDE.md`，此處不重複。
+本檔案上半部為 Running Coach 專屬規範，最下方「🤝 協作規範」為通用的溝通、Git、執行與驗證規則。
 
-## 🤝 協作規範
-
-### Communication
-- **Language**: Output in **Traditional Chinese (Taiwan)/台灣繁體中文** only. Strictly forbid Simplified Chinese and Mainland terms (e.g., `质量`→`品質`, `默认`→`預設`, `支持`→`支援`).
-- **Code & Terms**: Keep all technical terminology, commands, and code snippets in original English/raw format.
-- **Code Comments**: Write code comments in Traditional Chinese.
-
-### Git
-- Commit format: `Type: summary` (capitalized Type, a space after the colon, no scope)
-  - Type: `Feat` / `Fix` / `Docs` / `Style` / `Refactor` / `Perf` / `Test` / `Build` / `CI` / `Chore` / `Revert`
-  - Subject in Traditional Chinese, imperative mood, ≤50 characters, no trailing period; with a task number, write `Type: Task X.Y.Z summary`
-  - Body must list the actual changes per file (`- file path: what changed`), never just "see XXX.md"
-- Commit after each completed task/stage; **never push unless I ask**
-- Before starting work: `git status` to confirm clean, then `git pull --rebase` (multi-device sync)
-
-### Prohibitions
-- Without my approval: delete existing files, make major architectural changes, or significantly upgrade dependencies
-- No duplicate implementations or `v2_` / `new_` / `enhanced_` style files → extend the existing code, keep a single source of truth
-- Never write secrets (tokens, `.env` contents, internal addresses, credentials) into logs, commits, or the conversation
-
-### Execution
-- Surgical edits: touch only code relevant to the task — no drive-by refactoring or reformatting
-- When a fix breaks something, revert to the last clean state and find the root cause — don't stack workarounds
-
-### Verification
-- Text/formatting/comment-only changes: reading it over is enough. Logic changes: actually run it after the task is done (run tests if they exist) — reading the code alone doesn't count as done
-
-## ❌ 額外禁止事項（全域未涵蓋部分）
+## ❌ 額外禁止事項
 - **絕不** hardcode 應可設定的值 → 用設定檔／環境變數
-- **絕不**複製貼上程式碼區塊 → 抽成共用工具/函式
 
 ## 🔐 憑證與資安（Garmin 帳號存取，不可妥協）
 
@@ -64,7 +36,6 @@
 - 例外處理時不可 dump request/response 原文。
 - MCP tool 的回傳值與錯誤訊息只能有運動與生理指標，**不得含 token、cookie、
   email、userProfileId**。
-- 這條同時涵蓋與 AI 的對話：不要把 `.env` 內容或 token 檔案讀出來貼進對話。
 
 ### 4. `.gitignore` 必須涵蓋
 `.env`、`.env.*`（除 `.env.example`）、`.garminconnect/`、`*.token`、
@@ -84,8 +55,7 @@ commit 前額外掃一次 diff。
 **狀態**：已連接 — `origin` 指向 [cFuuu/Running-Coach](https://github.com/cFuuu/Running-Coach)。
 
 ### Auto-Push 機制
-- 目前**未啟用**自動 push：commit 為必要動作，但 push 時機由使用者決定（見全域「Push Timing」規則），**不主動 push**
-- 若未來要啟用：於 `.git/hooks/post-commit` 加入 `git push origin main`
+- 目前**未啟用**；若未來要啟用：於 `.git/hooks/post-commit` 加入 `git push origin main`
 
 ### 常用指令
 ```bash
@@ -119,7 +89,7 @@ RC=".venv/Scripts/python.exe"
 ⚠️ **uv 版本需 ≥ 0.13**（舊版內建 Python 清單最新只到 3.12.13，低於下限）。這台機器 PATH 上 `hermes\bin` 的舊版 uv 排在 winget 版前面，新開的終端機打 `uv` 可能仍是舊版；用 `uv --version` 確認，或直接呼叫 `%LOCALAPPDATA%\Microsoft\WinGet\Packages\astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe\uv.exe`。
 
 ## ✅ 本專案驗證方式
-執行 `src/test/` 下的單元/整合測試；若有 CLI/API，實際呼叫一次確認回應正確。若前端功能有變動，啟動 dev server 並在瀏覽器實際確認，不能只憑閱讀程式碼判斷。
+執行 `src/test/` 下的單元/整合測試；若有 CLI/API，實際呼叫一次確認回應正確。若前端功能有變動，啟動 dev server 並在瀏覽器實際確認。
 
 ```bash
 RC=".venv/Scripts/python.exe"
@@ -180,3 +150,30 @@ RC=".venv/Scripts/python.exe"
 scripts/dashboard.cmd                  # 捷徑：同下行，額外參數原樣轉傳
 "$RC" -m src.main.python.api.app --db-path output/running_coach.db --host 0.0.0.0 --port 8000
 ```
+
+## 🤝 協作規範
+
+### Communication
+- **Language**: Output in **Traditional Chinese (Taiwan)/台灣繁體中文** only. Strictly forbid Simplified Chinese and Mainland terms (e.g., `质量`→`品質`, `默认`→`預設`, `支持`→`支援`).
+- **Code & Terms**: Keep all technical terminology, commands, and code snippets in original English/raw format.
+- **Code Comments**: Write code comments in Traditional Chinese.
+
+### Git
+- Commit format: `Type: summary` (capitalized Type, a space after the colon, no scope)
+  - Type: `Feat` / `Fix` / `Docs` / `Style` / `Refactor` / `Perf` / `Test` / `Build` / `CI` / `Chore` / `Revert`
+  - Subject in Traditional Chinese, imperative mood, ≤50 characters, no trailing period; with a task number, write `Type: Task X.Y.Z summary`
+  - Body must list the actual changes per file (`- file path: what changed`), never just "see XXX.md"
+- Commit after each completed task/stage; **never push unless I ask**
+- Before starting work: `git status` to confirm clean, then `git pull --rebase` (multi-device sync)
+
+### Prohibitions
+- Without my approval: delete existing files, make major architectural changes, or significantly upgrade dependencies
+- No duplicate implementations or `v2_` / `new_` / `enhanced_` style files → extend the existing code, keep a single source of truth
+- Never write secrets (tokens, `.env` contents, internal addresses, credentials) into logs, commits, or the conversation
+
+### Execution
+- Surgical edits: touch only code relevant to the task — no drive-by refactoring or reformatting
+- When a fix breaks something, revert to the last clean state and find the root cause — don't stack workarounds
+
+### Verification
+- Text/formatting/comment-only changes: reading it over is enough. Logic changes: actually run it after the task is done (run tests if they exist) — reading the code alone doesn't count as done
