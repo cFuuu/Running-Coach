@@ -1,11 +1,38 @@
 # CLAUDE.md - Running Coach
 
-> **文件版本**：1.2
-> **最後更新**：2026-09-01
+> **文件版本**：1.3
+> **最後更新**：2026-11-11
 > **專案**：Running Coach
 > **簡介**：AI 跑步教練 App
 
-本檔案提供本專案的**特定**指引。一般工作習慣——commit 訊息規範、根目錄/重複檔案/命名禁令、工具選用（Grep/Glob/Read）、先讀再改、>30 秒操作用 Task Agent、3+ 步驟任務用 TodoWrite、技術債預防順序、多裝置協作、文字與邏輯變更的驗證原則——已定義在使用者的全域 `CLAUDE.md` 並自動載入每個專案，此處**不重複**。以下只列 Running Coach 專屬內容。
+本檔案提供本專案的指引。下方「🤝 協作規範」為本專案的溝通、Git、執行與驗證規則；其餘一般工作習慣（工具選用、先讀再改、>30 秒操作用 Task Agent、3+ 步驟任務用 TodoWrite、技術債預防順序等）定義在使用者的全域 `CLAUDE.md`，此處不重複。
+
+## 🤝 協作規範
+
+### Communication
+- **Language**: Output in **Traditional Chinese (Taiwan)/台灣繁體中文** only. Strictly forbid Simplified Chinese and Mainland terms (e.g., `质量`→`品質`, `默认`→`預設`, `支持`→`支援`).
+- **Code & Terms**: Keep all technical terminology, commands, and code snippets in original English/raw format.
+- **Code Comments**: Write code comments in Traditional Chinese.
+
+### Git
+- Commit format: `Type: summary` (capitalized Type, a space after the colon, no scope)
+  - Type: `Feat` / `Fix` / `Docs` / `Style` / `Refactor` / `Perf` / `Test` / `Build` / `CI` / `Chore` / `Revert`
+  - Subject in Traditional Chinese, imperative mood, ≤50 characters, no trailing period; with a task number, write `Type: Task X.Y.Z summary`
+  - Body must list the actual changes per file (`- file path: what changed`), never just "see XXX.md"
+- Commit after each completed task/stage; **never push unless I ask**
+- Before starting work: `git status` to confirm clean, then `git pull --rebase` (multi-device sync)
+
+### Prohibitions
+- Without my approval: delete existing files, make major architectural changes, or significantly upgrade dependencies
+- No duplicate implementations or `v2_` / `new_` / `enhanced_` style files → extend the existing code, keep a single source of truth
+- Never write secrets (tokens, `.env` contents, internal addresses, credentials) into logs, commits, or the conversation
+
+### Execution
+- Surgical edits: touch only code relevant to the task — no drive-by refactoring or reformatting
+- When a fix breaks something, revert to the last clean state and find the root cause — don't stack workarounds
+
+### Verification
+- Text/formatting/comment-only changes: reading it over is enough. Logic changes: actually run it after the task is done (run tests if they exist) — reading the code alone doesn't count as done
 
 ## ❌ 額外禁止事項（全域未涵蓋部分）
 - **絕不** hardcode 應可設定的值 → 用設定檔／環境變數
