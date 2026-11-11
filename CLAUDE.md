@@ -1,12 +1,5 @@
 # CLAUDE.md - Running Coach
 
-> **文件版本**：1.4
-> **最後更新**：2026-11-11
-> **專案**：Running Coach
-> **簡介**：AI 跑步教練 App
-
-本檔案上半部為 Running Coach 專屬規範，最下方「🤝 協作規範」為通用的溝通、Git、執行與驗證規則。
-
 ## ❌ 額外禁止事項
 - **絕不** hardcode 應可設定的值 → 用設定檔／環境變數
 
@@ -23,8 +16,8 @@
 - `.env.example` 只放 key 不放 value，且必須進版控供他人 setup 參考。
 
 ### 2. 認證與執行解耦（防重複觸發 Garmin 反爬蟲）
-- **認證階段**：獨立的一次性 CLI，互動式登入（含 MFA），成功後把 OAuth
-  token 存到**專案目錄外**的 `~/.garminconnect/`。
+- **認證階段**：獨立的一次性 CLI（`garmin_auth login`，指令見「🚀 常用指令」），
+  互動式登入（含 MFA），成功後把 OAuth token 存到**專案目錄外**的 `~/.garminconnect/`。
 - **執行階段**：匯入器與 MCP server **只**允許讀 token，**嚴禁**執行帳密登入。
   token 失效時應拋出「請重跑一次性認證指令」的明確錯誤，而非自動用帳密重登。
 - 理由：Garmin 的 Cloudflare 會對 `/sso/signin` 做 rate limit，自動重登會
@@ -51,76 +44,17 @@
 `git status` 確認沒有 `.env`／token 檔被 track。涉及憑證的變更，
 commit 前額外掃一次 diff。
 
-## 🐙 本專案 GitHub 設定
-**狀態**：已連接 — `origin` 指向 [cFuuu/Running-Coach](https://github.com/cFuuu/Running-Coach)。
-
-### Auto-Push 機制
-- 目前**未啟用**；若未來要啟用：於 `.git/hooks/post-commit` 加入 `git push origin main`
-
-### 常用指令
-```bash
-gh auth status && git remote -v      # 檢查連接狀態
-git push origin main
-gh repo view
-```
-
-## 🐍 Python 環境（重要）
-
-本專案使用 **uv** 管理環境：專案根目錄的 `.venv`（Python 3.12，**最低 3.12.16**——安全性更新，不得降版；下限定義於 `pyproject.toml` 的 `requires-python`）。
-
-**不可用裸 `python` 指令**——這台機器上它會指向無關的 venv（`hermes-agent`），沒有 pip 也沒有本專案任何套件。PATH 上的 `pip` 也指向另一個 Python 3.10 安裝，`pip install X` 後 `python -c "import X"` 會莫名失敗。
-
-一律呼叫專案 `.venv` 的直譯器（從專案根目錄執行；跨工具呼叫不保留 activate，所以不靠啟用）：
-
-```bash
-# Bash tool
-RC=".venv/Scripts/python.exe"
-"$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
-"$RC" -m src.main.python.services.garmin_import_runner --help
-```
-
-```powershell
-# PowerShell tool
-& ".\.venv\Scripts\python.exe" --version
-```
-
-套件依賴：`pyproject.toml` 宣告直接依賴、`uv.lock` 鎖定全部版本（版本唯一真實來源；兩者都進版控，`.venv/` 不進）。常用 uv 指令：`uv sync`（依 lock 重建環境）、`uv add <套件>`、`uv lock --upgrade-package <套件>` 再 `uv sync`。
-
-⚠️ **uv 版本需 ≥ 0.13**（舊版內建 Python 清單最新只到 3.12.13，低於下限）。這台機器 PATH 上 `hermes\bin` 的舊版 uv 排在 winget 版前面，新開的終端機打 `uv` 可能仍是舊版；用 `uv --version` 確認，或直接呼叫 `%LOCALAPPDATA%\Microsoft\WinGet\Packages\astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe\uv.exe`。
+## 🐍 Python 環境
+- **不可用裸 `python`**（本機 Windows 上會指向無關的 `hermes-agent` venv），一律用專案 `.venv` 的直譯器 `.venv/Scripts/python.exe`（從專案根目錄執行，不靠 activate）
+- Python 下限 3.12.16（`pyproject.toml` 的 `requires-python`，安全性更新），不得降版
+- 環境安裝與 uv 用法見 [README.md](README.md)
 
 ## ✅ 本專案驗證方式
-執行 `src/test/` 下的單元/整合測試；若有 CLI/API，實際呼叫一次確認回應正確。若前端功能有變動，啟動 dev server 並在瀏覽器實際確認。
-
-```bash
-RC=".venv/Scripts/python.exe"
-"$RC" -m unittest discover -s src/test/unit -p "test_*.py" -v
-```
-
-## 🏗️ 專案概況
-
-打造一套 AI 跑步教練，能評估「訓練品質」與「身體數據」，並據此給出訓練建議與課表調整。Garmin 手錶資料串接是支撐主目標的工作項目之一，不是專案本身的目的。
-
-願景、架構、決策記錄、課表模板等穩定內容見 [docs/dev/PLAN.md](docs/dev/PLAN.md)；目前待辦與 Phase 進度見 [docs/dev/TODO.md](docs/dev/TODO.md)。
-
-## 🎯 開發進度（2026-09-07）
-
-| Phase | 狀態 |
-|---|---|
-| Phase 0 需求確認 | ✅ 完成 |
-| Phase 1A/1C 歷史資料匯入＋統一資料模型 | ✅ 完成 |
-| Phase 1E FIT 解析 | ✅ 完成 |
-| Phase 1B 即時同步（Garmin 匯入器）| ✅ 主體完成（剩 1B-6 Strava 備援層）|
-| Phase 1.5 本機 Dashboard | ✅ 主體完成（今日卡／行事曆／訓練負荷面板已上，剩手機實機測試）|
-| Phase 2 訓練科學規則引擎 | 🔵 進行中（⚠️ 課表週跑量曲線倒掛，見 TODO N-12）|
-| Phase 3 AI Coach（★ 專案主目標）| 🔵 進行中（14 個 MCP tools 與行為約束層已可用；外部課表與軟性輸入已落地。**剩 N-7 課表調整粒度、N-8 跨對話記憶兩個缺口，皆需先決策**）|
-
-⚠️ **此表為粗略概況，會落後於實際進度。**
-**進度的單一真實來源是 [docs/dev/TODO.md](docs/dev/TODO.md) 的進度總覽表**，
-兩者不一致時一律以 TODO.md 為準。
+執行 `src/test/` 下的單元/整合測試；若有 CLI/API，實際呼叫一次確認回應正確。若前端功能有變動，用 `scripts/dashboard.cmd` 啟動 Dashboard 後在瀏覽器實際確認。
 
 ## 📋 需要協助？先看這裡
 
-- 待辦清單、Phase 進度：[docs/dev/TODO.md](docs/dev/TODO.md)
+- 待辦清單、Phase 進度（進度的單一真實來源）：[docs/dev/TODO.md](docs/dev/TODO.md)
 - 願景、架構、決策記錄、課表模板：[docs/dev/PLAN.md](docs/dev/PLAN.md)
 - Dashboard API/前端契約：[docs/dev/DASHBOARD_TASKS.md](docs/dev/DASHBOARD_TASKS.md)
 - 學員個人資料（不進版控）：`output/athlete_profile.md`、`output/training_plan.md`
@@ -135,10 +69,6 @@ Issue 存於 GitHub Issues（cFuuu/Running-Coach），用 gh CLI 操作。見 `d
 
 沿用五個標準標籤（needs-triage / needs-info / ready-for-agent / ready-for-human / wontfix）。見 `docs/agents/triage-labels.md`。
 
-### Domain docs
-
-單一 context：`CONTEXT.md` + `docs/adr/` 於根目錄。見 `docs/agents/domain.md`。
-
 ## 🚀 常用指令
 ```bash
 RC=".venv/Scripts/python.exe"
@@ -149,9 +79,13 @@ RC=".venv/Scripts/python.exe"
 # 啟動 Dashboard API（區網存取，無身分驗證，勿對外網開放；就緒後自動開瀏覽器）
 scripts/dashboard.cmd                  # 捷徑：同下行，額外參數原樣轉傳
 "$RC" -m src.main.python.api.app --db-path output/running_coach.db --host 0.0.0.0 --port 8000
+
+# Garmin 一次性認證（token 失效時請使用者親自執行；需互動輸入帳密，Claude 不代跑 login）
+"$RC" -m src.main.python.services.garmin_auth status
+"$RC" -m src.main.python.services.garmin_auth login
 ```
 
-## 🤝 協作規範
+## 協作規範
 
 ### Communication
 - **Language**: Output in **Traditional Chinese (Taiwan)/台灣繁體中文** only. Strictly forbid Simplified Chinese and Mainland terms (e.g., `质量`→`品質`, `默认`→`預設`, `支持`→`支援`).
