@@ -1549,7 +1549,7 @@ function renderHomeDateHints() {
 /**
  * 學員檔案標題列右側的「‹ 日期 ▾ ›」。元素只建一次（掛在 #h-today 裡），之後每次
  * renderToday 只更新文字與上下限。點日期開日曆面板，外觀沿用行事曆的月份選擇器
- * （.cal-month-*，2026-11-10 Fu）；不另放「回到今天」，面板裡點今天那格即可。
+ * （.cal-month-*，2026-11-10 Fu）；標題列不放「回到今天」，回到今天用面板底部的「今日」。
  */
 function renderHomeDateNav() {
   if (isOfflineSnapshot()) return;
@@ -1663,6 +1663,12 @@ function buildHomeDatePicker() {
       grid.appendChild(cell);
     }
     panel.appendChild(grid);
+
+    // 同行事曆月份面板的「回到本月」（2026-11-11 Fu 選方案 A）
+    var todayBtn = h('button', 'cal-month-today', '今日');
+    todayBtn.type = 'button';
+    todayBtn.addEventListener('click', function () { close(); setHomeDate(todayISO()); });
+    panel.appendChild(todayBtn);
   }
 
   var close = bindDropdown(wrap, trigger, panel, function () {
